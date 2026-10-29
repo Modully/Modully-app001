@@ -31,6 +31,30 @@ const INDUCTION_THICKNESS = 4; // Espesor visual de la estufa de inducción en m
 
 type OptimizationStrategy = 'efficiency' | 'standard' | 'detailed';
 
+/** Icono de la forma de la cocina vista desde arriba: el muro es la línea fina y los muebles, la pieza gruesa */
+const KitchenShapeIcon: React.FC<{ shape: LayoutType; size?: number }> = ({ shape, size = 28 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    {shape === 'STRAIGHT' && (
+      <>
+        <path d="M2 6.5H22" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity="0.45" />
+        <rect x="2" y="9.5" width="20" height="6" rx="1.2" fill="currentColor" />
+      </>
+    )}
+    {shape === 'L_SHAPE' && (
+      <>
+        <path d="M2 21.5V3H22" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" opacity="0.45" />
+        <path d="M5 6H22V11.5H10.5V21.5H5Z" fill="currentColor" strokeLinejoin="round" />
+      </>
+    )}
+    {shape === 'U_SHAPE' && (
+      <>
+        <path d="M2 21.5V3H22V21.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" opacity="0.45" />
+        <path d="M5 6H19V21.5H14.5V11.5H9.5V21.5H5Z" fill="currentColor" strokeLinejoin="round" />
+      </>
+    )}
+  </svg>
+);
+
 /** Campo de medida: se escribe libremente y se aplica con Enter o al salir del campo; Escape cancela */
 const MeasureInput: React.FC<{ label: string; value: number; onCommit: (value: number) => void }> = ({ label, value, onCommit }) => {
   const [draft, setDraft] = useState<string | null>(null);
@@ -3047,7 +3071,7 @@ export default function App() {
                     <div className="grid grid-cols-3 gap-3">
                       {(['STRAIGHT', 'L_SHAPE', 'U_SHAPE'] as LayoutType[]).map((l) => (
                         <button key={l} onClick={() => setLayout(l)} className={`flex flex-col items-center justify-center p-4 rounded-3xl border-2 transition-all gap-2 ${layout === l ? 'bg-indigo-50 border-indigo-600 text-indigo-600 shadow-md' : 'bg-white border-slate-100 text-slate-400 hover:bg-slate-50'}`}>
-                          {l === 'STRAIGHT' && <MoveHorizontal size={24} />}{l === 'L_SHAPE' && <Layout size={24} />}{l === 'U_SHAPE' && <Tower size={24} />}
+                          <KitchenShapeIcon shape={l} size={30} />
                           <span className="text-[10px] font-black uppercase tracking-tighter">{l === 'STRAIGHT' ? 'Recta' : l === 'L_SHAPE' ? 'En L' : 'En U'}</span>
                         </button>
                       ))}
