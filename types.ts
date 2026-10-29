@@ -1,0 +1,124 @@
+
+export type ModuleType = 'UPPER' | 'LOWER' | 'TALL' | 'APPLIANCE';
+export type LayoutType = 'STRAIGHT' | 'L_SHAPE' | 'U_SHAPE';
+export type WallName = 'A' | 'B' | 'C';
+export type ApplianceType = 'fridge' | 'stove' | 'sink' | 'hood-under' | 'hood-island' | 'pantry';
+export type UnitType = 'mm' | 'cm' | 'm';
+export type DoorType = 'vertical' | 'horizontal';
+export type ConfigType = 'doors' | 'drawers' | 'u-drawer' | 'internal-drawer';
+
+export interface ModuleTemplate {
+  id: string;
+  name: string;
+  type: ModuleType;
+  width: number;
+  height: number;
+  depth: number;
+  basePrice: number;
+  isHood?: boolean;
+  isFridgeCabinet?: boolean;
+  isStoveCabinet?: boolean;
+  isSinkCabinet?: boolean;
+}
+
+export interface KitchenModule extends ModuleTemplate {
+  uniqueId: string;
+  wall: WallName | 'Island';
+  positionX: number;
+  quantity: number;
+  label?: string;
+  doorType: DoorType;
+  configType: ConfigType;
+  hasPlateRack: boolean;
+  drawerCount: number;
+  heightLocked?: boolean; // el usuario fijó el alto a mano: no se recalcula al cambiar el muro o el zócalo
+  // Coordenadas 3D en el espacio (milímetros)
+  x3d?: number;  // Posición X en el espacio 3D
+  y3d?: number;  // Posición Y en el espacio 3D (profundidad)
+  z3d?: number;  // Posición Z en el espacio 3D (altura)
+  // Dimensiones 3D del módulo (milímetros)
+  width3d?: number;   // Ancho del módulo en el espacio 3D
+  height3d?: number;  // Alto del módulo en el espacio 3D
+  depth3d?: number;   // Profundidad del módulo en el espacio 3D
+  // Rotación en el espacio (en grados)
+  rotation3d?: number; // 0° para muro A, 90° para muro B, -90° para muro C
+}
+
+export interface Appliance {
+  type: ApplianceType;
+  wall: WallName | 'Island';
+  width: number;
+  height: number;
+  depth: number;
+  distance: number;
+  active: boolean;
+  faucetHeight?: number; // Specific for sinks
+}
+
+export interface Material {
+  id: string;
+  name: string;
+  type: 'structure' | 'facade' | 'back';
+  thickness: number;
+  pricePerSheet: number;
+  color: string;
+  sheetWidth: number;
+  sheetHeight: number;
+}
+
+export interface Hardware {
+  id: string;
+  name: string;
+  price: number;
+  unit: string;
+}
+
+export interface SuggestionItem {
+  moduleId: string;
+  quantity: number;
+  section: 'Pared A' | 'Pared B' | 'Pared C' | 'Isla';
+  configType?: ConfigType;
+  hasPlateRack?: boolean;
+  isHood?: boolean;
+  isFridgeCabinet?: boolean;
+  isStoveCabinet?: boolean;
+}
+
+export interface SuggestionResponse {
+  items: SuggestionItem[];
+  explanation: string;
+  totalWidthUsed: number;
+}
+
+export interface QuoteSummary {
+  materialCost: number;
+  hardwareCost: number;
+  laborCost: number;
+  installationCost: number;
+  subtotal: number;
+  margin: number;
+  total: number;
+  hardwareList: { name: string; qty: number; cost: number }[];
+}
+
+export interface BOMPiece {
+  item: number;
+  name: string;           // PARTE: "Lateral MB-01", "Espaldar MA-02", etc
+  quantity: number;       // C/D: cantidad de piezas idénticas
+  length: number;         // LAR: largo en mm
+  width: number;          // AN: ancho en mm
+  thickness: number;      // CAL: calibre/espesor en mm
+  color: string;          // COLOR: "Blanco", "Ámbar", "Blanco RH"
+  edgeType: string;       // CANTO: "1L", "2L", "4LR", "1L 2L", etc
+}
+
+export interface BOM {
+  pieces: BOMPiece[];
+  totalPieces: number;
+  generatedAt: string;
+  kitchenConfig: {
+    wallWidth: number;
+    lineType: string;
+    faceColor: string;
+  };
+}

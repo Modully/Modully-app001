@@ -1,0 +1,11 @@
+{
+	"autodeskProduct":	"Fusion",
+	"type":	"script",
+	"author":	"Modully",
+	"description":	{
+		"":	"Crea en Fusion un cubo por cada caja de la lista exportada desde la app Modully"
+	},
+	"version":	"1.0",
+	"supportedOS":	"windows|mac",
+	"editEnabled":	true
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Modully - Modular Kitchen Configurator",
+  "description": "A professional tool for designing, visualizing, and quoting modular kitchens using 3D rendering and AI-powered layout suggestions.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
