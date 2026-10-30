@@ -31,6 +31,12 @@ export interface KitchenModule extends ModuleTemplate {
   configType: ConfigType;
   hasPlateRack: boolean;
   drawerCount: number;
+  // Vistos: pieza lateral (15 o 19 mm) que cierra el costado del módulo que queda sin muro. Izquierda/derecha se ven
+  // desde el frente del módulo. La pieza queda dentro de la medida del módulo (el cuerpo se acorta ese espesor).
+  vistoLeft?: boolean;
+  vistoRight?: boolean;
+  vistoThickness?: number;
+  topGap?: number; // aéreos: separación (mm) entre su borde superior y el techo (0: cuelgan del techo)
   heightLocked?: boolean; // el usuario fijó el alto a mano: no se recalcula al cambiar el muro o el zócalo
   // Coordenadas 3D en el espacio (milímetros)
   x3d?: number;  // Posición X en el espacio 3D

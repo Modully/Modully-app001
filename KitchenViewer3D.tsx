@@ -34,7 +34,7 @@ const HtmlScaled: React.FC<React.ComponentProps<typeof Html>> = ({ children, dis
     );
   }
   return (
-    <Html {...rest} distanceFactor={distanceFactor} style={{ ...rest.style, pointerEvents: 'none' }}>
+    <Html {...rest} transform distanceFactor={distanceFactor} style={{ ...rest.style, pointerEvents: 'none' }}>
       <div style={{ pointerEvents: 'auto' }}>{children}</div>
     </Html>
   );
@@ -91,9 +91,22 @@ interface Module3DProps {
   controlsRef?: React.RefObject<any>;
   hideLeftArrow?: boolean;
   hideRightArrow?: boolean;
+  viewMode?: 'plan' | 'frontal' | 'isometric' | '3d';
+  selected?: boolean;
+  costado?: 'left' | 'right'; // lado libre (sin vecino) donde va la cota del fondo
+  editing?: boolean;
+  onSelect?: (id: string) => void;
+  onOpenEditor?: (id: string) => void;
+  onCloseEditor?: () => void;
+  onApplyMeasures?: (id: string, m: { width: number; depth: number; height: number }) => void;
+  onSetTop?: (id: string, height: number, topGap: number) => void;
+  onSetVistos?: (id: string, v: { left: boolean; right: boolean; thickness: number }) => void;
+  onSplitHorizontal?: (id: string) => void; // divide el módulo en dos a lo alto
+  source?: KitchenModule; // módulo completo (la copia `module` puede venir con el cuerpo acortado por los vistos)
 }
 
-const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0, 0], onDelete, onSplit, onEditDimension, onDragPosition, onResizeEdge, controlsRef, hideLeftArrow, hideRightArrow }) => {
+const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0, 0], onDelete, onSplit, onEditDimension, onDragPosition, onResizeEdge, controlsRef, hideLeftArrow, hideRightArrow, viewMode, selected, costado = 'right', editing, onSelect, onOpenEditor, onCloseEditor, onApplyMeasures, onSetTop, onSetVistos, onSplitHorizontal, source }) => {
+  const isPlan = viewMode === 'plan';
   const [hovered, setHover] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState<'left' | 'right' | null>(null);
@@ -107,6 +120,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
   // Arrastre del módulo completo: se mide a lo largo del eje del muro (X en el muro A, Z en B y C)
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
+    if (isOverlay(e)) return;
     if (onDragPosition && controlsRef?.current && !isResizing) {
       setIsDragging(true);
       controlsRef.current.enabled = false; // Desactivar OrbitControls durante arrastre
@@ -159,6 +173,43 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
     }
   );
 
+  // Fondo o alto del módulo: se arrastra una flecha a lo largo del eje correspondiente (profundidad o vertical)
+  const measureStart = useRef<{ field: 'depth' | 'height' | 'top'; value: number; gap: number; sx: number; sy: number; sign: number } | null>(null);
+  const startMeasureDrag = useDocumentDrag(
+    (dx, dy) => {
+      const st = measureStart.current;
+      if (!st || !onApplyMeasures) return;
+      if (st.field === 'top') {
+        // Borde superior: los bajos crecen o se acortan por arriba; los aéreos suben hasta el techo o bajan dejando
+        // espacio arriba, y su borde inferior no se mueve
+        const d = st.sign * pixelsToMm(dx, dy, st.sx, st.sy);
+        const upper = module.type === 'UPPER';
+        const gap = upper ? Math.max(0, Math.round((st.gap - d) / 5) * 5) : 0;
+        const height = Math.min(2400, Math.max(100, Math.round((st.value + (upper ? st.gap - gap : d)) / 5) * 5));
+        onSetTop?.(module.uniqueId, height, gap);
+        return;
+      }
+      const [lo, hi] = st.field === 'depth' ? [100, 1200] : [100, 2400];
+      const value = Math.min(hi, Math.max(lo, Math.round((st.value + st.sign * pixelsToMm(dx, dy, st.sx, st.sy)) / 5) * 5));
+      onApplyMeasures(module.uniqueId, { width: module.width, depth: st.field === 'depth' ? value : module.depth, height: st.field === 'height' ? value : module.height });
+    },
+    () => {
+      measureStart.current = null;
+      if (controlsRef?.current) controlsRef.current.enabled = true;
+      document.body.style.cursor = 'auto';
+    }
+  );
+  const handleMeasurePointerDown = (e: { clientX: number; clientY: number }, field: 'depth' | 'height' | 'top', sign = 1) => {
+    if (!onApplyMeasures || !controlsRef?.current) return;
+    const axis = field === 'height' || field === 'top' ? new THREE.Vector3(0, 1, 0)
+      : module.wall === 'A' ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(module.wall === 'B' ? 1 : -1, 0, 0);
+    const { sx, sy } = screenPixelsPerMeter(camera, size, new THREE.Vector3(...position), axis);
+    measureStart.current = { field, value: field === 'depth' ? module.depth : module.height, gap: module.topGap ?? 0, sx, sy, sign };
+    controlsRef.current.enabled = false;
+    document.body.style.cursor = 'ns-resize';
+    startMeasureDrag(e);
+  };
+
   const handleEdgePointerDown = (e: { clientX: number; clientY: number }, side: 'left' | 'right') => {
     if (!onResizeEdge || !controlsRef?.current) return;
     const { sx, sy } = screenPixelsPerMeter(camera, size, new THREE.Vector3(...position), wallAxis(module.wall));
@@ -187,6 +238,8 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
+      onClick={(e) => { e.stopPropagation(); if (isDragging) endDrag(); if (!isOverlay(e)) onSelect?.(module.uniqueId); }}
+      onDoubleClick={(e) => { e.stopPropagation(); if (isOverlay(e)) return; onSelect?.(module.uniqueId); onOpenEditor?.(module.uniqueId); }}
       castShadow
       receiveShadow
     >
@@ -201,7 +254,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
         polygonOffsetFactor={1}
         polygonOffsetUnits={1}
       />
-      <Edges color={isResizing ? "#10b981" : (isDragging ? "#6366f1" : "#3b2a1a")} linewidth={isDragging || isResizing ? 2 : 1} />
+      <Edges color={isResizing ? "#10b981" : (isDragging ? "#6366f1" : (selected ? "#ef4444" : "#3b2a1a"))} linewidth={isDragging || isResizing || selected ? 2 : 1} />
       <Text
         position={[0, 0, module.depth / 2000 + 0.01]}
         fontSize={0.06}
@@ -212,6 +265,15 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
       >
         {module.label || ''}
       </Text>
+
+      {/* En planta no se ve la cara frontal: el nombre del módulo va sobre su cara superior */}
+      {isPlan && (
+        <Html position={[0, module.height / 2000 + 0.002, 0]} center zIndexRange={[50, 0]} style={{ pointerEvents: 'none' }}>
+          <div className="select-none whitespace-nowrap text-[10px] leading-none font-bold text-white" style={{ textShadow: '0 0 3px #000, 0 0 3px #000, 0 0 2px #000', fontSize: 14 }}>
+            {module.label || ''}
+          </div>
+        </Html>
+      )}
 
       {/* Controles en miniatura */}
       {/* Botón eliminar - esquina superior izquierda */}
@@ -225,7 +287,8 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
           zIndexRange={[100, 0]}
         >
           <button
-            style={{ transform: 'translateX(-52px)' }}
+            data-overlay
+            style={{ transform: `translateX(${isPlan ? -100 : -52}px)` }}
             onClick={(e) => {
               e.stopPropagation();
               onDelete(module.uniqueId);
@@ -247,7 +310,8 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
           zIndexRange={[100, 0]}
         >
           <button
-            style={{ transform: 'translateX(52px)' }}
+            data-overlay
+            style={{ transform: `translateX(${isPlan ? 100 : 52}px)` }}
             onClick={(e) => {
               e.stopPropagation();
               onSplit(module.uniqueId);
@@ -260,61 +324,146 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
         </HtmlScaled>
       )}
 
-      {/* Etiqueta de dimensión - parte inferior */}
-      {/* Tamaño fijo en pantalla (sin distanceFactor): así se lee igual en cualquier vista y zoom */}
-      <Html
-        position={[0, -module.height / 2000 - 0.05, module.depth / 2000 + 0.01]}
-        center
-        zIndexRange={[100, 0]}
-        style={{ pointerEvents: 'none' }}
-      >
-        <div
-          className="pointer-events-none select-none whitespace-nowrap px-1.5 py-0.5 bg-white text-slate-800 text-[12px] leading-none font-black rounded border border-slate-400 shadow-sm"
-          title={`${module.width} mm`}
-        >
-          {module.width}
-        </div>
-      </Html>
+      {/* Etiqueta de dimensión. En planta va separada del frente del módulo (así no tapa la X y el +); si el módulo está
+          seleccionado se dibuja como cota roja con su línea. Tamaño fijo en pantalla (sin distanceFactor). */}
+      {(() => {
+        const labelPos: [number, number, number] = isPlan
+          ? [0, module.height / 2000 + 0.002, module.depth / 2000 + (selected ? 0.16 : 0.09)]
+          : [0, -module.height / 2000 - (selected ? 0.14 : 0.05), module.depth / 2000 + 0.01];
+        const halfW = module.width / 2000;
+        const cotaZ = labelPos[2];
+        return (
+          <>
+            {selected && !isPlan && (() => {
+              // Cota del alto al costado libre del módulo (el largo ya está en el número de abajo)
+              const sx = (costado === 'left' ? -1 : 1) * (halfW + 0.07);
+              const hh = module.height / 2000;
+              const z = module.depth / 2000 + 0.01;
+              return (
+                <>
+                  <Line points={[[sx, -hh, z], [sx, hh, z]]} color="#ef4444" lineWidth={2} />
+                  <Line points={[[sx - 0.03, -hh, z], [sx + 0.03, -hh, z]]} color="#ef4444" lineWidth={2} />
+                  <Line points={[[sx - 0.03, hh, z], [sx + 0.03, hh, z]]} color="#ef4444" lineWidth={2} />
+                  <Html position={[sx, -hh * 0.6, z]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }} {...(viewMode === 'isometric' || viewMode === '3d' ? { transform: true, distanceFactor: 3 } : {})}>
+                    <div data-overlay>
+                      <DimLabel
+                        text={String(Math.round(module.height))}
+                        value={module.height}
+                        tone="red"
+                        title={`${Math.round(module.height)} mm. Clic para editar el alto`}
+                        onCommit={onApplyMeasures ? (typed) => onApplyMeasures(module.uniqueId, { width: module.width, depth: module.depth, height: typed }) : undefined}
+                      />
+                    </div>
+                  </Html>
+                </>
+              );
+            })()}
+            {selected && isPlan && (() => {
+              // Cota al costado (derecha) del módulo: línea paralela al fondo, separada del borde
+              const sx = (costado === 'left' ? -1 : 1) * (halfW + 0.07);
+              const hd = module.depth / 2000;
+              const y = labelPos[1];
+              return (
+                <>
+                  <Line points={[[sx, y, -hd], [sx, y, hd]]} color="#ef4444" lineWidth={2} />
+                  <Line points={[[sx - 0.03, y, -hd], [sx + 0.03, y, -hd]]} color="#ef4444" lineWidth={2} />
+                  <Line points={[[sx - 0.03, y, hd], [sx + 0.03, y, hd]]} color="#ef4444" lineWidth={2} />
+                  <Html position={[sx, y, 0]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
+                    <div data-overlay>
+                      <DimLabel
+                        text={String(Math.round(module.depth))}
+                        value={module.depth}
+                        tone="red"
+                        title={`${Math.round(module.depth)} mm. Clic para editar el ancho (fondo)`}
+                        onCommit={onApplyMeasures ? (typed) => onApplyMeasures(module.uniqueId, { width: module.width, depth: typed, height: module.height }) : undefined}
+                      />
+                    </div>
+                  </Html>
+                </>
+              );
+            })()}
+            <Html position={labelPos} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }} {...(viewMode === 'isometric' || viewMode === '3d' ? { transform: true, distanceFactor: 3 } : {})}>
+              {/* Clic para escribir el largo: el módulo se amplía hacia los dos lados y arrastra a sus vecinos */}
+              <div data-overlay>
+                <DimLabel
+                  text={String(Math.round((source ?? module).width))}
+                  value={(source ?? module).width}
+                  tone={selected && isPlan ? 'red' : 'white'}
+                  title={`${Math.round((source ?? module).width)} mm. Clic para editar el largo`}
+                  onCommit={onEditDimension ? (typed) => onEditDimension(module.uniqueId, typed) : undefined}
+                />
+              </div>
+            </Html>
+          </>
+        );
+      })()}
 
-      {/* Flechas de arrastre - Borde izquierdo */}
-      {onResizeEdge && !isDragging && !hideLeftArrow && (
-        <mesh
-          position={[-module.width / 2000, 0, module.depth / 2000 + 0.02]}
-          onPointerDown={(e) => {
-            console.log('Left mesh clicked!');
-            e.stopPropagation();
-            // Convertir el evento de Three.js a un evento de mouse estándar
-            const mouseEvent = e.nativeEvent as any;
-            handleEdgePointerDown(mouseEvent, 'left');
-          }}
+      {/* Módulo seleccionado: flechas en los dos extremos para alargarlo o contraerlo (sustituyen a las esferas en planta) */}
+      {selected && onResizeEdge && !isDragging && (['left', 'right'] as const).filter(side => !(side === 'left' ? hideLeftArrow : hideRightArrow)).map(side => (
+        <Html
+          key={`handle-${side}`}
+          position={[(side === 'left' ? -1 : 1) * module.width / 2000, isPlan ? module.height / 2000 + 0.002 : 0, isPlan ? 0 : module.depth / 2000 + 0.03]}
+          center
+          zIndexRange={[110, 0]}
+          style={{ pointerEvents: 'none' }}
         >
-          <sphereGeometry args={[0.04, 16, 16]} />
-          <meshStandardMaterial
-            color={isResizing === 'left' ? '#10b981' : '#6366f1'}
-            emissive={isResizing === 'left' ? '#10b981' : '#4f46e5'}
-            emissiveIntensity={0.5}
-          />
-        </mesh>
+          <button
+            data-overlay
+            onPointerDown={(e) => { e.stopPropagation(); handleEdgePointerDown(e, side); }}
+            className={`pointer-events-auto flex items-center justify-center w-7 h-7 rounded-full border-2 border-white shadow-lg text-white text-[15px] leading-none font-black cursor-ew-resize ${isResizing === side ? 'bg-emerald-500' : 'bg-red-500 hover:bg-red-600'}`}
+            title="Arrastrar para alargar o contraer"
+          >
+            {side === 'left' ? '◀' : '▶'}
+          </button>
+        </Html>
+      ))}
+
+      {/* "+" arriba del módulo seleccionado: lo divide en dos a lo alto */}
+      {selected && onSplitHorizontal && !isPlan && (
+        <Html position={[0, module.height / 2000 + 0.07, module.depth / 2000 + 0.02]} center zIndexRange={[105, 0]} style={{ pointerEvents: 'none' }}>
+          <button
+            data-overlay
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onSplitHorizontal(module.uniqueId); }}
+            className="pointer-events-auto flex items-center justify-center w-6 h-6 rounded-full border-2 border-white shadow-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[16px] leading-none font-black"
+            title="Dividir este módulo en dos a lo alto"
+          >
+            +
+          </button>
+        </Html>
       )}
 
-      {/* Flechas de arrastre - Borde derecho */}
-      {onResizeEdge && !isDragging && !hideRightArrow && (
-        <mesh
-          position={[module.width / 2000, 0, module.depth / 2000 + 0.02]}
-          onPointerDown={(e) => {
-            console.log('Right mesh clicked!');
-            e.stopPropagation();
-            const mouseEvent = e.nativeEvent as any;
-            handleEdgePointerDown(mouseEvent, 'right');
-          }}
-        >
-          <sphereGeometry args={[0.04, 16, 16]} />
-          <meshStandardMaterial
-            color={isResizing === 'right' ? '#10b981' : '#6366f1'}
-            emissive={isResizing === 'right' ? '#10b981' : '#4f46e5'}
-            emissiveIntensity={0.5}
-          />
-        </mesh>
+      {/* Flechas de fondo y alto. Planta: ▼ del frente = fondo. Frontal: ▲ y ▼ = alto. Isométrica/3D: ▲ y ▼ = alto y ↘ en el costado = fondo */}
+      {selected && onApplyMeasures && !isDragging && (() => {
+        const arrows: Array<{ key: string; pos: [number, number, number]; glyph: string; field: 'depth' | 'height' | 'top'; sign: number; title: string }> = [];
+        const h = module.height / 2000;
+        const front = module.depth / 2000 + 0.03;
+        if (isPlan) {
+          arrows.push({ key: 'depth', pos: [0, h + 0.002, module.depth / 2000], glyph: '▼', field: 'depth', sign: 1, title: 'Arrastrar para cambiar el fondo' });
+        } else {
+          arrows.push({ key: 'h-top', pos: [module.width / 2000 * 0.5, h + 0.03, front], glyph: '▲', field: 'top', sign: 1, title: 'Arrastrar para cambiar el alto' });
+          arrows.push({ key: 'h-bottom', pos: [0, -h - 0.03, front], glyph: '▼', field: 'height', sign: -1, title: 'Arrastrar para cambiar el alto' });
+          if (viewMode !== 'frontal') arrows.push({ key: 'depth', pos: [module.width / 2000, h * 0.6, 0], glyph: '↘', field: 'depth', sign: 1, title: 'Arrastrar para cambiar el fondo' });
+        }
+        return arrows.map(ar => (
+          <Html key={ar.key} position={ar.pos} center zIndexRange={[110, 0]} style={{ pointerEvents: 'none' }}>
+            <button
+              data-overlay
+              onPointerDown={(e) => { e.stopPropagation(); handleMeasurePointerDown(e, ar.field, ar.sign); }}
+              className="pointer-events-auto flex items-center justify-center w-7 h-7 rounded-full border-2 border-white shadow-lg bg-red-500 hover:bg-red-600 text-white text-[15px] leading-none font-black cursor-ns-resize"
+              title={ar.title}
+            >
+              {ar.glyph}
+            </button>
+          </Html>
+        ));
+      })()}
+
+      {/* Doble clic: editor de largo, ancho (fondo) y alto */}
+      {editing && onApplyMeasures && onCloseEditor && (
+        <Html position={[0, module.height / 2000 + 0.01, 0]} center zIndexRange={[200, 0]} style={{ pointerEvents: 'none' }}>
+          <ModuleEditor module={source ?? module} onApply={(m) => { onApplyMeasures(module.uniqueId, { width: m.width, depth: m.depth, height: m.height }); onSetVistos?.(module.uniqueId, m.visto); }} onClose={onCloseEditor} />
+        </Html>
       )}
 
       {/* Indicador de arrastre/redimensionamiento activo */}
@@ -350,6 +499,16 @@ const JunctionControl3D: React.FC<JunctionControl3DProps> = ({ leftModule, right
   const [isResizing, setIsResizing] = useState(false);
   const [matched, setMatched] = useState(false);
   const matchedEl = useRef<HTMLElement | null>(null);
+  // Ángulo del eje del muro en pantalla: la flecha doble gira para apuntar a lo largo del muro
+  // (en planta, los brazos B y C son verticales). Se mantiene entre -90 y 90 para no quedar al revés.
+  const [arrowAngle, setArrowAngle] = useState(0);
+  const arrowAngleRef = useRef(0);
+  useFrame(() => {
+    const { sx, sy } = screenPixelsPerMeter(camera, size, new THREE.Vector3(...position), wallAxis(wall));
+    const degrees = sx * sx + sy * sy < 4 ? 0 : (Math.atan2(sy, sx) * 180) / Math.PI; // eje de frente a la cámara: sin giro
+    const normalized = Math.round((((degrees + 90) % 180) + 180) % 180 - 90);
+    if (normalized !== arrowAngleRef.current) { arrowAngleRef.current = normalized; setArrowAngle(normalized); }
+  });
   const dragStart = useRef<{ leftId: string; rightId: string; leftWidth: number; rightWidth: number; leftPositionX: number; rightPositionX: number; sx: number; sy: number } | null>(null);
   const row = leftModule.type === 'UPPER' ? 'upper' : 'lower';
 
@@ -430,7 +589,7 @@ const JunctionControl3D: React.FC<JunctionControl3DProps> = ({ leftModule, right
           handlePointerDown(e);
         }}
       >
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-0" style={{ transform: `rotate(${arrowAngle}deg)` }}>
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
             <path d="M15 18L9 12L15 6" stroke="#7c3aed" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
@@ -720,7 +879,201 @@ const dimensionRows = (appliances: Appliance[]) =>
   Math.max(0, ...(['A', 'B', 'C'] as WallName[]).map(w => appliances.filter(a => a.active && a.wall === w).length));
 
 /** Etiqueta de cota editable: clic para escribir el valor; Enter o salir del campo lo aplica; Escape cancela */
-const DimLabel: React.FC<{ text: string; value: number; onCommit?: (value: number) => void }> = ({ text, value, onCommit }) => {
+/** Una medición hecha con la cinta: dos puntos de la escena (metros) */
+type Measure = { a: THREE.Vector3; b: THREE.Vector3 };
+
+/** Texto con la distancia y sus componentes (largo = a lo largo del muro A, fondo = hacia el frente, alto = vertical) */
+const measureParts = (a: THREE.Vector3, b: THREE.Vector3) => {
+  const mm = (v: number) => Math.round(Math.abs(v) * 1000);
+  const total = Math.round(a.distanceTo(b) * 1000);
+  const parts = [['largo', mm(b.x - a.x)], ['alto', mm(b.y - a.y)], ['fondo', mm(b.z - a.z)]].filter(([, v]) => (v as number) > 0);
+  return { total, detail: parts.map(([n, v]) => `${n} ${v}`).join(' · ') };
+};
+
+const MeasureLabel: React.FC<{ a: THREE.Vector3; b: THREE.Vector3; ghost?: boolean; onRemove?: () => void }> = ({ a, b, ghost, onRemove }) => {
+  const { total, detail } = measureParts(a, b);
+  return (
+    <Html position={a.clone().add(b).multiplyScalar(0.5)} center zIndexRange={[150, 0]} style={{ pointerEvents: 'none' }}>
+      <div data-overlay className={`select-none whitespace-nowrap px-2 py-1 rounded-lg border-2 shadow-lg text-center ${ghost ? 'bg-amber-50 border-amber-400 text-amber-700' : 'bg-amber-500 border-white text-white'}`}>
+        <div className="flex items-center justify-center gap-1.5 text-[12px] leading-none font-black">
+          {total} mm
+          {onRemove && (
+            <button className="pointer-events-auto w-4 h-4 rounded-full bg-white/30 hover:bg-white/60 text-[10px] leading-none" title="Borrar esta medición" onPointerDown={(e) => e.stopPropagation()} onClick={onRemove}>×</button>
+          )}
+        </div>
+        {detail && <div className="mt-0.5 text-[9px] leading-none font-bold opacity-90">{detail}</div>}
+      </div>
+    </Html>
+  );
+};
+
+const MeasureDot: React.FC<{ p: THREE.Vector3; ring?: boolean }> = ({ p, ring }) => (
+  <Html position={p} center zIndexRange={[140, 0]} style={{ pointerEvents: 'none' }}>
+    <div className={ring ? 'w-4 h-4 rounded-full border-2 border-amber-500 bg-amber-200/60' : 'w-2.5 h-2.5 rounded-full bg-amber-500 border border-white'} />
+  </Html>
+);
+
+/**
+ * Cinta métrica en la escena 3D. Clic en dos puntos y se dibuja la distancia con su largo, alto y fondo.
+ * Los puntos se pegan a las esquinas de las cajas (módulos, muros, mesón, electrodomésticos) si hay una cerca del
+ * cursor; si no, a lo que esté debajo del cursor. Esc cancela el punto A, Supr/Retroceso borra la última medición.
+ */
+const MeasureTool: React.FC<{ corners: THREE.Vector3[]; measures: Measure[]; onChange: (m: Measure[]) => void }> = ({ corners, measures, onChange }) => {
+  const { gl, camera, scene, raycaster } = useThree();
+  const [first, setFirst] = useState<THREE.Vector3 | null>(null);
+  const [hover, setHover] = useState<THREE.Vector3 | null>(null);
+  const down = useRef<{ x: number; y: number } | null>(null);
+  const live = useRef({ corners, measures, first, onChange });
+  live.current = { corners, measures, first, onChange };
+
+  useEffect(() => {
+    const el = gl.domElement;
+    const SNAP_PX = 14;
+    const pick = (clientX: number, clientY: number): THREE.Vector3 | null => {
+      const rect = el.getBoundingClientRect();
+      const px = clientX - rect.left;
+      const py = clientY - rect.top;
+      // 1) esquina más cercana en pantalla (a igualdad, la más cercana a la cámara)
+      let best: THREE.Vector3 | null = null;
+      let bestScore = Infinity;
+      const topDown = Math.abs(camera.getWorldDirection(new THREE.Vector3()).y) > 0.95;
+      const v = new THREE.Vector3();
+      for (const c of live.current.corners) {
+        v.copy(c).project(camera);
+        if (v.z > 1 || v.z < -1) continue;
+        const d = Math.hypot((v.x + 1) / 2 * rect.width - px, (1 - v.y) / 2 * rect.height - py);
+        if (d > SNAP_PX) continue;
+        // Vista desde arriba: muchas esquinas caen en el mismo punto de pantalla; con un punto A puesto se prefiere la de su misma altura
+        const ref = live.current.first;
+        const sameLevel = topDown && ref ? Math.abs(c.y - ref.y) * 40 : 0;
+        const score = d + sameLevel + c.distanceTo(camera.position) * 0.01;
+        if (score < bestScore) { bestScore = score; best = c; }
+      }
+      if (best) return best.clone();
+      // 2) lo que haya bajo el cursor
+      raycaster.setFromCamera(new THREE.Vector2((px / rect.width) * 2 - 1, -(py / rect.height) * 2 + 1), camera);
+      const hit = raycaster.intersectObjects(scene.children, true).find(h => {
+        const o = h.object as any;
+        return o.isMesh && !o.isLine2 && o.visible && !o.userData?.noMeasure && o.geometry?.type !== 'SphereGeometry';
+      });
+      return hit ? hit.point.clone() : null;
+    };
+    const onMove = (e: PointerEvent) => setHover(pick(e.clientX, e.clientY));
+    const onDown = (e: PointerEvent) => { down.current = { x: e.clientX, y: e.clientY }; };
+    const onUp = (e: PointerEvent) => {
+      const d = down.current;
+      down.current = null;
+      if (!d || e.button !== 0 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 5) return; // arrastre = mover la cámara
+      const p = pick(e.clientX, e.clientY);
+      if (!p) return;
+      const { first: f, measures: m, onChange: change } = live.current;
+      if (!f) setFirst(p);
+      else { change([...m, { a: f, b: p }]); setFirst(null); }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement | null)?.closest?.('input,textarea')) return;
+      if (e.key === 'Escape') setFirst(null);
+      if ((e.key === 'Delete' || e.key === 'Backspace') && live.current.measures.length) live.current.onChange(live.current.measures.slice(0, -1));
+    };
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerdown', onDown);
+    el.addEventListener('pointerup', onUp);
+    window.addEventListener('keydown', onKey);
+    el.style.cursor = 'crosshair';
+    return () => {
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointerup', onUp);
+      window.removeEventListener('keydown', onKey);
+      el.style.cursor = '';
+    };
+  }, [gl, camera, scene, raycaster]);
+
+  return (
+    <group>
+      {measures.map((m, i) => (
+        <group key={i}>
+          <Line points={[m.a, m.b]} color="#f59e0b" lineWidth={2.5} depthTest={false} renderOrder={30} />
+          <MeasureDot p={m.a} />
+          <MeasureDot p={m.b} />
+          <MeasureLabel a={m.a} b={m.b} onRemove={() => onChange(measures.filter((_, j) => j !== i))} />
+        </group>
+      ))}
+      {first && <MeasureDot p={first} />}
+      {first && hover && (
+        <>
+          <Line points={[first, hover]} color="#f59e0b" lineWidth={2} dashed dashSize={0.03} gapSize={0.02} depthTest={false} renderOrder={30} />
+          <MeasureLabel a={first} b={hover} ghost />
+        </>
+      )}
+      {hover && <MeasureDot p={hover} ring />}
+    </group>
+  );
+};
+
+/** Marca los elementos HTML superpuestos para que el módulo de debajo no los tome como clic o arrastre propio */
+const isOverlay = (e: { nativeEvent?: Event }) => !!(e.nativeEvent?.target as HTMLElement | null)?.closest?.('[data-overlay]');
+
+/** Doble clic en un módulo: se escriben las tres medidas (largo, ancho = fondo y alto) */
+const ModuleEditor: React.FC<{
+  module: KitchenModule;
+  onApply: (m: { width: number; depth: number; height: number; visto: { left: boolean; right: boolean; thickness: number } }) => void;
+  onClose: () => void;
+}> = ({ module, onApply, onClose }) => {
+  const [visto, setVisto] = useState({ left: !!module.vistoLeft, right: !!module.vistoRight, thickness: module.vistoThickness ?? 15 });
+  const [vals, setVals] = useState({ width: String(Math.round(module.width)), depth: String(Math.round(module.depth)), height: String(Math.round(module.height)) });
+  const apply = () => {
+    const n = (s: string, fallback: number) => { const x = parseFloat(s); return isNaN(x) ? fallback : x; };
+    onApply({ width: n(vals.width, module.width), depth: n(vals.depth, module.depth), height: n(vals.height, module.height), visto });
+    onClose();
+  };
+  const field = (key: 'width' | 'depth' | 'height', label: string, autoFocus = false) => (
+    <label className="flex items-center justify-between gap-2 text-[11px] font-bold text-slate-600">
+      {label}
+      <input
+        autoFocus={autoFocus}
+        type="number"
+        value={vals[key]}
+        onChange={(e) => setVals({ ...vals, [key]: e.target.value })}
+        onFocus={(e) => e.currentTarget.select()}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter') apply();
+          if (e.key === 'Escape') onClose();
+        }}
+        className="w-20 px-1.5 py-1 rounded border border-slate-300 bg-white text-[12px] font-black text-slate-800 outline-none focus:border-indigo-500"
+      />
+    </label>
+  );
+  return (
+    <div data-overlay data-module-editor className="pointer-events-auto w-44 p-2.5 space-y-1.5 rounded-xl bg-white border border-slate-300 shadow-xl" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="text-[10px] font-black uppercase tracking-wide text-slate-500 truncate">{module.name}</div>
+      {field('width', 'Largo', true)}
+      {field('depth', 'Ancho (fondo)')}
+      {field('height', 'Alto')}
+      <div className="pt-1 border-t border-slate-200 space-y-1">
+        <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">Visto (lado sin muro)</div>
+        <div className="flex items-center gap-3 text-[11px] font-bold text-slate-600">
+          <label className="flex items-center gap-1"><input type="checkbox" checked={visto.left} onChange={(e) => setVisto({ ...visto, left: e.target.checked })} />Izquierda</label>
+          <label className="flex items-center gap-1"><input type="checkbox" checked={visto.right} onChange={(e) => setVisto({ ...visto, right: e.target.checked })} />Derecha</label>
+        </div>
+        <label className="flex items-center justify-between gap-2 text-[11px] font-bold text-slate-600">
+          Espesor
+          <select value={visto.thickness} onChange={(e) => setVisto({ ...visto, thickness: Number(e.target.value) })} className="w-20 px-1 py-1 rounded border border-slate-300 bg-white text-[12px] font-black text-slate-800">
+            <option value={15}>15 mm</option>
+            <option value={19}>19 mm</option>
+          </select>
+        </label>
+      </div>
+      <div className="flex gap-1.5 pt-1">
+        <button className="flex-1 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black" onClick={apply}>Aplicar</button>
+        <button className="flex-1 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-black" onClick={onClose}>Cerrar</button>
+      </div>
+    </div>
+  );
+};
+
+const DimLabel: React.FC<{ text: string; value: number; onCommit?: (value: number) => void; tone?: 'indigo' | 'white' | 'red'; title?: string }> = ({ text, value, onCommit, tone = 'indigo', title = 'Clic para editar la cota' }) => {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const finished = useRef(false);
@@ -755,8 +1108,8 @@ const DimLabel: React.FC<{ text: string; value: number; onCommit?: (value: numbe
   }
   return (
     <div
-      className={`${base} bg-indigo-50 text-indigo-700 border-indigo-300 ${onCommit ? 'pointer-events-auto cursor-text hover:bg-indigo-100' : ''}`}
-      title={onCommit ? 'Clic para editar la cota' : undefined}
+      className={`${base} ${tone === 'white' ? 'bg-white text-slate-800 border-slate-400' : tone === 'red' ? 'bg-white text-red-600 border-red-500' : 'bg-indigo-50 text-indigo-700 border-indigo-300'} ${onCommit ? `pointer-events-auto cursor-text ${tone === 'white' ? 'hover:bg-slate-100' : tone === 'red' ? 'hover:bg-red-50' : 'hover:bg-indigo-100'}` : ''}`}
+      title={onCommit ? title : undefined}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={() => { finished.current = false; setDraft(String(Math.round(value))); setEditing(true); }}
     >
@@ -898,17 +1251,36 @@ interface KitchenViewer3DProps {
   onDeleteModule?: (id: string) => void;
   onSplitModule?: (id: string) => void;
   onEditModuleDimension?: (id: string, width: number) => void;
+  onEditModuleMeasure?: (id: string, field: 'height' | 'depth', value: number) => void;
+  onSetModuleTopEdge?: (id: string, height: number, topGap: number) => void;
+  onSetModuleVistos?: (id: string, v: { left: boolean; right: boolean; thickness: number }) => void;
+  onSplitHorizontal?: (id: string) => void;
   onDragModule?: (id: string, newPositionX: number) => void;
   onResizeEdge?: (id: string, side: 'left' | 'right', deltaX: number, initialWidth: number, initialPositionX: number) => void;
   onMoveAppliance?: (type: ApplianceType, wall: WallName, distance: number) => void;
+  visibility?: { upper: boolean; lower: boolean; counter: boolean; appliances: boolean };
+  collisions?: Box[]; // cajas que chocan: se marcan en rojo
+  measureMode?: boolean; // cinta métrica activa: la escena solo se mira y se mide
   onResizeJunction?: (leftId: string, rightId: string, deltaX: number, initialLeftWidth: number, initialRightWidth: number, initialLeftPositionX: number, initialRightPositionX: number) => void;
 }
 
 export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   layout, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules, boxes, appliances, hasIsland, island, viewMode, hasZocalo, zocaloHeight = 100,
-  hasLeftClosure, hasRightClosure, onDeleteModule, onSplitModule, onEditModuleDimension, onDragModule, onResizeEdge, onMoveAppliance, onResizeJunction
+  hasLeftClosure, hasRightClosure, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSplitHorizontal, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
 }) => {
   const controlsRef = useRef<any>(null);
+  // Módulo seleccionado (clic) y módulo cuyo editor de medidas está abierto (doble clic)
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [measures, setMeasures] = useState<Measure[]>([]);
+  // Al salir de la cinta se borran las mediciones, y mientras se mide no hay selección
+  useEffect(() => {
+    if (!measureMode) setMeasures([]);
+    else { setSelectedId(null); setEditingId(null); }
+  }, [measureMode]);
+  // Qué se dibuja. Lo que se oculta se lleva sus herramientas: etiquetas de medida, botones X y +, flechas dobles y cotas.
+  const vis = visibility ?? { upper: true, lower: true, counter: true, appliances: true };
+  modules = modules.filter(m => (m.type === 'UPPER' ? vis.upper : m.type === 'LOWER' ? vis.lower : true));
   // Electrodoméstico que se está arrastrando (datos del momento en que se agarró)
   const [dragApp, setDragApp] = useState<ApplianceDrag | null>(null);
   const wallThickness = 0.15; // Grosor constante de 150mm
@@ -922,6 +1294,17 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
 
   // Convierte coordenadas de la lista de cajas (mm; X a lo largo del muro A, Y profundidad) a la escena (m)
   const toWorldXZ = (X: number, Y: number): [number, number] => [(X - wallA / 2) / 1000, offsetZ + Y / 1000];
+  // Esquinas de todas las cajas (en la escena, metros): puntos a los que se pega la cinta métrica
+  const measureCorners = useMemo(() => {
+    const out: THREE.Vector3[] = [];
+    boxes.forEach(b => {
+      for (const X of [b.x, b.x + b.sx]) for (const Y of [b.y, b.y + b.sy]) for (const Z of [b.z, b.z + b.sz]) {
+        out.push(new THREE.Vector3((X - wallA / 2) / 1000, Z / 1000, offsetZ + Y / 1000));
+      }
+    });
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boxes, wallA]);
   const boxCenter = (b: Box): [number, number, number] => {
     const [x, z] = toWorldXZ(b.x + b.sx / 2, b.y + b.sy / 2);
     return [x, (b.z + b.sz / 2) / 1000, z];
@@ -981,12 +1364,21 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
     // z-0 + isolate crean un contexto de apilamiento propio: las capas altas de los controles Html (hasta 100)
     // quedan contenidas dentro de la escena y no se pintan por encima de los paneles de herramientas (z-45).
     <div className="absolute inset-0 z-0 isolate overflow-hidden bg-slate-100">
-      <Canvas shadows camera={{ position: [5, 4, 5], fov: 45 }}>
+      <Canvas
+        shadows
+        camera={{ position: [5, 4, 5], fov: 45 }}
+        onPointerMissed={(e) => {
+          // Un clic en vacío deselecciona; los clics sobre los controles HTML (editor, flechas) no cuentan
+          if ((e.target as HTMLElement | null)?.closest?.('[data-overlay]')) return;
+          setSelectedId(null);
+          setEditingId(null);
+        }}
+      >
         {isOrtho
           ? <OrthographicCamera makeDefault position={[0, 10, 0]} near={0.1} far={100} />
           : <PerspectiveCamera makeDefault position={[5, 4, 5]} fov={45} />}
         <ambientLight intensity={0.6} /><directionalLight position={[5, 10, 5]} intensity={1.5} castShadow shadow-mapSize={[1024, 1024]} /><Environment preset="apartment" /><CameraController viewMode={viewMode} plan={planFrame} frontal={frontalFrame} />
-        {viewMode === 'plan' && <PlanDimensions appliances={appliances} wallA={wallA} offsetZ={offsetZ} onMoveAppliance={onMoveAppliance} />}
+        {viewMode === 'plan' && vis.appliances && <PlanDimensions appliances={appliances} wallA={wallA} offsetZ={offsetZ} onMoveAppliance={onMoveAppliance} />}
         <ApplianceDragController
           drag={dragApp} layout={layout} wallA={wallA} wallB={wallB} wallC={wallC} offsetZ={offsetZ} controlsRef={controlsRef}
           onMove={(type, wall, distance) => onMoveAppliance?.(type, wall, distance)}
@@ -1022,14 +1414,25 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           </mesh>
         ))}
 
-        {boxes.filter(b => b.kind === 'zocalo').map(b => (
+        {boxes.filter(b => b.kind === 'zocalo' || (b.kind === 'filler' && (b.id.includes('-upper-') ? vis.upper : vis.lower))).map(b => (
           <mesh key={b.id} position={boxCenter(b)} castShadow receiveShadow>
             <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
-            <meshStandardMaterial color="#94a3b8" metalness={0.2} roughness={0.8} />
+            {/* La pieza de dilatación va en gris oscuro para distinguirla del zócalo */}
+            <meshStandardMaterial color={b.kind === 'filler' ? '#6b7280' : '#94a3b8'} metalness={0.2} roughness={0.8} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+            {b.kind === 'filler' && <Edges color="#1f2937" />}
           </mesh>
         ))}
 
-        {boxes.filter(b => b.kind === 'counter').map(b => (
+        {/* Choques entre módulos y electrodomésticos: la caja se marca en rojo (no recibe clics) */}
+        {collisions.map(b => (
+          <mesh key={`choque-${b.id}`} position={boxCenter(b)} raycast={() => null} renderOrder={10}>
+            <boxGeometry args={[b.sx / 1000 + 0.004, b.sz / 1000 + 0.004, b.sy / 1000 + 0.004]} />
+            <meshBasicMaterial color="#ef4444" transparent opacity={0.4} depthWrite={false} />
+            <Edges color="#b91c1c" />
+          </mesh>
+        ))}
+
+        {vis.counter && boxes.filter(b => b.kind === 'counter').map(b => (
           <Counter3D key={b.id} box={b} wallA={wallA} offsetZ={offsetZ} translucent={viewMode === 'plan'} />
         ))}
 
@@ -1046,21 +1449,42 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           return <Module3D
             key={mod.uniqueId}
             module={mod}
+            onSplitHorizontal={(!measureMode && mod.height >= 200) ? onSplitHorizontal : undefined}
+            onSetVistos={onSetModuleVistos}
             position={pos}
             rotation={rot}
-            onDelete={onDeleteModule}
-            onSplit={onSplitModule}
-            onEditDimension={onEditModuleDimension}
-            onDragPosition={onDragModule}
-            onResizeEdge={onResizeEdge}
+            onDelete={measureMode ? undefined : onDeleteModule}
+            onSplit={measureMode ? undefined : onSplitModule}
+            onEditDimension={measureMode ? undefined : onEditModuleDimension}
+            onDragPosition={measureMode ? undefined : onDragModule}
+            onResizeEdge={measureMode ? undefined : onResizeEdge}
             controlsRef={controlsRef}
             hideLeftArrow={hasLeftJunction}
             hideRightArrow={hasRightJunction}
+            viewMode={viewMode}
+            selected={!measureMode && selectedId === mod.uniqueId}
+            costado={(() => {
+              const touches = (a: number, b: number) => Math.abs(a - b) <= 1;
+              const same = modules.filter(o => o.uniqueId !== mod.uniqueId && o.wall === mod.wall && o.type === mod.type);
+              const rightBlocked = same.some(o => touches(o.positionX, mod.positionX + mod.width));
+              const leftBlocked = same.some(o => touches(o.positionX + o.width, mod.positionX));
+              return rightBlocked && !leftBlocked ? 'left' : 'right';
+            })()}
+            editing={editingId === mod.uniqueId}
+            onSelect={measureMode ? undefined : setSelectedId}
+            onOpenEditor={measureMode ? undefined : setEditingId}
+            onCloseEditor={() => setEditingId(null)}
+            onSetTop={onSetModuleTopEdge}
+            onApplyMeasures={(id, m) => {
+              if (Math.round(m.depth) !== Math.round(mod.depth)) onEditModuleMeasure?.(id, 'depth', m.depth);
+              if (Math.round(m.height) !== Math.round(mod.height)) onEditModuleMeasure?.(id, 'height', m.height);
+              if (Math.round(m.width) !== Math.round(mod.width)) onEditModuleDimension?.(id, m.width);
+            }}
           />;
         })}
 
         {/* Renderizar controles de junctions */}
-        {junctions.map((junction, idx) => {
+        {!measureMode && junctions.map((junction, idx) => {
           const { leftModule, rightModule, wall } = junction;
           const leftBox = findModuleBox(boxes, leftModule.uniqueId);
           if (!leftBox) return null;
@@ -1090,7 +1514,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           />;
         })}
 
-        {appliances.filter(a => a.active).map((app, idx) => {
+        {vis.appliances && appliances.filter(a => a.active).map((app, idx) => {
           // Cara superior del mesón (o de los módulos bajos si no hay mesón)
           const counterTop = counterTopZ(boxes, zh * 1000 + COUNTER_HEIGHT) / 1000;
           const counterThickness = (boxes.find(bx => bx.kind === 'counter')?.sz ?? 20) / 1000;
@@ -1147,6 +1571,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           <meshStandardMaterial color={viewMode === 'plan' ? '#ffffff' : '#f8fafc'} />
         </mesh>
         <OrbitControls ref={controlsRef} makeDefault enableDamping dampingFactor={0.1} maxPolarAngle={Math.PI / 2.1} />
+        {measureMode && <MeasureTool corners={measureCorners} measures={measures} onChange={setMeasures} />}
       </Canvas>
     </div>
   );

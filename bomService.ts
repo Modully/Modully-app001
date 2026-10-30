@@ -289,7 +289,8 @@ export function generateBOM(
   modules: KitchenModule[],
   lineType: string,
   faceColor: string,
-  wallWidth: number
+  wallWidth: number,
+  fillers: Array<{ height: number; depth: number; thickness: number; name?: string }> = []
 ): BOM {
   const allPieces: PieceRaw[] = [];
 
@@ -300,6 +301,16 @@ export function generateBOM(
       allPieces.push(...extractMAPieces(module, lineType, faceColor));
     }
   });
+
+  // Piezas de dilatación junto a los muros: fondo x alto x espesor de la holgura
+  fillers.forEach(f => allPieces.push({
+    name: f.name ?? 'Pieza de dilatación',
+    length: f.height,
+    width: f.depth,
+    thickness: f.thickness,
+    color: `${structureColorName(lineType, faceColor)} RH`,
+    edgeType: '',
+  }));
 
   const pieces = groupPieces(allPieces);
 

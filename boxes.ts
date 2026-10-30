@@ -11,7 +11,7 @@ import { KitchenModule, Appliance, LayoutType, WallName } from './types';
  * Cada caja se define por su esquina mínima (x, y, z) y su tamaño (sx, sy, sz), todo alineado a los ejes.
  */
 
-export type BoxKind = 'wall' | 'zocalo' | 'lower' | 'upper' | 'tall' | 'appliance' | 'counter';
+export type BoxKind = 'wall' | 'zocalo' | 'lower' | 'upper' | 'tall' | 'appliance' | 'counter' | 'filler';
 export type BoxFacing = '+Y' | '+X' | '-X' | null; // hacia dónde mira el frente del módulo
 
 /** Abertura rectangular en una caja (mesón): misma convención de coordenadas que las cajas */
@@ -49,6 +49,9 @@ export const TOP_MARGIN = 20;            // espacio libre bajo el techo (mm)
 // Regla de la nevera: separación mínima entre la nevera y los módulos (base y aéreos) a cada lado, y fondo sugerido de la sobrenevera
 export const FRIDGE_CLEARANCE = 50;      // mm
 export const OVER_FRIDGE_DEPTH = 500;    // mm (más profundo que los demás aéreos, que miden 330)
+// Dilatación: los módulos pegados a un muro dejan una holgura (por los muros descuadrados) que se tapa con una pieza
+export const DILATATION_GAP_DEFAULT = 15;    // holgura contra el muro y espesor de la pieza (mm)
+export const DILATATION_DEPTH_DEFAULT = 70;  // fondo de la pieza, medido desde el frente del módulo (mm)
 export const CLOSURE_THICKNESS = 120;    // espesor de los muros auxiliares (mm)
 export const CLOSURE_DEPTH = 600;        // fondo de los muros auxiliares (mm)
 
@@ -71,6 +74,18 @@ export function applianceCenter(app: Appliance, wallA: number): { x: number; y: 
   return { x: along, y: across };
 }
 
+/**
+ * Hasta dónde llega hacia la esquina el primer aéreo de un brazo (B o C): a la profundidad del aéreo perpendicular, es
+ * decir, el aéreo de A que está en esa esquina, para que las esquinas queden unidas. Si en la esquina no hay aéreo
+ * de A, usa el fondo estándar de los aéreos. La profundidad de los módulos no cambia: se alarga el primer aéreo del
+ * brazo (que arranca tras la esquina ciega, CORNER_BLIND_OFFSET, igual que los bajos) hasta ese punto.
+ */
+export function armUpperOrigin(modules: KitchenModule[], wallA: number, arm: 'B' | 'C', gap: number): number {
+  const atCorner = modules.filter(m => m.wall === 'A' && m.type === 'UPPER'
+    && (arm === 'B' ? m.positionX <= gap + 1 : m.positionX + m.width >= wallA - gap - 1));
+  return atCorner.length ? Math.max(...atCorner.map(m => m.depth)) : UPPER_DEPTH;
+}
+
 export interface BuildBoxesInput {
   layout: LayoutType;
   wallA: number;
@@ -84,6 +99,9 @@ export interface BuildBoxesInput {
   appliances: Appliance[];
   hasLeftClosure?: boolean;
   hasRightClosure?: boolean;
+  hasDilatation?: boolean;
+  dilatationGap?: number;
+  dilatationDepth?: number;
   hasCounter?: boolean;
   counterThickness?: number;
   counterOverhang?: number;
@@ -130,21 +148,51 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   }
 
   // --- Zócalo ---
+  // Va solo bajo los módulos: se abre un hueco donde está la nevera (su ancho más FRIDGE_CLEARANCE por lado,
+  // igual que la separación de los módulos base), porque la nevera se apoya directamente en el piso.
   if (hasZocalo && zh > 0) {
-    boxes.push({ id: 'zocalo-A', name: 'Zócalo A', kind: 'zocalo', wall: 'A', x: 0, y: 0, z: 0, sx: wallA, sy: zocaloDepth, sz: zh, facing: null });
+    // Recorta de [start, end] (a lo largo del muro) los huecos de las neveras activas de ese muro
+    const plinthSegments = (wall: WallName, start: number, end: number): Array<[number, number]> => {
+      const armStart = wall === 'A' ? 0 : CORNER_BLIND_OFFSET;
+      const holes = appliances
+        .filter(a => a.active && a.type === 'fridge' && a.wall === wall)
+        .map(a => [armStart + a.distance - FRIDGE_CLEARANCE, armStart + a.distance + a.width + FRIDGE_CLEARANCE] as [number, number])
+        .sort((x, y) => x[0] - y[0]);
+      const segments: Array<[number, number]> = [];
+      let cursor = start;
+      holes.forEach(([h0, h1]) => {
+        if (h0 > cursor) segments.push([cursor, Math.min(h0, end)]);
+        cursor = Math.max(cursor, h1);
+      });
+      if (cursor < end) segments.push([cursor, end]);
+      return segments.filter(([x0, x1]) => x1 - x0 > 1);
+    };
+
     const yStart = Math.min(zocaloDepth, CORNER_BLIND_OFFSET);
+    plinthSegments('A', 0, wallA).forEach(([x0, x1], i) => {
+      boxes.push({ id: `zocalo-A-${i}`, name: 'Zócalo A', kind: 'zocalo', wall: 'A', x: x0, y: 0, z: 0, sx: x1 - x0, sy: zocaloDepth, sz: zh, facing: null });
+    });
     if (hasB) {
-      boxes.push({ id: 'zocalo-B', name: 'Zócalo B', kind: 'zocalo', wall: 'B', x: 0, y: yStart, z: 0, sx: zocaloDepth, sy: wallB - yStart, sz: zh, facing: null });
+      plinthSegments('B', yStart, wallB).forEach(([y0, y1], i) => {
+        boxes.push({ id: `zocalo-B-${i}`, name: 'Zócalo B', kind: 'zocalo', wall: 'B', x: 0, y: y0, z: 0, sx: zocaloDepth, sy: y1 - y0, sz: zh, facing: null });
+      });
     }
     if (hasC) {
-      boxes.push({ id: 'zocalo-C', name: 'Zócalo C', kind: 'zocalo', wall: 'C', x: wallA - zocaloDepth, y: yStart, z: 0, sx: zocaloDepth, sy: wallC - yStart, sz: zh, facing: null });
+      plinthSegments('C', yStart, wallC).forEach(([y0, y1], i) => {
+        boxes.push({ id: `zocalo-C-${i}`, name: 'Zócalo C', kind: 'zocalo', wall: 'C', x: wallA - zocaloDepth, y: y0, z: 0, sx: zocaloDepth, sy: y1 - y0, sz: zh, facing: null });
+      });
     }
   }
 
-  // Coloca una caja contra el muro indicado: "along" es la posición a lo largo del muro y "width" su ancho en ese sentido
-  const placeOnWall = (wall: WallName, along: number, width: number, depth: number) => {
-    if (wall === 'B') return { x: 0, y: CORNER_BLIND_OFFSET + along, sx: depth, sy: width, facing: '+X' as BoxFacing };
-    if (wall === 'C') return { x: wallA - depth, y: CORNER_BLIND_OFFSET + along, sx: depth, sy: width, facing: '-X' as BoxFacing };
+  // Los brazos se cuentan desde la esquina ciega para todos los niveles, así los cortes de los aéreos y de los bajos
+  // quedan alineados. El primer aéreo del brazo se alarga hacia la esquina con una posición negativa (ver armUpperOrigin).
+  const armOrigin = (wall: WallName, _isUpper: boolean) => (wall === 'A' ? 0 : CORNER_BLIND_OFFSET);
+
+  // Coloca una caja contra el muro indicado: "along" es la posición a lo largo del muro (desde el inicio de ese brazo)
+  // y "width" su ancho en ese sentido
+  const placeOnWall = (wall: WallName, along: number, width: number, depth: number, origin: number = CORNER_BLIND_OFFSET) => {
+    if (wall === 'B') return { x: 0, y: origin + along, sx: depth, sy: width, facing: '+X' as BoxFacing };
+    if (wall === 'C') return { x: wallA - depth, y: origin + along, sx: depth, sy: width, facing: '-X' as BoxFacing };
     return { x: along, y: 0, sx: width, sy: depth, facing: '+Y' as BoxFacing };
   };
 
@@ -153,8 +201,25 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     if (mod.wall === 'Island') return;
     const kind: BoxKind = mod.type === 'UPPER' ? 'upper' : mod.type === 'TALL' ? 'tall' : 'lower';
     // Los aéreos cuelgan desde el techo (queda TOP_MARGIN libre); el resto se apoya sobre el zócalo
-    const z = mod.type === 'UPPER' ? spaceHeight - TOP_MARGIN - mod.height : zh;
-    const p = placeOnWall(mod.wall, mod.positionX, mod.width, mod.depth);
+    const z = mod.type === 'UPPER' ? spaceHeight - TOP_MARGIN - (mod.topGap ?? 0) - mod.height : zh;
+    const p = placeOnWall(mod.wall, mod.positionX, mod.width, mod.depth, armOrigin(mod.wall, mod.type === 'UPPER'));
+    // Vistos: pieza del espesor elegido pegada al costado del módulo. El ancho del módulo ya viene restado (885 + 15 = 900),
+    // así que el conjunto ocupa la misma medida. Mirando el frente, la izquierda es el inicio del muro A y del C, y el final del B.
+    const vt = mod.vistoThickness ?? 15;
+    const leftAtStart = mod.wall !== 'B';
+    const atStart = (mod.vistoLeft && leftAtStart) || (mod.vistoRight && !leftAtStart);
+    const atEnd = (mod.vistoLeft && !leftAtStart) || (mod.vistoRight && leftAtStart);
+    const alongA = mod.wall === 'A';
+    const vistoTier = mod.type === 'UPPER' ? 'upper' : 'lower';
+    ([['start', atStart], ['end', atEnd]] as const).forEach(([side, on]) => {
+      if (!on) return;
+      const origin = side === 'start' ? -vt : (alongA ? p.sx : p.sy);
+      boxes.push({
+        id: `visto-${vistoTier}-${mod.uniqueId}-${side}`, name: `Visto ${mod.label ?? ''}`.trim(), kind: 'filler', wall: mod.wall as WallName,
+        x: alongA ? p.x + origin : p.x, y: alongA ? p.y : p.y + origin, z,
+        sx: alongA ? vt : p.sx, sy: alongA ? p.sy : vt, sz: mod.height, facing: null,
+      });
+    });
     boxes.push({
       id: mod.uniqueId,
       name: `${mod.label ? mod.label + ' ' : ''}${mod.name}`,
@@ -166,6 +231,49 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       moduleId: mod.uniqueId,
     });
   });
+
+  // --- Piezas de dilatación ---
+  // Cuando un módulo queda pegado a un muro (a una holgura de él) se coloca la pieza que tapa esa holgura:
+  // espesor = holgura, alto = el del módulo, y fondo dilatationDepth medido desde el frente del módulo.
+  // Solo hay pieza donde el módulo toca un muro (lateral B o C, o un muro auxiliar) y dejó la holgura.
+  const dilGap = input.dilatationGap ?? DILATATION_GAP_DEFAULT;
+  if (input.hasDilatation && dilGap > 0) {
+    const dilDepth = input.dilatationDepth ?? DILATATION_DEPTH_DEFAULT;
+    const armLength = (wall: WallName, tier: 'lower' | 'upper') => (wall === 'A' ? wallA : (wall === 'B' ? wallB : wallC) - armOrigin(wall, tier === 'upper'));
+    const alongStart = (bx: Box, wall: WallName, tier: 'lower' | 'upper') => (wall === 'A' ? bx.x : bx.y - armOrigin(wall, tier === 'upper'));
+    const alongSize = (bx: Box, wall: WallName) => (wall === 'A' ? bx.sx : bx.sy);
+
+    (['A', 'B', 'C'] as WallName[]).forEach(wall => {
+      (['lower', 'upper'] as const).forEach(tier => {
+        const run = boxes.filter(bx => bx.moduleId && bx.wall === wall && bx.kind === tier)
+          .sort((p, q) => alongStart(p, wall, tier) - alongStart(q, wall, tier));
+        if (run.length === 0) return;
+
+        const place = (side: 'start' | 'end', ref: Box) => {
+          const fd = Math.min(dilDepth, wall === 'A' ? ref.sy : ref.sx); // fondo, desde el frente del módulo
+          const c = wall === 'A'
+            ? { x: side === 'start' ? 0 : wallA - dilGap, y: ref.y + ref.sy - fd, sx: dilGap, sy: fd }
+            : wall === 'B'
+              ? { x: ref.x + ref.sx - fd, y: wallB - dilGap, sx: fd, sy: dilGap }
+              : { x: ref.x, y: wallC - dilGap, sx: fd, sy: dilGap };
+          boxes.push({
+            id: `dilatacion-${wall}-${tier}-${side}`, name: 'Pieza de dilatación', kind: 'filler', wall,
+            ...c, z: ref.z, sz: ref.sz, facing: null,
+          });
+        };
+
+        const first = run[0];
+        const last = run[run.length - 1];
+        // Extremos que tocan un muro: el inicio de A toca el muro B (L y U) o el muro auxiliar izquierdo (recta);
+        // el final de A toca el muro C (U) o el muro auxiliar derecho; el final de cada brazo toca su muro auxiliar.
+        const closesStart = wall === 'A' && (layout !== 'STRAIGHT' || !!input.hasLeftClosure);
+        const closesEnd = wall === 'A' ? layout === 'U_SHAPE' || !!input.hasRightClosure
+          : wall === 'B' ? !!input.hasLeftClosure : !!input.hasRightClosure;
+        if (closesStart && Math.abs(alongStart(first, wall, tier) - dilGap) <= 1) place('start', first);
+        if (closesEnd && Math.abs(alongStart(last, wall, tier) + alongSize(last, wall) - (armLength(wall, tier) - dilGap)) <= 1) place('end', last);
+      });
+    });
+  }
 
   // --- Electrodomésticos que ocupan volumen propio (nevera y alacena alta) ---
   // La estufa, la poceta y la campana se modelan con sus muebles (Mueble Estufa, Mueble Poceta, Mueble Campana)
@@ -251,6 +359,27 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
 export function counterTopZ(boxes: Box[], fallback: number): number {
   const counter = boxes.find(b => b.kind === 'counter');
   return counter ? counter.z + counter.sz : fallback;
+}
+
+/**
+ * REGLA: los módulos y los electrodomésticos no pueden ocupar el mismo espacio. Devuelve cada par de cajas macizas
+ * (módulos bajos, aéreos y torres, más la nevera y la alacena) que se superponen en los tres ejes. Tocarse por una
+ * cara no es choque. Los muros, el zócalo, el mesón y las piezas de dilatación no cuentan.
+ */
+export function findCollisions(boxes: Box[], tolerance = 1): Array<[Box, Box]> {
+  const solids = boxes.filter(bx => bx.kind === 'lower' || bx.kind === 'upper' || bx.kind === 'tall' || bx.kind === 'appliance');
+  const overlap = (a0: number, a1: number, b0: number, b1: number) => Math.min(a1, b1) - Math.max(a0, b0) > tolerance;
+  const pairs: Array<[Box, Box]> = [];
+  for (let i = 0; i < solids.length; i++) {
+    for (let j = i + 1; j < solids.length; j++) {
+      const p = solids[i];
+      const q = solids[j];
+      if (overlap(p.x, p.x + p.sx, q.x, q.x + q.sx) && overlap(p.y, p.y + p.sy, q.y, q.y + q.sy) && overlap(p.z, p.z + p.sz, q.z, q.z + q.sz)) {
+        pairs.push([p, q]);
+      }
+    }
+  }
+  return pairs;
 }
 
 /** Caja que ocupa el módulo con ese id, si existe */
