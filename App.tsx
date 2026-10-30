@@ -20,7 +20,8 @@ import { KitchenViewer3D } from './KitchenViewer3D';
 import { getAgentAdvice, type KitchenAgentContext } from './agentService';
 import { generateBOM, exportBOMToExcel } from './bomService';
 import { resizeSymmetric, snapToNeighbors } from './moduleResize';
-import { buildBoxes, boxesToJSON, armUpperOrigin, findCollisions, LOWER_DEPTH, UPPER_DEPTH, CORNER_BLIND_OFFSET, TOP_MARGIN, COUNTER_THICKNESS_DEFAULT, COUNTER_OVERHANG_DEFAULT, FRIDGE_CLEARANCE, OVER_FRIDGE_DEPTH, DILATATION_GAP_DEFAULT, DILATATION_DEPTH_DEFAULT } from './boxes';
+import type { CounterExtras, Box as BoxData } from './boxes';
+import { buildBoxes, boxesToJSON, armUpperOrigin, findCollisions, LOWER_DEPTH, UPPER_DEPTH, CORNER_BLIND_OFFSET, TOP_MARGIN, SPLASH_HEIGHT_DEFAULT, COUNTER_THICKNESS_DEFAULT, COUNTER_OVERHANG_DEFAULT, FRIDGE_CLEARANCE, OVER_FRIDGE_DEPTH, DILATATION_GAP_DEFAULT, DILATATION_DEPTH_DEFAULT } from './boxes';
 
 // Constantes de diseño técnico
 const BASE_MODULE_HEIGHT = 800; // Alto del módulo base (MB). El mesón queda a zócalo + módulo base
@@ -298,8 +299,14 @@ export default function App() {
   const [hasCounter, setHasCounter] = useState(true);
   const [counterThickness, setCounterThickness] = useState(COUNTER_THICKNESS_DEFAULT);
   const [counterOverhang, setCounterOverhang] = useState(COUNTER_OVERHANG_DEFAULT);
+  // Salpicadero: parte del mesón, del mismo material, atrás y en los lados con muro o módulo más alto (altura habitual: 7 cm)
+  const [hasSplash, setHasSplash] = useState(true);
+  const [splashHeight, setSplashHeight] = useState(SPLASH_HEIGHT_DEFAULT);
+  // Ajustes manuales por tramo de mesón: salpicadero izquierdo/derecho y cascada izquierda/derecha
+  const [counterExtras, setCounterExtras] = useState<Record<string, CounterExtras>>({});
   // Dilatación: holgura contra los muros (por los descuadres) tapada con una pieza
-  const [hasDilatation, setHasDilatation] = useState(true);
+  // La dilatación se pide por módulo (doble clic -> Dilatada); la automática contra muros laterales queda apagada
+  const [hasDilatation, setHasDilatation] = useState(false);
   const [dilatationGap, setDilatationGap] = useState(DILATATION_GAP_DEFAULT);
   const [dilatationDepth, setDilatationDepth] = useState(DILATATION_DEPTH_DEFAULT);
   // Qué se ve en la escena (solo visual: no cambia el diseño, el despiece ni la exportación)
@@ -355,11 +362,11 @@ export default function App() {
   // largo o varias teclas seguidas cuentan como un solo paso.
   const designSnapshot = useMemo(() => ({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    hasCounter, counterThickness, counterOverhang, hasLeftClosure, hasRightClosure,
+    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
     modules, specialModules, appliances, hasIsland, lineType, faceColor,
   }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    hasCounter, counterThickness, counterOverhang, hasLeftClosure, hasRightClosure,
+    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
     modules, specialModules, appliances, hasIsland, lineType, faceColor]);
   type DesignSnapshot = typeof designSnapshot;
@@ -426,7 +433,7 @@ export default function App() {
     setLayout(snap.layout); setWallA(snap.wallA); setWallB(snap.wallB); setWallC(snap.wallC);
     setSpaceHeight(snap.spaceHeight); setHasZocalo(snap.hasZocalo); setZocaloHeight(snap.zocaloHeight);
     setZocaloDepth(snap.zocaloDepth); setHasCounter(snap.hasCounter); setCounterThickness(snap.counterThickness);
-    setCounterOverhang(snap.counterOverhang); setHasLeftClosure(snap.hasLeftClosure); setHasRightClosure(snap.hasRightClosure);
+    setCounterOverhang(snap.counterOverhang); setHasSplash(snap.hasSplash); setSplashHeight(snap.splashHeight); setCounterExtras(snap.counterExtras); setHasLeftClosure(snap.hasLeftClosure); setHasRightClosure(snap.hasRightClosure);
     setHasDilatation(snap.hasDilatation); setDilatationGap(snap.dilatationGap); setDilatationDepth(snap.dilatationDepth);
     setModules(snap.modules); setSpecialModules(snap.specialModules); setAppliances(snap.appliances);
     setHasIsland(snap.hasIsland); setLineType(snap.lineType); setFaceColor(snap.faceColor);
@@ -597,9 +604,9 @@ export default function App() {
   // Lista única de cajas: la escena 3D, el BOM y la exportación a Fusion leen la geometría de aquí
   const boxes = useMemo(() => buildBoxes({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    modules: labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasLeftClosure, hasRightClosure,
+    modules: labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
-  }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
+  }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
 
   // Regla: ningún módulo puede ocupar el mismo espacio que un electrodoméstico (ni otro módulo)
   const collisions = useMemo(() => findCollisions(boxes), [boxes]);
@@ -1095,6 +1102,7 @@ export default function App() {
     
     // Agregar los módulos especiales preservados al final
     setModules([...newModules, ...specialModulesActive]);
+    setCounterExtras({}); // al optimizar se recalcula todo: los ajustes manuales del mesón (cascadas, salpicaderos laterales) se reinician
   }, [wallA, wallB, wallC, layout, currentBaseModuleHeight, currentUpperModuleHeight, spaceHeight, modules, activeWall, hasDilatation, dilatationGap, hasLeftClosure, hasRightClosure]);
 
   const handleMathematicalSuggestion = async (strategy: OptimizationStrategy) => {
@@ -1177,13 +1185,48 @@ export default function App() {
     });
   };
 
+  // Mesón editado: ajustes globales y por tramo. La cascada ocupa un espesor del mesón dentro de la medida general, así que
+  // al activarla el módulo del extremo se acorta ese espesor (y al quitarla se lo devuelve). Izquierda/derecha se ven desde
+  // el frente: izquierda es el inicio del muro A y C, y el final del B.
+  const applyCounterEdit = (s: { thickness: number; overhang: number; hasSplash: boolean; splashHeight: number }, counterId: string, extras: CounterExtras) => {
+    const slab = boxes.find(bx => bx.id === counterId);
+    if (slab) {
+      const wall = slab.wall;
+      const leftIsStart = wall !== 'B';
+      const along = (bx: BoxData) => (wall === 'A' ? { a0: bx.x, a1: bx.x + bx.sx } : { a0: bx.y, a1: bx.y + bx.sy });
+      const slabRange = along(slab);
+      const lowersInRun = boxes.filter(bx => bx.kind === 'lower' && bx.wall === wall && bx.moduleId && along(bx).a0 >= slabRange.a0 - 1 && along(bx).a1 <= slabRange.a1 + 1);
+      const changes: Array<{ atStart: boolean; on: boolean }> = [];
+      if (extras.waterfallLeft !== undefined) changes.push({ atStart: leftIsStart, on: extras.waterfallLeft });
+      if (extras.waterfallRight !== undefined) changes.push({ atStart: !leftIsStart, on: extras.waterfallRight });
+      if (changes.length && lowersInRun.length) {
+        const first = lowersInRun.reduce((p, q) => (along(q).a0 < along(p).a0 ? q : p));
+        const last = lowersInRun.reduce((p, q) => (along(q).a1 > along(p).a1 ? q : p));
+        setModules(prev => prev.map(m => {
+          let next = m;
+          changes.forEach(({ atStart, on }) => {
+            const target = atStart ? first : last;
+            if (m.uniqueId !== target.moduleId) return;
+            const t = on ? s.thickness : counterThickness; // al quitarla se devuelve el espesor con el que se activó
+            const dw = on ? -t : t;
+            if (next.width + dw < 100) return;
+            next = { ...next, width: next.width + dw, positionX: atStart ? next.positionX - dw : next.positionX };
+          });
+          return next;
+        }));
+      }
+    }
+    setCounterThickness(s.thickness); setCounterOverhang(s.overhang); setHasSplash(s.hasSplash); setSplashHeight(s.splashHeight);
+    setCounterExtras(prev => ({ ...prev, [counterId]: { ...prev[counterId], ...extras } }));
+  };
+
   const deleteModule = (id: string) => { setModules(prev => prev.filter(m => m.uniqueId !== id)); };
 
   // Regla: un cambio hecho a mano (arrastrar, alargar, fondo, alto) no se aplica si crea un choque nuevo con otro módulo
   // o con un electrodoméstico. Los choques que ya existían no bloquean.
   const collisionKeys = (mods: KitchenModule[]) => new Set(findCollisions(buildBoxes({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    modules: mods, appliances, hasCounter, counterThickness, counterOverhang, hasLeftClosure, hasRightClosure,
+    modules: mods, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
   })).map(([p, q]) => `${p.id}|${q.id}`));
   const setModulesNoCollision = (update: (prev: KitchenModule[]) => KitchenModule[]) => {
@@ -1201,23 +1244,30 @@ export default function App() {
     setModulesNoCollision(prev => prev.map(m => m.uniqueId === id ? { ...m, height: Math.round(height), topGap: Math.round(topGap), heightLocked: true } : m));
   };
 
-  // Vistos de un módulo (se piden al hacer doble clic sobre él)
-  const setModuleVistos = (id: string, v: { left: boolean; right: boolean; thickness: number }) => {
-    // El visto sale de la medida del módulo (900 con visto de 15 = módulo de 885 + visto de 15): al activarlo o quitarlo
-    // se resta o se devuelve el espesor; si el visto va al inicio del muro, el módulo se corre ese espesor.
+  // Vistos y dilatadas de un módulo (se piden al hacer doble clic sobre él)
+  const setModuleVistos = (id: string, v: {
+    visto: { left: boolean; right: boolean; thickness: number };
+    dilat: { left: boolean; right: boolean; thickness: number; depth: number; height?: number };
+  }) => {
+    // Ambas piezas salen de la medida del módulo (900 con visto de 15 = módulo de 885 + visto de 15): al activarlas o quitarlas
+    // se resta o se devuelve el espesor; si van al inicio del muro, el módulo también se corre ese espesor.
     setModules(prev => prev.map(m => {
       if (m.uniqueId !== id) return m;
       const leftAtStart = m.wall !== 'B';
-      const t0 = m.vistoThickness ?? 15;
-      const side = (left: boolean, right: boolean, t: number) => ({
-        start: ((left && leftAtStart) || (right && !leftAtStart)) ? t : 0,
-        end: ((left && !leftAtStart) || (right && leftAtStart)) ? t : 0,
+      const side = (vl: boolean, vr: boolean, vt: number, dl: boolean, dr: boolean, dt: number) => ({
+        start: ((leftAtStart ? vl : vr) ? vt : 0) + ((leftAtStart ? dl : dr) ? dt : 0),
+        end: ((leftAtStart ? vr : vl) ? vt : 0) + ((leftAtStart ? dr : dl) ? dt : 0),
       });
-      const before = side(!!m.vistoLeft, !!m.vistoRight, t0);
-      const after = side(v.left, v.right, v.thickness);
+      const before = side(!!m.vistoLeft, !!m.vistoRight, m.vistoThickness ?? 15, !!m.dilatLeft, !!m.dilatRight, m.dilatThickness ?? 15);
+      const after = side(v.visto.left, v.visto.right, v.visto.thickness, v.dilat.left, v.dilat.right, v.dilat.thickness);
       const delta = (after.start + after.end) - (before.start + before.end);
       if (m.width - delta < 100) return m;
-      return { ...m, vistoLeft: v.left, vistoRight: v.right, vistoThickness: v.thickness, width: m.width - delta, positionX: m.positionX + (after.start - before.start) };
+      return {
+        ...m,
+        vistoLeft: v.visto.left, vistoRight: v.visto.right, vistoThickness: v.visto.thickness,
+        dilatLeft: v.dilat.left, dilatRight: v.dilat.right, dilatThickness: v.dilat.thickness, dilatDepth: v.dilat.depth, dilatHeight: v.dilat.height,
+        width: m.width - delta, positionX: m.positionX + (after.start - before.start),
+      };
     }));
   };
 
@@ -3026,7 +3076,17 @@ export default function App() {
   // Generar BOM automáticamente
   useEffect(() => {
     if (labeledModules.length > 0) {
-      const fillers = boxes.filter(bx => bx.kind === 'filler').map(bx => ({ height: bx.sz, depth: Math.max(bx.sx, bx.sy), thickness: Math.min(bx.sx, bx.sy), name: bx.id.startsWith('visto-') ? 'Visto' : 'Pieza de dilatación' }));
+      const fillers: Array<{ height: number; depth: number; thickness: number; name: string; color?: string }> = boxes.filter(bx => bx.kind === 'filler').map(bx => ({ height: bx.sz, depth: Math.max(bx.sx, bx.sy), thickness: Math.min(bx.sx, bx.sy), name: bx.id.startsWith('visto-') ? 'Visto' : 'Pieza de dilatación' }));
+      // Mesón y salpicaderos: largo x ancho x espesor (el salpicadero: largo x alto x espesor)
+      boxes.filter(bx => bx.kind === 'counter').forEach(bx => {
+        const splash = bx.id.startsWith('salpicadero-');
+        const waterfall = bx.id.startsWith('cascada-');
+        fillers.push(waterfall
+          ? { height: bx.sz, depth: Math.max(bx.sx, bx.sy), thickness: Math.min(bx.sx, bx.sy), name: bx.name, color: 'Material del mesón' }
+          : splash
+          ? { height: Math.max(bx.sx, bx.sy), depth: bx.sz, thickness: Math.min(bx.sx, bx.sy), name: bx.name, color: 'Material del mesón' }
+          : { height: Math.max(bx.sx, bx.sy), depth: Math.min(bx.sx, bx.sy), thickness: bx.sz, name: bx.name, color: 'Material del mesón' });
+      });
       const generatedBOM = generateBOM(labeledModules, lineType, faceColor, wallA, fillers);
       setBom(generatedBOM);
     }
@@ -3317,47 +3377,39 @@ export default function App() {
                         </div>
                       </div>
                     )}
+
+                    {hasCounter && (
+                      <>
+                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                          <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Salpicadero</label>
+                            <p className="text-[9px] font-bold text-slate-500 mt-1">Parte del mesón, del mismo material: atrás y en los lados donde hay muro o un módulo más alto</p>
+                          </div>
+                          <button onClick={() => setHasSplash(!hasSplash)} className={`w-10 h-5 rounded-full transition-all relative ${hasSplash ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+                            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${hasSplash ? 'left-5.5' : 'left-0.5'}`} />
+                          </button>
+                        </div>
+                        {hasSplash && (
+                          <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Altura del salpicadero (mm)</label>
+                            <div className="relative group">
+                              <input
+                                type="number"
+                                value={splashHeight}
+                                onChange={e => setSplashHeight(Math.max(20, Math.min(600, parseInt(e.target.value) || SPLASH_HEIGHT_DEFAULT)))}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none"
+                              />
+                              <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
 
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dilatación</label>
-                        <p className="text-[9px] font-bold text-slate-500 mt-1">Holgura de los módulos contra un muro lateral (Muro Izquierdo / Derecho), tapada con una pieza. Se aplica al optimizar la modulación</p>
-                      </div>
-                      <button onClick={() => setHasDilatation(!hasDilatation)} className={`w-10 h-5 rounded-full transition-all relative ${hasDilatation ? 'bg-indigo-600' : 'bg-slate-200'}`}>
-                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${hasDilatation ? 'left-5.5' : 'left-0.5'}`} />
-                      </button>
-                    </div>
-
-                    {hasDilatation && (
-                      <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Holgura y espesor (mm)</label>
-                          <div className="relative group">
-                            <input
-                              type="number"
-                              value={dilatationGap}
-                              onChange={e => setDilatationGap(Math.max(1, Math.min(50, parseInt(e.target.value) || DILATATION_GAP_DEFAULT)))}
-                              className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none"
-                            />
-                            <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div>
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fondo de la pieza (mm)</label>
-                          <div className="relative group">
-                            <input
-                              type="number"
-                              value={dilatationDepth}
-                              onChange={e => setDilatationDepth(Math.max(10, Math.min(300, parseInt(e.target.value) || DILATATION_DEPTH_DEFAULT)))}
-                              className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none"
-                            />
-                            <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                  <div className="p-4 bg-slate-50 rounded-2xl">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dilatación</label>
+                    <p className="text-[9px] font-bold text-slate-500 mt-1">Se pide por módulo: doble clic sobre el módulo, sección "Dilatada" (lado, espesor, fondo y altura)</p>
                   </div>
 
                   <div className="space-y-4">
@@ -3418,6 +3470,8 @@ export default function App() {
                   onEditModuleDimension={(id, width) => resizeModuleFromLabel(id, width)}
                   onEditModuleMeasure={updateModuleMeasure}
                   onSetModuleTopEdge={setModuleTopEdge}
+                  counterSettings={{ thickness: counterThickness, overhang: counterOverhang, hasSplash, splashHeight }}
+                  onEditCounter={(s, counterId, extras) => { applyCounterEdit(s, counterId, extras); }}
                   onSetModuleVistos={setModuleVistos}
                   onSplitHorizontal={splitModuleHorizontal}
                   onDragModule={handleDragModule3D}

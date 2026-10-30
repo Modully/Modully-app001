@@ -12,6 +12,14 @@ import { KitchenModule, Appliance, LayoutType, WallName } from './types';
  */
 
 export type BoxKind = 'wall' | 'zocalo' | 'lower' | 'upper' | 'tall' | 'appliance' | 'counter' | 'filler';
+/** Ajustes manuales de un tramo de mesón (clave: id de la losa, p. ej. "counter-A-0"). Izquierda/derecha se ven desde el frente.
+ *  Sin valor = automático (el salpicadero lateral va donde hay muro o un módulo más alto; la cascada no va). */
+export interface CounterExtras {
+  splashLeft?: boolean;
+  splashRight?: boolean;
+  waterfallLeft?: boolean;  // cascada: el mesón baja hasta el piso por ese costado
+  waterfallRight?: boolean;
+}
 export type BoxFacing = '+Y' | '+X' | '-X' | null; // hacia dónde mira el frente del módulo
 
 /** Abertura rectangular en una caja (mesón): misma convención de coordenadas que las cajas */
@@ -38,11 +46,15 @@ export interface Box {
   moduleId?: string;
   applianceType?: string;
   cutouts?: Cutout[]; // aberturas (poceta, estufa) cuando la caja es un mesón
+  // Ingletes a 45° entre el mesón y la cascada (solo se dibujan; las cajas siguen siendo prismas)
+  mitreBottom?: Array<'x-' | 'x+' | 'y-' | 'y+'>; // mesón: lados donde el canto de abajo se recorta un espesor
+  mitreTop?: 'x-' | 'x+' | 'y-' | 'y+';           // cascada: lado (el del mesón) donde el canto de arriba baja un espesor
 }
 
 // Constantes de geometría compartidas por la app, la escena y la exportación
 export const WALL_THICKNESS = 150;       // espesor de los muros (mm)
 export const LOWER_DEPTH = 570;          // fondo módulo base (mm)
+export const SPLASH_HEIGHT_DEFAULT = 70;   // alto del salpicadero (mm)
 export const UPPER_DEPTH = 330;          // fondo módulo aéreo (mm)
 export const CORNER_BLIND_OFFSET = LOWER_DEPTH; // esquina ciega: el muro B/C arranca tras el fondo del MB del muro A
 export const TOP_MARGIN = 20;            // espacio libre bajo el techo (mm)
@@ -105,6 +117,9 @@ export interface BuildBoxesInput {
   hasCounter?: boolean;
   counterThickness?: number;
   counterOverhang?: number;
+  hasSplash?: boolean;   // salpicadero: pieza del mismo material del mesón, atrás y en los lados con muro o módulo más alto
+  splashHeight?: number; // alto del salpicadero (por defecto 70 mm)
+  counterExtras?: Record<string, CounterExtras>;
 }
 
 export function buildBoxes(input: BuildBoxesInput): Box[] {
@@ -112,6 +127,8 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   const hasCounter = input.hasCounter ?? false;
   const counterThickness = input.counterThickness ?? COUNTER_THICKNESS_DEFAULT;
   const counterOverhang = input.counterOverhang ?? COUNTER_OVERHANG_DEFAULT;
+  const hasSplash = input.hasSplash ?? false;
+  const splashHeight = input.splashHeight ?? SPLASH_HEIGHT_DEFAULT;
   const T = WALL_THICKNESS;
   const zh = hasZocalo ? zocaloHeight : 0;
   const boxes: Box[] = [];
@@ -203,22 +220,36 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     // Los aéreos cuelgan desde el techo (queda TOP_MARGIN libre); el resto se apoya sobre el zócalo
     const z = mod.type === 'UPPER' ? spaceHeight - TOP_MARGIN - (mod.topGap ?? 0) - mod.height : zh;
     const p = placeOnWall(mod.wall, mod.positionX, mod.width, mod.depth, armOrigin(mod.wall, mod.type === 'UPPER'));
-    // Vistos: pieza del espesor elegido pegada al costado del módulo. El ancho del módulo ya viene restado (885 + 15 = 900),
-    // así que el conjunto ocupa la misma medida. Mirando el frente, la izquierda es el inicio del muro A y del C, y el final del B.
-    const vt = mod.vistoThickness ?? 15;
+    // Piezas laterales pegadas al módulo: la dilatada (con su propio fondo y alto) y el visto (todo el fondo). El ancho del
+    // módulo ya viene restado, así que el conjunto ocupa la misma medida. De adentro hacia afuera: dilatada y luego visto.
+    // Mirando el frente, la izquierda es el inicio del muro A y del C, y el final del B.
     const leftAtStart = mod.wall !== 'B';
-    const atStart = (mod.vistoLeft && leftAtStart) || (mod.vistoRight && !leftAtStart);
-    const atEnd = (mod.vistoLeft && !leftAtStart) || (mod.vistoRight && leftAtStart);
     const alongA = mod.wall === 'A';
-    const vistoTier = mod.type === 'UPPER' ? 'upper' : 'lower';
-    ([['start', atStart], ['end', atEnd]] as const).forEach(([side, on]) => {
-      if (!on) return;
-      const origin = side === 'start' ? -vt : (alongA ? p.sx : p.sy);
-      boxes.push({
-        id: `visto-${vistoTier}-${mod.uniqueId}-${side}`, name: `Visto ${mod.label ?? ''}`.trim(), kind: 'filler', wall: mod.wall as WallName,
-        x: alongA ? p.x + origin : p.x, y: alongA ? p.y : p.y + origin, z,
-        sx: alongA ? vt : p.sx, sy: alongA ? p.sy : vt, sz: mod.height, facing: null,
-      });
+    const lateralTier = mod.type === 'UPPER' ? 'upper' : 'lower';
+    const lateral = (l?: boolean, r?: boolean) => ({ start: leftAtStart ? l : r, end: leftAtStart ? r : l });
+    const vs = lateral(mod.vistoLeft, mod.vistoRight);
+    const ds = lateral(mod.dilatLeft, mod.dilatRight);
+    const vt = mod.vistoThickness ?? 15;
+    const dt = mod.dilatThickness ?? 15;
+    const dd = Math.min(mod.dilatDepth ?? DILATATION_DEPTH_DEFAULT, mod.depth);
+    const dh = mod.dilatHeight ?? mod.height;
+    (['start', 'end'] as const).forEach(side => {
+      let off = 0; // distancia ya ocupada hacia afuera del módulo
+      const place = (thick: number, depthMm: number, heightMm: number, id: string, name: string) => {
+        const along0 = side === 'start' ? -off - thick : (alongA ? p.sx : p.sy) + off;
+        // fondo desde el frente del módulo (el frente mira +Y en A, +X en B y -X en C)
+        const full = depthMm >= (alongA ? p.sy : p.sx);
+        const acrossStart = full ? (alongA ? p.y : p.x) : (alongA ? p.y + p.sy - depthMm : mod.wall === 'B' ? p.x + p.sx - depthMm : p.x);
+        const across = full ? (alongA ? p.sy : p.sx) : depthMm;
+        boxes.push({
+          id, name, kind: 'filler', wall: mod.wall as WallName,
+          x: alongA ? p.x + along0 : acrossStart, y: alongA ? acrossStart : p.y + along0, z,
+          sx: alongA ? thick : across, sy: alongA ? across : thick, sz: heightMm, facing: null,
+        });
+        off += thick;
+      };
+      if (ds[side]) place(dt, dd, dh, `dilatacion-${lateralTier}-${mod.uniqueId}-${side}`, `Pieza de dilatación ${mod.label ?? ''}`.trim());
+      if (vs[side]) place(vt, mod.depth, mod.height, `visto-${lateralTier}-${mod.uniqueId}-${side}`, `Visto ${mod.label ?? ''}`.trim());
     });
     boxes.push({
       id: mod.uniqueId,
@@ -312,18 +343,38 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       });
 
       runs.forEach((run, index) => {
-        const start = range(run[0]).start;
-        const end = range(run[run.length - 1]).end;
+        // El mesón cubre también las piezas laterales pegadas a sus módulos (dilatadas y vistos): llega hasta su borde exterior
+        const lateral = boxes.filter(f => f.kind === 'filler' && f.wall === wall
+          && (f.id.startsWith('dilatacion-lower-') || f.id.startsWith('visto-lower-'))
+          && run.some(m => f.id.includes(`-lower-${m.moduleId}-`)));
+        const start = Math.min(range(run[0]).start, ...lateral.map(f => range(f).start));
+        const end = Math.max(range(run[run.length - 1]).end, ...lateral.map(f => range(f).end));
         const depth = Math.max(...run.map(b => (wall === 'A' ? b.sy : b.sx)));
         const topOfModules = Math.max(...run.map(b => b.z + b.sz));
-        const length = end - start;
         const slabDepth = depth + counterOverhang;
+        const ct = counterThickness;
+        const counterTop = topOfModules + ct;
+
+        // Ajustes manuales del tramo: izquierda/derecha vistas desde el frente (inicio del muro en A y C, final en B)
+        const counterId = `counter-${wall}-${index}`;
+        const extras = input.counterExtras?.[counterId] ?? {};
+        const leftIsStart = wall !== 'B';
+        const side = (l?: boolean, r?: boolean) => (leftIsStart ? { start: l, end: r } : { start: r, end: l });
+        const sp = side(extras.splashLeft, extras.splashRight);
+        const wf = side(extras.waterfallLeft, extras.waterfallRight);
+
+        // Cascada: el mesón baja del tope al piso por el costado, con inglete a 45° contra la losa. Ocupa un espesor
+        // contra el extremo del tramo (el módulo de ese extremo se acorta ese espesor, así el conjunto no cambia de medida)
+        // y la losa llega hasta el borde exterior de la cascada.
+        const slabStart = start - (wf.start ? ct : 0);
+        const slabEnd = end + (wf.end ? ct : 0);
+        const length = slabEnd - slabStart;
 
         const slab = wall === 'A'
-          ? { x: start, y: 0, sx: length, sy: slabDepth }
+          ? { x: slabStart, y: 0, sx: length, sy: slabDepth }
           : wall === 'B'
-            ? { x: 0, y: start, sx: slabDepth, sy: length }
-            : { x: wallA - slabDepth, y: start, sx: slabDepth, sy: length };
+            ? { x: 0, y: slabStart, sx: slabDepth, sy: length }
+            : { x: wallA - slabDepth, y: slabStart, sx: slabDepth, sy: length };
 
         const cutouts: Cutout[] = [];
         appliances.filter(a => a.active && a.wall === wall && (a.type === 'sink' || a.type === 'stove')).forEach(app => {
@@ -338,15 +389,79 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
             : { label: isSink ? 'Poceta' : 'Estufa', x: c.x - cd / 2, y: c.y - cw / 2, sx: cd, sy: cw });
         });
 
+        // Lados de la caja (en x o y) del inicio y del final del tramo
+        const startSide = wall === 'A' ? 'x-' : 'y-';
+        const endSide = wall === 'A' ? 'x+' : 'y+';
+        const mitreBottom: Array<'x-' | 'x+' | 'y-' | 'y+'> = [];
+        if (wf.start) mitreBottom.push(startSide);
+        if (wf.end) mitreBottom.push(endSide);
+
         boxes.push({
-          id: `counter-${wall}-${index}`,
+          id: counterId,
           name: `Mesón ${wall}${runs.length > 1 ? ` (${index + 1})` : ''}`,
           kind: 'counter',
           wall,
           x: slab.x, y: slab.y, z: topOfModules,
-          sx: slab.sx, sy: slab.sy, sz: counterThickness,
+          sx: slab.sx, sy: slab.sy, sz: ct,
           facing: wall === 'A' ? '+Y' : wall === 'B' ? '+X' : '-X',
           cutouts,
+          mitreBottom: mitreBottom.length ? mitreBottom : undefined,
+        });
+
+        // (a lo largo del muro, hacia el frente) -> caja
+        const piece = (a0: number, a1: number, c0: number, c1: number) => (wall === 'A'
+          ? { x: a0, y: c0, sx: a1 - a0, sy: c1 - c0 }
+          : wall === 'B'
+            ? { x: c0, y: a0, sx: c1 - c0, sy: a1 - a0 }
+            : { x: wallA - c1, y: a0, sx: c1 - c0, sy: a1 - a0 });
+
+        // --- Salpicadero: del mismo material y espesor del mesón; va atrás (contra el muro) y en los extremos del tramo
+        // que tocan un muro o un módulo más alto que el mesón (torre, nevera, alacena). Se apoya sobre el mesón ---
+        if (splashHeight > 0) {
+          const st = ct;
+          // Un obstáculo cruza el nivel del mesón (muro, torre, nevera, alacena) y está pegado al extremo del tramo
+          const along = (bx: Box) => (wall === 'A' ? [bx.x, bx.x + bx.sx] : [bx.y, bx.y + bx.sy]);
+          const across = (bx: Box) => (wall === 'C' ? [wallA - (bx.x + bx.sx), wallA - bx.x] : wall === 'A' ? [bx.y, bx.y + bx.sy] : [bx.x, bx.x + bx.sx]);
+          const touches = (a0: number, a1: number) => boxes.some(ob => {
+            if (!(ob.kind === 'wall' || ob.kind === 'tall' || ob.kind === 'appliance')) return false;
+            if (!(ob.z < counterTop - 1 && ob.z + ob.sz > counterTop + 1)) return false;
+            const [p0, p1] = along(ob);
+            const [q0, q1] = across(ob);
+            return Math.min(p1, a1) - Math.max(p0, a0) > 0.5 && Math.min(q1, slabDepth) - Math.max(q0, 0) > 1;
+          });
+          const SPLASH_REACH = 20; // un obstáculo a esta distancia o menos del extremo (holgura de dilatación) cuenta como pegado
+          // Donde hay cascada no hace falta salpicadero lateral: la losa termina en la cascada
+          const wantStart = !wf.start && (sp.start ?? (hasSplash && touches(slabStart - SPLASH_REACH, slabStart)));
+          const wantEnd = !wf.end && (sp.end ?? (hasSplash && touches(slabEnd, slabEnd + SPLASH_REACH)));
+          const pieces: Array<[string, { x: number; y: number; sx: number; sy: number }]> = [];
+          if (hasSplash) pieces.push(['atrás', piece(slabStart, slabEnd, 0, st)]);
+          if (wantStart) pieces.push(['inicio', piece(slabStart, slabStart + st, hasSplash ? st : 0, slabDepth)]);
+          if (wantEnd) pieces.push(['final', piece(slabEnd - st, slabEnd, hasSplash ? st : 0, slabDepth)]);
+          pieces.forEach(([label, p]) => boxes.push({
+            id: `salpicadero-${wall}-${index}-${label}`,
+            name: `Salpicadero ${wall}${runs.length > 1 ? ` (${index + 1})` : ''} ${label}`,
+            kind: 'counter',
+            wall,
+            x: p.x, y: p.y, z: counterTop,
+            sx: p.sx, sy: p.sy, sz: splashHeight,
+            facing: null,
+          }));
+        }
+
+        // --- Cascada (bajo el inglete): del piso hasta la cara superior del mesón; el canto de arriba baja un espesor
+        // por el lado que mira al mesón ---
+        ([['inicio', wf.start, piece(start - ct, start, 0, slabDepth), endSide], ['final', wf.end, piece(end, end + ct, 0, slabDepth), startSide]] as const).forEach(([label, on, p, inner]) => {
+          if (!on) return;
+          boxes.push({
+            id: `cascada-${wall}-${index}-${label}`,
+            name: `Cascada ${wall}${runs.length > 1 ? ` (${index + 1})` : ''} ${label}`,
+            kind: 'counter',
+            wall,
+            x: p.x, y: p.y, z: 0,
+            sx: p.sx, sy: p.sy, sz: counterTop,
+            facing: null,
+            mitreTop: inner,
+          });
         });
       });
     });

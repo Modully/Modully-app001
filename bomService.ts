@@ -290,7 +290,7 @@ export function generateBOM(
   lineType: string,
   faceColor: string,
   wallWidth: number,
-  fillers: Array<{ height: number; depth: number; thickness: number; name?: string }> = []
+  fillers: Array<{ height: number; depth: number; thickness: number; name?: string; color?: string }> = []
 ): BOM {
   const allPieces: PieceRaw[] = [];
 
@@ -308,7 +308,7 @@ export function generateBOM(
     length: f.height,
     width: f.depth,
     thickness: f.thickness,
-    color: `${structureColorName(lineType, faceColor)} RH`,
+    color: f.color ?? `${structureColorName(lineType, faceColor)} RH`,
     edgeType: '',
   }));
 

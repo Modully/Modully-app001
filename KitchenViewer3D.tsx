@@ -21,15 +21,23 @@ const UPPER_BASE_HEIGHT = COUNTER_HEIGHT + BACKSPLASH_GAP; // Base de aéreos so
  * en las vistas ortogonales (planta/frontal) distanceFactor se multiplica por el zoom y los controles
  * salen gigantes, así que se muestran a tamaño fijo reducido.
  */
-const HtmlScaled: React.FC<React.ComponentProps<typeof Html>> = ({ children, distanceFactor, ...rest }) => {
+const HtmlScaled: React.FC<React.ComponentProps<typeof Html> & { zoomScale?: boolean }> = ({ children, distanceFactor, zoomScale, ...rest }) => {
   const isOrtho = useThree((state) => (state.camera as any).isOrthographicCamera);
+  // zoomScale: en vistas ortogonales el control crece o se encoge con el zoom (1 = el zoom del encuadre inicial de la vista)
+  const [zoomK, setZoomK] = useState(1);
+  useFrame(({ camera }) => {
+    if (!zoomScale || !(camera as any).isOrthographicCamera) return;
+    const fit = camera.userData.fitZoom || camera.zoom;
+    const k = Math.min(3, Math.max(0.4, Math.round((camera.zoom / fit) * 20) / 20));
+    if (k !== zoomK) setZoomK(k);
+  });
   // El contenedor de drei mide el tamaño SIN escalar del control (p. ej. 40x40 px) aunque se vea mucho más pequeño,
   // y capturaba los clics: tapaba los botones vecinos (la "X" y el "+"). Por eso el contenedor no recibe clics
   // (pointer-events none en su estilo) y solo el contenido visible los recibe.
   if (isOrtho) {
     return (
       <Html {...rest} style={{ ...rest.style, pointerEvents: 'none' }}>
-        <div style={{ transform: 'scale(0.3)', transformOrigin: 'center', pointerEvents: 'auto' }}>{children}</div>
+        <div style={{ transform: `scale(${0.3 * (zoomScale ? zoomK : 1)})`, transformOrigin: 'center', pointerEvents: 'auto' }}>{children}</div>
       </Html>
     );
   }
@@ -100,7 +108,7 @@ interface Module3DProps {
   onCloseEditor?: () => void;
   onApplyMeasures?: (id: string, m: { width: number; depth: number; height: number }) => void;
   onSetTop?: (id: string, height: number, topGap: number) => void;
-  onSetVistos?: (id: string, v: { left: boolean; right: boolean; thickness: number }) => void;
+  onSetVistos?: (id: string, v: SideConfig) => void;
   onSplitHorizontal?: (id: string) => void; // divide el módulo en dos a lo alto
   source?: KitchenModule; // módulo completo (la copia `module` puede venir con el cuerpo acortado por los vistos)
 }
@@ -462,7 +470,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
       {/* Doble clic: editor de largo, ancho (fondo) y alto */}
       {editing && onApplyMeasures && onCloseEditor && (
         <Html position={[0, module.height / 2000 + 0.01, 0]} center zIndexRange={[200, 0]} style={{ pointerEvents: 'none' }}>
-          <ModuleEditor module={source ?? module} onApply={(m) => { onApplyMeasures(module.uniqueId, { width: m.width, depth: m.depth, height: m.height }); onSetVistos?.(module.uniqueId, m.visto); }} onClose={onCloseEditor} />
+          <ModuleEditor module={source ?? module} onApply={(m) => { onApplyMeasures(module.uniqueId, { width: m.width, depth: m.depth, height: m.height }); onSetVistos?.(module.uniqueId, m.sides); }} onClose={onCloseEditor} />
         </Html>
       )}
 
@@ -570,6 +578,7 @@ const JunctionControl3D: React.FC<JunctionControl3DProps> = ({ leftModule, right
 
   return (
     <HtmlScaled
+      zoomScale
       position={position}
       rotation={rotation}
       center
@@ -750,7 +759,91 @@ const Appliance3D: React.FC<{ appliance: Appliance, position: [number, number, n
 };
 
 /** Mesón: losa con aberturas (poceta, estufa) construida a partir de su caja en la lista */
-const Counter3D: React.FC<{ box: Box; wallA: number; offsetZ: number; translucent: boolean }> = ({ box, wallA, offsetZ, translucent }) => {
+/** Doble clic en el mesón: sus tres medidas (largo, fondo y espesor) y el salpicadero */
+type CounterSettings = { thickness: number; overhang: number; hasSplash: boolean; splashHeight: number };
+/** Estado izquierda/derecha (visto desde el frente) del salpicadero lateral y de la cascada de un tramo de mesón */
+type CounterSides = { splashLeft: boolean; splashRight: boolean; waterfallLeft: boolean; waterfallRight: boolean };
+
+const CounterEditor: React.FC<{
+  box: Box;
+  wall: string;
+  settings: CounterSettings;
+  sides: CounterSides;
+  onApply: (s: CounterSettings, sides: CounterSides) => void;
+  onClose: () => void;
+}> = ({ box, wall, settings, sides, onApply, onClose }) => {
+  // Largo = a lo largo del muro (lo definen los módulos); fondo = hacia el frente (módulos + voladizo)
+  const length = Math.round(wall === 'A' ? box.sx : box.sy);
+  const baseDepth = Math.round((wall === 'A' ? box.sy : box.sx) - settings.overhang); // fondo de los módulos
+  const [vals, setVals] = useState({ depth: String(baseDepth + settings.overhang), thickness: String(settings.thickness), splashHeight: String(settings.splashHeight) });
+  const [hasSplash, setHasSplash] = useState(settings.hasSplash);
+  const [side, setSide] = useState(sides);
+  const apply = () => {
+    const n = (s: string, f: number) => { const x = parseFloat(s); return isNaN(x) ? f : x; };
+    onApply({
+      thickness: Math.max(10, Math.min(80, n(vals.thickness, settings.thickness))),
+      overhang: Math.max(0, Math.min(100, n(vals.depth, baseDepth + settings.overhang) - baseDepth)),
+      hasSplash,
+      splashHeight: Math.max(20, Math.min(600, n(vals.splashHeight, settings.splashHeight))),
+    }, side);
+    onClose();
+  };
+  const field = (key: 'depth' | 'thickness' | 'splashHeight', label: string) => (
+    <label className="flex items-center justify-between gap-2 text-[11px] font-bold text-slate-600">
+      {label}
+      <input
+        type="number"
+        value={vals[key]}
+        onChange={(e) => setVals({ ...vals, [key]: e.target.value })}
+        onFocus={(e) => e.currentTarget.select()}
+        onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') apply(); if (e.key === 'Escape') onClose(); }}
+        className="w-20 px-1.5 py-1 rounded border border-slate-300 bg-white text-[12px] font-black text-slate-800 outline-none focus:border-indigo-500"
+      />
+    </label>
+  );
+  return (
+    <div data-overlay data-module-editor className="pointer-events-auto w-48 p-2.5 space-y-1.5 rounded-xl bg-white border border-slate-300 shadow-xl" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="text-[10px] font-black uppercase tracking-wide text-slate-500 truncate">{box.name}</div>
+      <div className="flex items-center justify-between text-[11px] font-bold text-slate-600">
+        Largo
+        <span className="w-20 px-1.5 py-1 rounded bg-slate-100 text-[12px] font-black text-slate-500" title="Lo definen los módulos del tramo">{length}</span>
+      </div>
+      {field('depth', 'Ancho (fondo)')}
+      {field('thickness', 'Espesor')}
+      <div className="pt-1 border-t border-slate-200 space-y-1">
+        <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
+          <input type="checkbox" checked={hasSplash} onChange={(e) => setHasSplash(e.target.checked)} />
+          Salpicadero
+        </label>
+        {hasSplash && field('splashHeight', 'Altura')}
+        <div className="flex items-center justify-between text-[11px] font-bold text-slate-600">
+          Lados
+          <span className="flex items-center gap-2">
+            <label className="flex items-center gap-1"><input type="checkbox" checked={side.splashLeft} onChange={(e) => setSide({ ...side, splashLeft: e.target.checked })} />Izq.</label>
+            <label className="flex items-center gap-1"><input type="checkbox" checked={side.splashRight} onChange={(e) => setSide({ ...side, splashRight: e.target.checked })} />Der.</label>
+          </span>
+        </div>
+      </div>
+      <div className="pt-1 border-t border-slate-200 space-y-1">
+        <div className="text-[10px] font-black uppercase tracking-wide text-slate-500" title="El mesón baja del tope al piso por el costado">Cascada</div>
+        <div className="flex items-center gap-3 text-[11px] font-bold text-slate-600">
+          <label className="flex items-center gap-1"><input type="checkbox" checked={side.waterfallLeft} onChange={(e) => setSide({ ...side, waterfallLeft: e.target.checked })} />Izquierda</label>
+          <label className="flex items-center gap-1"><input type="checkbox" checked={side.waterfallRight} onChange={(e) => setSide({ ...side, waterfallRight: e.target.checked })} />Derecha</label>
+        </div>
+      </div>
+      <div className="flex gap-1.5 pt-1">
+        <button className="flex-1 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black" onClick={apply}>Aplicar</button>
+        <button className="flex-1 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-black" onClick={onClose}>Cerrar</button>
+      </div>
+    </div>
+  );
+};
+
+const Counter3D: React.FC<{
+  box: Box; wallA: number; offsetZ: number; translucent: boolean;
+  selected?: boolean; editing?: boolean; settings?: CounterSettings; sides?: CounterSides;
+  onSelect?: (id: string) => void; onOpenEditor?: (id: string) => void; onCloseEditor?: () => void; onApply?: (s: CounterSettings, sides: CounterSides) => void;
+}> = ({ box, wallA, offsetZ, translucent, selected, editing, settings, sides, onSelect, onOpenEditor, onCloseEditor, onApply }) => {
   const cutoutsKey = JSON.stringify(box.cutouts || []);
   const geometry = useMemo(() => {
     // La forma se dibuja en el plano (X, -Y) y se extruye hacia arriba; al girarla, -Y pasa a ser la profundidad de la escena
@@ -765,14 +858,54 @@ const Counter3D: React.FC<{ box: Box; wallA: number; offsetZ: number; translucen
     });
     const g = new THREE.ExtrudeGeometry(shape, { depth: box.sz / 1000, bevelEnabled: false });
     g.rotateX(-Math.PI / 2);
+    // Inglete a 45° entre el mesón y la cascada: el canto de abajo del mesón (o de arriba de la cascada) se corre un espesor
+    if (box.mitreBottom || box.mitreTop) {
+      const pos = g.attributes.position as THREE.BufferAttribute;
+      const e = 1e-6;
+      const bx0 = box.x / 1000, bx1 = (box.x + box.sx) / 1000, bz0 = box.y / 1000, bz1 = (box.y + box.sy) / 1000, h = box.sz / 1000;
+      const t = (box.mitreBottom ? box.sz : Math.min(box.sx, box.sy)) / 1000;
+      for (let i = 0; i < pos.count; i++) {
+        let x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+        if (box.mitreBottom && y < e) {
+          box.mitreBottom.forEach(s => {
+            if (s === 'x+' && Math.abs(x - bx1) < e) x -= t;
+            else if (s === 'x-' && Math.abs(x - bx0) < e) x += t;
+            else if (s === 'y+' && Math.abs(z - bz1) < e) z -= t;
+            else if (s === 'y-' && Math.abs(z - bz0) < e) z += t;
+          });
+        }
+        if (box.mitreTop && y > h - e) {
+          const s = box.mitreTop;
+          if ((s === 'x+' && Math.abs(x - bx1) < e) || (s === 'x-' && Math.abs(x - bx0) < e) || (s === 'y+' && Math.abs(z - bz1) < e) || (s === 'y-' && Math.abs(z - bz0) < e)) y -= t;
+        }
+        pos.setXYZ(i, x, y, z);
+      }
+      pos.needsUpdate = true;
+      g.computeVertexNormals();
+    }
     return g;
-  }, [box.x, box.y, box.sx, box.sy, box.sz, cutoutsKey]);
+  }, [box.x, box.y, box.sx, box.sy, box.sz, cutoutsKey, JSON.stringify(box.mitreBottom), box.mitreTop]);
 
+  const interactive = !!onSelect && box.id.startsWith('counter-'); // los salpicaderos se editan desde su mesón
   return (
-    <mesh geometry={geometry} position={[-wallA / 2000, box.z / 1000, offsetZ]} castShadow receiveShadow>
-      <meshStandardMaterial color="#d8d3ca" roughness={0.35} metalness={0.05} transparent={translucent} opacity={translucent ? 0.85 : 1} />
-      <Edges color="#8b8579" />
-    </mesh>
+    <>
+      <mesh
+        geometry={geometry}
+        position={[-wallA / 2000, box.z / 1000, offsetZ]}
+        castShadow
+        receiveShadow
+        onClick={interactive ? (e) => { e.stopPropagation(); if (!isOverlay(e)) onSelect!(box.id); } : undefined}
+        onDoubleClick={interactive ? (e) => { e.stopPropagation(); if (isOverlay(e)) return; onSelect!(box.id); onOpenEditor?.(box.id); } : undefined}
+      >
+        <meshStandardMaterial color="#d8d3ca" roughness={0.35} metalness={0.05} transparent={translucent} opacity={translucent ? 0.85 : 1} />
+        <Edges color={selected ? '#ef4444' : '#8b8579'} linewidth={selected ? 2 : 1} />
+      </mesh>
+      {editing && settings && sides && onApply && onCloseEditor && (
+        <Html position={[(box.x + box.sx / 2 - wallA / 2) / 1000, (box.z + box.sz) / 1000 + 0.02, offsetZ + (box.y + box.sy / 2) / 1000]} center zIndexRange={[200, 0]} style={{ pointerEvents: 'none' }}>
+          <CounterEditor box={box} wall={box.wall} settings={settings} sides={sides} onApply={onApply} onClose={onCloseEditor} />
+        </Html>
+      )}
+    </>
   );
 };
 
@@ -1014,17 +1147,35 @@ const MeasureTool: React.FC<{ corners: THREE.Vector3[]; measures: Measure[]; onC
 /** Marca los elementos HTML superpuestos para que el módulo de debajo no los tome como clic o arrastre propio */
 const isOverlay = (e: { nativeEvent?: Event }) => !!(e.nativeEvent?.target as HTMLElement | null)?.closest?.('[data-overlay]');
 
+/** Piezas laterales de un módulo: visto (todo el fondo) y dilatada (fondo y altura propios). Izquierda/derecha vistas desde el frente */
+type SideConfig = {
+  visto: { left: boolean; right: boolean; thickness: number };
+  dilat: { left: boolean; right: boolean; thickness: number; depth: number; height?: number };
+};
+
 /** Doble clic en un módulo: se escriben las tres medidas (largo, ancho = fondo y alto) */
 const ModuleEditor: React.FC<{
   module: KitchenModule;
-  onApply: (m: { width: number; depth: number; height: number; visto: { left: boolean; right: boolean; thickness: number } }) => void;
+  onApply: (m: { width: number; depth: number; height: number; sides: SideConfig }) => void;
   onClose: () => void;
 }> = ({ module, onApply, onClose }) => {
   const [visto, setVisto] = useState({ left: !!module.vistoLeft, right: !!module.vistoRight, thickness: module.vistoThickness ?? 15 });
+  const [dilat, setDilat] = useState({ left: !!module.dilatLeft, right: !!module.dilatRight, thickness: String(module.dilatThickness ?? 15), depth: String(module.dilatDepth ?? 70), height: String(module.dilatHeight ?? module.height) });
   const [vals, setVals] = useState({ width: String(Math.round(module.width)), depth: String(Math.round(module.depth)), height: String(Math.round(module.height)) });
   const apply = () => {
     const n = (s: string, fallback: number) => { const x = parseFloat(s); return isNaN(x) ? fallback : x; };
-    onApply({ width: n(vals.width, module.width), depth: n(vals.depth, module.depth), height: n(vals.height, module.height), visto });
+    onApply({ width: n(vals.width, module.width), depth: n(vals.depth, module.depth), height: n(vals.height, module.height),
+      sides: {
+        visto,
+        dilat: {
+          left: dilat.left, right: dilat.right,
+          thickness: Math.max(1, Math.min(50, n(dilat.thickness, 15))),
+          depth: Math.max(10, Math.min(1200, n(dilat.depth, 70))),
+          // La altura sugerida es la del módulo: si no se cambia, la pieza sigue la altura del módulo
+          height: Math.round(n(dilat.height, module.height)) === Math.round(n(vals.height, module.height)) ? undefined : n(dilat.height, module.height),
+        },
+      },
+    });
     onClose();
   };
   const field = (key: 'width' | 'depth' | 'height', label: string, autoFocus = false) => (
@@ -1064,6 +1215,30 @@ const ModuleEditor: React.FC<{
             <option value={19}>19 mm</option>
           </select>
         </label>
+      </div>
+      <div className="pt-1 border-t border-slate-200 space-y-1">
+        <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">Dilatada (lado)</div>
+        <div className="flex items-center gap-3 text-[11px] font-bold text-slate-600">
+          <label className="flex items-center gap-1"><input type="checkbox" checked={dilat.left} onChange={(e) => setDilat({ ...dilat, left: e.target.checked })} />Izquierda</label>
+          <label className="flex items-center gap-1"><input type="checkbox" checked={dilat.right} onChange={(e) => setDilat({ ...dilat, right: e.target.checked })} />Derecha</label>
+        </div>
+        {(dilat.left || dilat.right) && (
+          <>
+            {([['thickness', 'Espesor'], ['depth', 'Profundidad'], ['height', 'Altura']] as const).map(([key, label]) => (
+              <label key={key} className="flex items-center justify-between gap-2 text-[11px] font-bold text-slate-600" title={key === 'height' ? 'Sugerida: la altura del módulo' : undefined}>
+                {label}
+                <input
+                  type="number"
+                  value={dilat[key]}
+                  onChange={(e) => setDilat({ ...dilat, [key]: e.target.value })}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') apply(); if (e.key === 'Escape') onClose(); }}
+                  className="w-20 px-1.5 py-1 rounded border border-slate-300 bg-white text-[12px] font-black text-slate-800 outline-none focus:border-indigo-500"
+                />
+              </label>
+            ))}
+          </>
+        )}
       </div>
       <div className="flex gap-1.5 pt-1">
         <button className="flex-1 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black" onClick={apply}>Aplicar</button>
@@ -1197,12 +1372,12 @@ const CameraController: React.FC<{ viewMode: 'plan' | 'frontal' | 'isometric' | 
       camera.position.set(plan.cx, 10, plan.cz + 0.01);
       target.set(plan.cx, 0, plan.cz);
       rotate = false;
-      if (camera.isOrthographicCamera) camera.zoom = Math.min(size.width / plan.w, size.height / plan.h);
+      if (camera.isOrthographicCamera) { camera.zoom = Math.min(size.width / plan.w, size.height / plan.h); camera.userData.fitZoom = camera.zoom; }
     } else if (viewMode === 'frontal') {
       camera.position.set(frontal.cx, frontal.cy, 10);
       target.set(frontal.cx, frontal.cy, 0);
       rotate = false;
-      if (camera.isOrthographicCamera) camera.zoom = Math.min(size.width / frontal.w, size.height / frontal.h);
+      if (camera.isOrthographicCamera) { camera.zoom = Math.min(size.width / frontal.w, size.height / frontal.h); camera.userData.fitZoom = camera.zoom; }
     } else {
       // Isométrica y 3D: perspectiva centrada en la cocina, a una distancia que depende de su tamaño
       const d = Math.max(plan.w, plan.h) * 0.85;
@@ -1253,7 +1428,9 @@ interface KitchenViewer3DProps {
   onEditModuleDimension?: (id: string, width: number) => void;
   onEditModuleMeasure?: (id: string, field: 'height' | 'depth', value: number) => void;
   onSetModuleTopEdge?: (id: string, height: number, topGap: number) => void;
-  onSetModuleVistos?: (id: string, v: { left: boolean; right: boolean; thickness: number }) => void;
+  counterSettings?: CounterSettings;
+  onEditCounter?: (s: CounterSettings, counterId: string, extras: { splashLeft?: boolean; splashRight?: boolean; waterfallLeft?: boolean; waterfallRight?: boolean }) => void;
+  onSetModuleVistos?: (id: string, v: SideConfig) => void;
   onSplitHorizontal?: (id: string) => void;
   onDragModule?: (id: string, newPositionX: number) => void;
   onResizeEdge?: (id: string, side: 'left' | 'right', deltaX: number, initialWidth: number, initialPositionX: number) => void;
@@ -1266,17 +1443,19 @@ interface KitchenViewer3DProps {
 
 export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   layout, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules, boxes, appliances, hasIsland, island, viewMode, hasZocalo, zocaloHeight = 100,
-  hasLeftClosure, hasRightClosure, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSplitHorizontal, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
+  hasLeftClosure, hasRightClosure, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSplitHorizontal, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
 }) => {
   const controlsRef = useRef<any>(null);
   // Módulo seleccionado (clic) y módulo cuyo editor de medidas está abierto (doble clic)
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedCounter, setSelectedCounter] = useState<string | null>(null);
+  const [editingCounter, setEditingCounter] = useState<string | null>(null);
   const [measures, setMeasures] = useState<Measure[]>([]);
   // Al salir de la cinta se borran las mediciones, y mientras se mide no hay selección
   useEffect(() => {
     if (!measureMode) setMeasures([]);
-    else { setSelectedId(null); setEditingId(null); }
+    else { setSelectedId(null); setEditingId(null); setSelectedCounter(null); setEditingCounter(null); }
   }, [measureMode]);
   // Qué se dibuja. Lo que se oculta se lleva sus herramientas: etiquetas de medida, botones X y +, flechas dobles y cotas.
   const vis = visibility ?? { upper: true, lower: true, counter: true, appliances: true };
@@ -1372,6 +1551,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           if ((e.target as HTMLElement | null)?.closest?.('[data-overlay]')) return;
           setSelectedId(null);
           setEditingId(null);
+          setSelectedCounter(null);
+          setEditingCounter(null);
         }}
       >
         {isOrtho
@@ -1433,7 +1614,33 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         ))}
 
         {vis.counter && boxes.filter(b => b.kind === 'counter').map(b => (
-          <Counter3D key={b.id} box={b} wallA={wallA} offsetZ={offsetZ} translucent={viewMode === 'plan'} />
+          <Counter3D
+            key={b.id}
+            box={b}
+            wallA={wallA}
+            offsetZ={offsetZ}
+            translucent={viewMode === 'plan'}
+            selected={!measureMode && selectedCounter === b.id}
+            editing={!measureMode && editingCounter === b.id}
+            settings={counterSettings}
+            sides={(() => {
+              // Qué hay hoy a cada lado del tramo (visto desde el frente): inicio del muro en A y C, final en B
+              const has = (kind: string, label: string) => boxes.some(x => x.id === `${kind}-${b.wall}-${b.id.split('-')[2]}-${label}`);
+              const l = b.wall === 'B' ? 'final' : 'inicio';
+              const r = b.wall === 'B' ? 'inicio' : 'final';
+              return { splashLeft: has('salpicadero', l), splashRight: has('salpicadero', r), waterfallLeft: has('cascada', l), waterfallRight: has('cascada', r) };
+            })()}
+            onSelect={measureMode || !onEditCounter ? undefined : (id) => { setSelectedCounter(id); setSelectedId(null); setEditingId(null); }}
+            onOpenEditor={setEditingCounter}
+            onCloseEditor={() => setEditingCounter(null)}
+            onApply={onEditCounter ? ((s, now) => {
+              // Solo se guarda lo que el usuario cambió; lo demás sigue automático
+              const before = { splashLeft: boxes.some(x => x.id === `salpicadero-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'final' : 'inicio'}`), splashRight: boxes.some(x => x.id === `salpicadero-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'inicio' : 'final'}`), waterfallLeft: boxes.some(x => x.id === `cascada-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'final' : 'inicio'}`), waterfallRight: boxes.some(x => x.id === `cascada-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'inicio' : 'final'}`) };
+              const extras: { splashLeft?: boolean; splashRight?: boolean; waterfallLeft?: boolean; waterfallRight?: boolean } = {};
+              (Object.keys(now) as Array<keyof typeof now>).forEach(k => { if (now[k] !== before[k]) extras[k] = now[k]; });
+              onEditCounter(s, b.id, extras);
+            }) : undefined}
+          />
         ))}
 
         {modules.map((mod) => {
@@ -1471,7 +1678,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               return rightBlocked && !leftBlocked ? 'left' : 'right';
             })()}
             editing={editingId === mod.uniqueId}
-            onSelect={measureMode ? undefined : setSelectedId}
+            onSelect={measureMode ? undefined : (id) => { setSelectedId(id); setSelectedCounter(null); setEditingCounter(null); }}
             onOpenEditor={measureMode ? undefined : setEditingId}
             onCloseEditor={() => setEditingId(null)}
             onSetTop={onSetModuleTopEdge}

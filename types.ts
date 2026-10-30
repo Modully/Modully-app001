@@ -36,6 +36,14 @@ export interface KitchenModule extends ModuleTemplate {
   vistoLeft?: boolean;
   vistoRight?: boolean;
   vistoThickness?: number;
+  // Dilatada: pieza lateral que tapa la holgura contra un muro irregular. Izquierda/derecha vistas desde el frente. Como el
+  // visto, queda dentro de la medida del módulo (el ancho del módulo ya viene restado). Fondo medido desde el frente del
+  // módulo; la altura sugerida es la del módulo (sin valor = la del módulo).
+  dilatLeft?: boolean;
+  dilatRight?: boolean;
+  dilatThickness?: number;
+  dilatDepth?: number;
+  dilatHeight?: number;
   topGap?: number; // aéreos: separación (mm) entre su borde superior y el techo (0: cuelgan del techo)
   heightLocked?: boolean; // el usuario fijó el alto a mano: no se recalcula al cambiar el muro o el zócalo
   // Coordenadas 3D en el espacio (milímetros)
