@@ -138,7 +138,7 @@ const LoadingOverlay: React.FC<{ message: string }> = ({ message }) => (
 const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden flex flex-col modal-content animate-in zoom-in-95 duration-300">
         <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">{title}</h3>
@@ -317,9 +317,10 @@ export default function App() {
 
   const [modules, setModules] = useState<KitchenModule[]>([]);
 
-  const [specialModules, setSpecialModules] = useState([
-    { id: 'tall-pantry', name: 'Alacena Alta', active: false, width: 600, distance: 0 },
-    { id: 'tall-oven', name: 'Torre de Hornos', active: false, width: 600, distance: 0 }
+  // Alacenas altas y torres de hornos: se puede pedir más de una de cada tipo (kind); cada una es una tarjeta con su propio módulo
+  const [specialModules, setSpecialModules] = useState<Array<{ id: string; kind: 'tall-pantry' | 'tall-oven'; name: string; active: boolean; width: number; distance: number }>>([
+    { id: 'tall-pantry', kind: 'tall-pantry', name: 'Alacena Alta', active: false, width: 600, distance: 0 },
+    { id: 'tall-oven', kind: 'tall-oven', name: 'Torre de Hornos', active: false, width: 600, distance: 0 }
   ]);
 
   // BOM y configuración de producto
@@ -3103,6 +3104,19 @@ export default function App() {
     );
   };
 
+  // Un clic fuera de los paneles laterales (Elementos, Accesorios, Módulos especiales) los cierra; los botones de la barra lateral
+  // y el propio panel no cuentan como "fuera"
+  useEffect(() => {
+    if (!(isViewsPanelOpen || isElementsPanelOpen || isAccessoriesPanelOpen || isSpecialModulesPanelOpen)) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('[data-side-panel], aside, .modal-content')) return;
+      setIsViewsPanelOpen(false); setIsElementsPanelOpen(false); setIsAccessoriesPanelOpen(false); setIsSpecialModulesPanelOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, [isViewsPanelOpen, isElementsPanelOpen, isAccessoriesPanelOpen, isSpecialModulesPanelOpen]);
+
   const togglePanel = (p: 'views'|'elements'|'workspace'|'accessories'|'special') => { 
     if(p==='views'){setIsViewsPanelOpen(!isViewsPanelOpen);setIsElementsPanelOpen(false);setIsAccessoriesPanelOpen(false);setIsSpecialModulesPanelOpen(false);}
     else if(p==='elements'){setIsElementsPanelOpen(!isElementsPanelOpen);setIsViewsPanelOpen(false);setIsAccessoriesPanelOpen(false);setIsSpecialModulesPanelOpen(false);}
@@ -3129,52 +3143,74 @@ export default function App() {
   const updateIsland = (id: string, patch: Partial<IslandItem>) => setIslands(prev => prev.map(i => (i.id === id ? { ...i, ...patch, ...(i.kind === 'peninsula' ? { dx: 0 } : {}) } : i)));
   const removeIsland = (id: string) => { setIslands(prev => prev.filter(i => i.id !== id)); setModules(prev => prev.filter(m => m.islandId !== id)); };
 
-  const toggleSpecialModule = (id: string) => {
-    const special = specialModules.find(sm => sm.id === id);
-    if (!special) return;
-    
-    setSpecialModules(prev => prev.map(sm => sm.id === id ? { ...sm, active: !sm.active } : sm));
-    
-    if (!special.active) {
-      // Activar: agregar módulo
-      
-      // Validar que el módulo cabe en el muro considerando el offset de 600mm para muros B y C
-      const wallLength = activeWall === 'A' ? wallA : activeWall === 'B' ? wallB - CORNER_BLIND_OFFSET : wallC - CORNER_BLIND_OFFSET;
-      const sameTierItems = modules.filter(m => m.wall === activeWall && m.type === 'TALL');
-      const currentWidth = sameTierItems.reduce((acc, m) => acc + m.width, 0);
-      
-      if (currentWidth + special.width > wallLength) {
-        alert(`⚠️ SOBREPASO: El módulo especial excede el espacio disponible en el muro.`);
-        // Revertir la activación
-        setSpecialModules(prev => prev.map(sm => sm.id === id ? { ...sm, active: false } : sm));
-        return;
-      }
-      
-      const tallHeight = spaceHeight - TOP_MARGIN - (hasZocalo ? zocaloHeight : 0);
-      const template = MODULE_TEMPLATES.find(t => t.id === 'tall-oven');
-      if (!template) return;
-      
-      const newModule: KitchenModule = { 
-        ...template, 
-        uniqueId: `special-${id}-${Date.now()}`, 
-        wall: activeWall, 
-        positionX: special.distance, 
-        quantity: 1, 
-        height: tallHeight, 
-        width: special.width,
-        name: special.name,
-        type: 'TALL',
-        doorType: 'vertical', 
-        configType: 'doors', 
-        hasPlateRack: false, 
-        drawerCount: 0 
-      };
-      
-      setModules(prev => [...prev, newModule]);
-    } else {
-      // Desactivar: eliminar módulos tipo TALL con ese nombre
-      setModules(prevModules => prevModules.filter(m => !(m.type === 'TALL' && m.name === special.name)));
+  type SpecialItem = { id: string; kind: 'tall-pantry' | 'tall-oven'; name: string; active: boolean; width: number; distance: number };
+
+  // Coloca el módulo alto de una unidad (alacena alta o torre de hornos) si cabe en el muro activo. `used` = ancho ya ocupado
+  // por módulos altos en ese muro (se pasa al activar varias a la vez). Devuelve false si no cabe.
+  const placeSpecialModule = (special: SpecialItem, used?: number): boolean => {
+    const wallLength = activeWall === 'A' ? wallA : activeWall === 'B' ? wallB - CORNER_BLIND_OFFSET : wallC - CORNER_BLIND_OFFSET;
+    const currentWidth = used ?? modules.filter(m => m.wall === activeWall && m.type === 'TALL').reduce((acc, m) => acc + m.width, 0);
+    if (currentWidth + special.width > wallLength) {
+      alert(`⚠️ SOBREPASO: El módulo especial excede el espacio disponible en el muro.`);
+      return false;
     }
+    const tallHeight = spaceHeight - TOP_MARGIN - (hasZocalo ? zocaloHeight : 0);
+    const template = MODULE_TEMPLATES.find(t => t.id === 'tall-oven');
+    if (!template) return false;
+    const newModule: KitchenModule = {
+      ...template,
+      uniqueId: `special-${special.id}-${Date.now()}`,
+      wall: activeWall,
+      positionX: special.distance,
+      quantity: 1,
+      height: tallHeight,
+      width: special.width,
+      name: special.name,
+      type: 'TALL',
+      doorType: 'vertical',
+      configType: 'doors',
+      hasPlateRack: false,
+      drawerCount: 0,
+    };
+    setModules(prev => [...prev, newModule]);
+    return true;
+  };
+
+  const removeSpecialModuleOnly = (id: string) => setModules(prev => prev.filter(m => !(m.type === 'TALL' && m.uniqueId.startsWith(`special-${id}-`))));
+
+  // Interruptor de una alacena alta o torre de hornos: activa o desactiva TODAS las unidades de ese tipo
+  const toggleSpecialGroup = (kind: 'tall-pantry' | 'tall-oven') => {
+    const items = specialModules.filter(sm => sm.kind === kind);
+    if (items.some(sm => sm.active)) {
+      items.filter(sm => sm.active).forEach(sm => removeSpecialModuleOnly(sm.id));
+      setSpecialModules(prev => prev.map(sm => (sm.kind === kind ? { ...sm, active: false } : sm)));
+      return;
+    }
+    let used = modules.filter(m => m.wall === activeWall && m.type === 'TALL').reduce((acc, m) => acc + m.width, 0);
+    const placed: string[] = [];
+    for (const sm of items) {
+      if (!placeSpecialModule(sm, used)) break;
+      used += sm.width;
+      placed.push(sm.id);
+    }
+    setSpecialModules(prev => prev.map(sm => (placed.includes(sm.id) ? { ...sm, active: true } : sm)));
+  };
+
+  // "+" de la tarjeta: crea otra unidad del mismo tipo, a continuación de las demás (si el tipo está activo, se coloca ya)
+  const addSpecialModule = (kind: 'tall-pantry' | 'tall-oven') => {
+    const sameKind = specialModules.filter(sm => sm.kind === kind);
+    const n = sameKind.reduce((acc, sm) => Math.max(acc, parseInt(sm.name.match(/(\d+)$/)?.[1] ?? '1', 10)), 1) + 1;
+    const baseName = kind === 'tall-pantry' ? 'Alacena Alta' : 'Torre de Hornos';
+    const nextFree = specialModules.reduce((acc, sm) => Math.max(acc, sm.distance + sm.width), 0);
+    const inst: SpecialItem = { id: `${kind}-${Date.now().toString(36)}`, kind, name: `${baseName} ${n}`, active: sameKind.some(sm => sm.active), width: 600, distance: nextFree };
+    if (inst.active && !placeSpecialModule(inst)) inst.active = false;
+    setSpecialModules(prev => [...prev, inst]);
+  };
+
+  // Quita una tarjeta adicional (y su módulo si estaba activa); las dos primeras no se quitan, solo se desactivan
+  const removeSpecialModule = (id: string) => {
+    setModules(prev => prev.filter(m => !(m.type === 'TALL' && m.uniqueId.startsWith(`special-${id}-`))));
+    setSpecialModules(prev => prev.filter(sm => sm.id !== id));
   };
 
   const updateSpecialModuleProp = (id: string, prop: string, value: any) => {
@@ -3184,8 +3220,8 @@ export default function App() {
     const special = specialModules.find(sm => sm.id === id);
     if (special?.active) {
       setModules(prev => prev.map(m => 
-        m.type === 'TALL' && m.name === special.name 
-          ? { ...m, [prop]: value }
+        m.type === 'TALL' && m.uniqueId.startsWith(`special-${id}-`) 
+          ? { ...m, [prop === 'distance' ? 'positionX' : prop]: value }
           : m
       ));
     }
@@ -3276,7 +3312,7 @@ export default function App() {
             <div className="flex-1 relative bg-slate-50 self-stretch min-h-0">
               {!isSidebarVisible && (<button onClick={() => setIsSidebarVisible(true)} className="absolute left-0 top-1/2 -translate-y-1/2 z-[50] bg-white/90 backdrop-blur-md border border-slate-200 p-3 rounded-r-2xl shadow-xl text-indigo-600 hover:pr-5 transition-all group"><Menu size={20} /></button>)}
               
-              <div className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-2xl z-[45] border-r border-slate-200 shadow-2xl transition-all duration-500 ease-out transform ${isElementsPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+              <div data-side-panel className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-2xl z-[45] border-r border-slate-200 shadow-2xl transition-all duration-500 ease-out transform ${isElementsPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 <div className="h-full flex flex-col p-6 overflow-y-auto no-scrollbar space-y-8">
                   <div className="flex items-center justify-between"><div><h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Plan de Diseño</h2><p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none">Cotas Editables ISO</p></div><button onClick={() => setIsElementsPanelOpen(false)} className="p-2 bg-slate-100 rounded-xl text-slate-500 hover:text-red-500"><X size={20} /></button></div>
                   <div className="space-y-4 flex-1 flex flex-col min-h-0"><div className="flex items-center justify-between px-1"><h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Módulos en Escena</h3><span className="bg-indigo-100 text-indigo-600 text-[10px] font-black px-2 py-0.5 rounded-full">{modules.length}</span></div><div className="flex-1 overflow-y-auto no-scrollbar space-y-2">{labeledModules.map(m => (
@@ -3298,7 +3334,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-2xl z-[45] border-r border-slate-200 shadow-2xl transition-all duration-500 ease-out transform ${isAccessoriesPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+              <div data-side-panel className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-2xl z-[45] border-r border-slate-200 shadow-2xl transition-all duration-500 ease-out transform ${isAccessoriesPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 <div className="h-full flex flex-col p-6 overflow-y-auto no-scrollbar space-y-8">
                   <div className="flex items-center justify-between">
                     <div><h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Accesorios</h2><p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none">Electrodomésticos</p></div>
@@ -3354,7 +3390,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-2xl z-[45] border-r border-slate-200 shadow-2xl transition-all duration-500 ease-out transform ${isSpecialModulesPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+              <div data-side-panel className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-2xl z-[45] border-r border-slate-200 shadow-2xl transition-all duration-500 ease-out transform ${isSpecialModulesPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 <div className="h-full flex flex-col p-6 overflow-y-auto no-scrollbar space-y-8">
                   <div className="flex items-center justify-between">
                     <div><h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Módulos Especiales</h2><p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none">Configuración Avanzada</p></div>
@@ -3395,29 +3431,52 @@ export default function App() {
                         </div>
                       ))}
                     </div>
-                    {specialModules.map((special) => (
-                      <div key={special.id} className={`p-4 rounded-3xl border-2 transition-all space-y-4 ${special.active ? 'bg-indigo-50 border-indigo-600' : 'bg-white border-slate-100'}`}>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-xl ${special.active ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                              {special.id === 'tall-pantry' && <Archive size={20} />}
-                              {special.id === 'tall-oven' && <Flame size={20} />}
+                    {(['tall-pantry', 'tall-oven'] as const).map(kind => {
+                      const items = specialModules.filter(sm => sm.kind === kind);
+                      const anyActive = items.some(sm => sm.active);
+                      const title = kind === 'tall-pantry' ? 'Alacena Alta' : 'Torre de Hornos';
+                      return (
+                        <div key={kind} className={`p-4 rounded-3xl border-2 transition-all space-y-4 ${anyActive ? 'bg-indigo-50 border-indigo-600' : 'bg-white border-slate-100'}`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className={`p-2 rounded-xl ${anyActive ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                                {kind === 'tall-pantry' ? <Archive size={20} /> : <Flame size={20} />}
+                              </div>
+                              <div>
+                                <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">{title}{items.length > 1 ? ` × ${items.length}` : ''}</p>
+                                <p className="text-[9px] font-bold text-slate-400 uppercase">{anyActive ? 'Activo' : 'Desactivado'}</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">{special.name}</p>
-                              <p className="text-[9px] font-bold text-slate-400 uppercase">{special.active ? 'Activo' : 'Desactivado'}</p>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => addSpecialModule(kind)}
+                                className="w-6 h-6 rounded-full bg-green-500 hover:bg-green-600 text-white border-2 border-white shadow flex items-center justify-center"
+                                title={`Crear otra ${kind === 'tall-pantry' ? 'alacena alta' : 'torre de hornos'}`}
+                              ><Plus size={14} strokeWidth={3} /></button>
+                              <button onClick={() => toggleSpecialGroup(kind)} className={`w-10 h-5 rounded-full transition-all relative ${anyActive ? 'bg-indigo-600' : 'bg-slate-200'}`}><div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${anyActive ? 'left-5.5' : 'left-0.5'}`} /></button>
                             </div>
                           </div>
-                          <button onClick={() => toggleSpecialModule(special.id)} className={`w-10 h-5 rounded-full transition-all relative ${special.active ? 'bg-indigo-600' : 'bg-slate-200'}`}><div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${special.active ? 'left-5.5' : 'left-0.5'}`} /></button>
+                          {anyActive && items.map(special => (
+                            <div key={special.id} className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                              {items.length > 1 && (
+                                <div className="flex items-center justify-between">
+                                  <p className="text-[9px] font-black text-indigo-600 uppercase">{special.name}</p>
+                                  <button
+                                    onClick={() => { if (window.confirm(`¿Borrar ${special.name}?`)) removeSpecialModule(special.id); }}
+                                    className="w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white border-2 border-white shadow flex items-center justify-center"
+                                    title={`Borrar ${special.name}`}
+                                  ><X size={12} strokeWidth={3} /></button>
+                                </div>
+                              )}
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Ancho (mm)</label><input type="number" value={special.width} onChange={(e) => updateSpecialModuleProp(special.id, 'width', parseInt(e.target.value) || 0)} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
+                                <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Posición (mm)</label><input type="number" value={special.distance} onChange={(e) => updateSpecialModuleProp(special.id, 'distance', parseInt(e.target.value) || 0)} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        {special.active && (
-                          <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                            <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Ancho (mm)</label><input type="number" value={special.width} onChange={(e) => updateSpecialModuleProp(special.id, 'width', parseInt(e.target.value) || 0)} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
-                            <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Posición (mm)</label><input type="number" value={special.distance} onChange={(e) => updateSpecialModuleProp(special.id, 'distance', parseInt(e.target.value) || 0)} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>

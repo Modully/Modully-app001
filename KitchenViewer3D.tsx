@@ -602,6 +602,7 @@ interface JunctionControl3DProps {
 
 const JunctionControl3D: React.FC<JunctionControl3DProps> = ({ leftModule, rightModule, position, rotation = [0, 0, 0], onResizeJunction, controlsRef, wall }) => {
   const { camera, size } = useThree();
+  const isOrtho = !!(camera as any).isOrthographicCamera;
   const [isResizing, setIsResizing] = useState(false);
   const [matched, setMatched] = useState(false);
   const matchedEl = useRef<HTMLElement | null>(null);
@@ -684,7 +685,7 @@ const JunctionControl3D: React.FC<JunctionControl3DProps> = ({ leftModule, right
       zIndexRange={[100, 0]}
     >
       <div
-        className={`w-24 h-24 rounded-full ${isResizing ? 'bg-green-200 border-green-600' : 'bg-purple-100 border-purple-600'} border-4 shadow-2xl flex items-center justify-center backdrop-blur-sm cursor-ew-resize hover:bg-purple-200 hover:scale-110 transition-all`}
+        className={`w-16 h-16 rounded-full ${isResizing ? 'bg-green-200 border-green-600' : 'bg-purple-100 border-purple-600'} border-[3px] shadow-xl flex items-center justify-center backdrop-blur-sm cursor-ew-resize hover:bg-purple-200 hover:scale-110 transition-all`}
         title="Arrastra para redimensionar"
         data-junction-pos={leftModule.positionX + leftModule.width}
         data-junction-wall={wall}
@@ -696,12 +697,14 @@ const JunctionControl3D: React.FC<JunctionControl3DProps> = ({ leftModule, right
           handlePointerDown(e);
         }}
       >
-        <div className="flex items-center gap-0" style={{ transform: `rotate(${arrowAngle}deg)` }}>
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+        {/* En ortogonales la flecha gira para seguir el eje del muro en pantalla; en perspectiva el control ya está apoyado en la cara
+            del módulo (su transformación 3D lo orienta), así que no se gira: la línea central queda paralela a la unión entre módulos */}
+        <div className="flex items-center gap-0" style={{ transform: `rotate(${isOrtho ? arrowAngle : 0}deg)` }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
             <path d="M15 18L9 12L15 6" stroke="#7c3aed" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <div className="w-1 h-8 bg-purple-600 rounded"></div>
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+          <div className="w-[3px] h-5 bg-purple-600 rounded"></div>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
             <path d="M9 18L15 12L9 6" stroke="#7c3aed" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
