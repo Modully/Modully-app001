@@ -1327,7 +1327,7 @@ export default function App() {
       const leftIsStart = wall !== 'B';
       const along = (bx: BoxData) => (wall === 'A' ? { a0: bx.x, a1: bx.x + bx.sx } : { a0: bx.y, a1: bx.y + bx.sy });
       const slabRange = along(slab);
-      const lowersInRun = boxes.filter(bx => bx.kind === 'lower' && bx.wall === wall && bx.moduleId && along(bx).a0 >= slabRange.a0 - 1 && along(bx).a1 <= slabRange.a1 + 1);
+      const lowersInRun = boxes.filter(bx => bx.kind === 'lower' && bx.wall === wall && bx.moduleId && (slab.islandId ? bx.islandId === slab.islandId : !bx.islandId) && along(bx).a0 >= slabRange.a0 - 1 && along(bx).a1 <= slabRange.a1 + 1);
       const changes: Array<{ atStart: boolean; on: boolean }> = [];
       if (extras.waterfallLeft !== undefined) changes.push({ atStart: leftIsStart, on: extras.waterfallLeft });
       if (extras.waterfallRight !== undefined) changes.push({ atStart: !leftIsStart, on: extras.waterfallRight });

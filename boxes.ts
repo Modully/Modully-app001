@@ -491,6 +491,49 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     });
   }
 
+  // --- Mesón de las islas y penínsulas: la misma losa de la cocina (espesor y voladizo) sobre su hilera de módulos bajos. Lleva
+  // voladizo en todos los lados libres; la península no lo lleva del lado pegado al muro. Sin salpicadero ni cascada ---
+  if (hasCounter && counterThickness > 0) {
+    (input.islands ?? []).forEach(isl => {
+      const lowers = boxes.filter(bx => bx.kind === 'lower' && bx.islandId === isl.id);
+      if (lowers.length === 0) return;
+      const sorted = [...lowers].sort((p, q) => p.x - q.x);
+      const runs: Box[][] = [];
+      sorted.forEach(bx => {
+        const run = runs[runs.length - 1];
+        if (run && bx.x - (run[run.length - 1].x + run[run.length - 1].sx) <= 1) run.push(bx);
+        else runs.push([bx]);
+      });
+      const ov = counterOverhang;
+      const wallAtStart = isl.kind === 'peninsula' && input.lArm !== 'right';
+      const wallAtEnd = isl.kind === 'peninsula' && input.lArm === 'right';
+      runs.forEach((run, index) => {
+        // También cubre las piezas laterales de sus módulos (dilatadas y vistos)
+        const lateral = boxes.filter(f => f.kind === 'filler' && f.islandId === isl.id
+          && (f.id.startsWith('dilatacion-lower-') || f.id.startsWith('visto-lower-'))
+          && run.some(m => f.id.includes(`-lower-${m.moduleId}-`)));
+        const x0 = Math.min(run[0].x, ...lateral.map(f => f.x));
+        const x1 = Math.max(run[run.length - 1].x + run[run.length - 1].sx, ...lateral.map(f => f.x + f.sx));
+        const y0 = Math.min(...run.map(bx => bx.y));
+        const y1 = Math.max(...run.map(bx => bx.y + bx.sy));
+        const left = index === 0 && !wallAtStart ? ov : 0;
+        const right = index === runs.length - 1 && !wallAtEnd ? ov : 0;
+        boxes.push({
+          id: `counter-isla-${isl.id}-${index}`,
+          name: `Mesón ${isl.kind === 'peninsula' ? 'península' : 'isla'}${runs.length > 1 ? ` (${index + 1})` : ''}`,
+          kind: 'counter',
+          wall: 'A',
+          islandId: isl.id,
+          x: x0 - left, y: y0 - ov,
+          z: Math.max(...run.map(bx => bx.z + bx.sz)),
+          sx: x1 - x0 + left + right, sy: y1 - y0 + 2 * ov, sz: counterThickness,
+          facing: '+Y',
+          cutouts: [],
+        });
+      });
+    });
+  }
+
   return boxes;
 }
 

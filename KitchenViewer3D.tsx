@@ -188,6 +188,7 @@ interface Module3DProps {
   onSetVistos?: (id: string, v: SideConfig) => void;
   onSplitHorizontal?: (id: string) => void; // divide el módulo en dos a lo alto
   onSplitDepth?: (id: string) => void;       // divide el módulo en dos: frente y fondo
+  showLabel?: boolean; // la letra del módulo solo se muestra si el módulo se ve (en planta, un bajo bajo el mesón o bajo un aéreo no se ve)
   faces?: { left: boolean; right: boolean; front: boolean; top: boolean; bottom: boolean }; // caras que no tocan otro módulo
   onExtendFace?: (id: string, face: FaceKey) => void;
   hoverRef?: HoverRef;
@@ -195,7 +196,7 @@ interface Module3DProps {
   source?: KitchenModule; // módulo completo (la copia `module` puede venir con el cuerpo acortado por los vistos)
 }
 
-const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0, 0], onDelete, onSplit, onEditDimension, onDragPosition, onResizeEdge, controlsRef, hideLeftArrow, hideRightArrow, viewMode, selected, costado = 'right', editing, onSelect, onOpenEditor, onCloseEditor, onApplyMeasures, onSetTop, onSetVistos, onSplitHorizontal, onSplitDepth, faces, onExtendFace, hoverRef, resolveReference, source }) => {
+const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0, 0], onDelete, onSplit, onEditDimension, onDragPosition, onResizeEdge, controlsRef, hideLeftArrow, hideRightArrow, viewMode, selected, costado = 'right', editing, onSelect, onOpenEditor, onCloseEditor, onApplyMeasures, onSetTop, onSetVistos, onSplitHorizontal, onSplitDepth, faces, onExtendFace, hoverRef, resolveReference, showLabel = true, source }) => {
   const isPlan = viewMode === 'plan';
   const [hovered, setHover] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -366,7 +367,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
       />
       <Edges color={isResizing ? "#10b981" : (isDragging ? "#6366f1" : (selected ? "#ef4444" : "#3b2a1a"))} linewidth={isDragging || isResizing || selected ? 2 : 1} />
       {/* El nombre del módulo se ve igual en todas las vistas: en planta sobre su cara superior y en las demás al centro de su cara frontal */}
-      {(
+      {showLabel && (
         <Html position={isPlan ? [0, module.height / 2000 + 0.002, 0] : [0, 0, module.depth / 2000 + 0.01]} center zIndexRange={[50, 0]} style={{ pointerEvents: 'none' }}>
           <div className="select-none whitespace-nowrap text-[10px] leading-none font-bold text-white" style={{ textShadow: '0 0 3px #000, 0 0 3px #000, 0 0 2px #000', fontSize: 14 }}>
             {module.label || ''}
@@ -387,7 +388,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
         >
           <button
             data-overlay
-            style={{ transform: `translateX(${isPlan ? -100 : -52}px)` }}
+            style={{ transform: `translateX(${isPlan ? -100 : -70}px)` }}
             onClick={(e) => {
               e.stopPropagation();
               onDelete(module.uniqueId);
@@ -410,7 +411,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
         >
           <button
             data-overlay
-            style={{ transform: `translateX(${isPlan ? 100 : 52}px)` }}
+            style={{ transform: `translateX(${isPlan ? 100 : 70}px)` }}
             onClick={(e) => {
               e.stopPropagation();
               onSplit(module.uniqueId);
@@ -500,7 +501,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
       {/* Módulo seleccionado: manijas azules flotando frente al centro de cada cara libre (sin otro módulo pegado). Clic sostenido y
           arrastre = extruir o jalar esa cara con su cota; clic simple = estirar hasta la siguiente cara de referencia */}
       {selected && faces && !isDragging && (() => {
-        const w = module.width / 2000, h = module.height / 2000, d = module.depth / 2000, out = 0.06;
+        const w = module.width / 2000, h = module.height / 2000, d = module.depth / 2000, out = 0.08;
         const start = (field: 'depth' | 'height' | 'top', sign: number) => (e: { clientX: number; clientY: number }) => handleMeasurePointerDown(e, field, sign);
         const list: Array<{ face: FaceKey; on: boolean; pos: [number, number, number]; n: [number, number, number]; label: string; title: string; start: (e: { clientX: number; clientY: number }) => void }> = [
           { face: 'left', on: faces.left && !!onResizeEdge, pos: [-w - out, 0, 0], n: [-1, 0, 0], label: `${Math.round(module.width)} mm`, title: 'Jalar el costado izquierdo (clic simple: estirar hasta el siguiente tope)', start: (e) => handleEdgePointerDown(e, 'left') },
@@ -527,8 +528,8 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
       {/* Con el módulo seleccionado (clic), cada cara trae su X roja (eliminar) y su + verde (dividir): la cara de arriba lo divide
           en uno superior y uno inferior; el costado, en uno frontal y uno posterior. Solo en isométrica y 3D, donde esas caras se ven */}
       {selected && (viewMode === 'isometric' || viewMode === '3d') && ([
-        { key: 'top', pos: [0, module.height / 2000 + 0.002, 0] as [number, number, number], rot: [-Math.PI / 2, 0, 0] as [number, number, number], split: onSplitHorizontal, title: 'Dividir en uno superior y uno inferior' },
-        { key: 'side', pos: [module.width / 2000 + 0.002, 0, 0] as [number, number, number], rot: [0, Math.PI / 2, 0] as [number, number, number], split: onSplitDepth, title: 'Dividir en uno frontal y uno posterior' },
+        { key: 'top', pos: [0, module.height / 2000 + 0.002, -module.depth / 2000 * 0.5] as [number, number, number], rot: [-Math.PI / 2, 0, 0] as [number, number, number], split: onSplitHorizontal, title: 'Dividir en uno superior y uno inferior' },
+        { key: 'side', pos: [module.width / 2000 + 0.002, module.height / 2000 * 0.55, 0] as [number, number, number], rot: [0, Math.PI / 2, 0] as [number, number, number], split: onSplitDepth, title: 'Dividir en uno frontal y uno posterior' },
       ]).map(face => (
         <HtmlScaled key={face.key} position={face.pos} rotation={face.rot} center distanceFactor={1} zIndexRange={[105, 0]}>
           <div data-overlay className="flex items-center gap-2" onPointerDown={(e) => e.stopPropagation()}>
@@ -863,16 +864,19 @@ const CounterEditor: React.FC<{
   onClose: () => void;
 }> = ({ box, wall, settings, sides, onApply, onClose }) => {
   // Largo = a lo largo del muro (lo definen los módulos); fondo = hacia el frente (módulos + voladizo)
+  // Isla o península: el voladizo va por delante y por detrás (2 lados); sin salpicadero ni cascada
+  const isIsland = box.id.startsWith('counter-isla-');
+  const overhangs = isIsland ? 2 : 1;
   const length = Math.round(wall === 'A' ? box.sx : box.sy);
-  const baseDepth = Math.round((wall === 'A' ? box.sy : box.sx) - settings.overhang); // fondo de los módulos
-  const [vals, setVals] = useState({ depth: String(baseDepth + settings.overhang), thickness: String(settings.thickness), splashHeight: String(settings.splashHeight) });
+  const baseDepth = Math.round((wall === 'A' ? box.sy : box.sx) - settings.overhang * overhangs); // fondo de los módulos
+  const [vals, setVals] = useState({ depth: String(baseDepth + settings.overhang * overhangs), thickness: String(settings.thickness), splashHeight: String(settings.splashHeight) });
   const [hasSplash, setHasSplash] = useState(settings.hasSplash);
   const [side, setSide] = useState(sides);
   const apply = () => {
     const n = (s: string, f: number) => { const x = parseFloat(s); return isNaN(x) ? f : x; };
     onApply({
       thickness: Math.max(10, Math.min(80, n(vals.thickness, settings.thickness))),
-      overhang: Math.max(0, Math.min(100, n(vals.depth, baseDepth + settings.overhang) - baseDepth)),
+      overhang: Math.max(0, Math.min(100, (n(vals.depth, baseDepth + settings.overhang * overhangs) - baseDepth) / overhangs)),
       hasSplash,
       splashHeight: Math.max(20, Math.min(600, n(vals.splashHeight, settings.splashHeight))),
     }, side);
@@ -900,6 +904,7 @@ const CounterEditor: React.FC<{
       </div>
       {field('depth', 'Ancho (fondo)')}
       {field('thickness', 'Espesor')}
+      {!isIsland && <>
       <div className="pt-1 border-t border-slate-200 space-y-1">
         <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
           <input type="checkbox" checked={hasSplash} onChange={(e) => setHasSplash(e.target.checked)} />
@@ -921,6 +926,7 @@ const CounterEditor: React.FC<{
           <label className="flex items-center gap-1"><input type="checkbox" checked={side.waterfallRight} onChange={(e) => setSide({ ...side, waterfallRight: e.target.checked })} />Derecha</label>
         </div>
       </div>
+      </>}
       <div className="flex gap-1.5 pt-1">
         <button className="flex-1 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black" onClick={apply}>Aplicar</button>
         <button className="flex-1 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-black" onClick={onClose}>Cerrar</button>
@@ -1915,6 +1921,15 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             module={mod}
             onSplitHorizontal={(!measureMode && mod.height >= 200) ? onSplitHorizontal : undefined}
             onSplitDepth={(!measureMode && mod.depth >= 200) ? onSplitDepth : undefined}
+            showLabel={(() => {
+              // En planta un módulo bajo queda tapado por el mesón o por un aéreo: su letra no se muestra
+              if (viewMode !== 'plan' || mod.type === 'UPPER' || mod.type === 'TALL') return true;
+              const cx = box.x + box.sx / 2, cy = box.y + box.sy / 2;
+              const inside = (b: Box) => cx >= b.x && cx <= b.x + b.sx && cy >= b.y && cy <= b.y + b.sy;
+              const underCounter = vis.counter && boxes.some(b => b.kind === 'counter' && b.id.startsWith('counter-') && inside(b));
+              const underUpper = vis.upper && boxes.some(b => b.kind === 'upper' && inside(b));
+              return !(underCounter || underUpper);
+            })()}
             onExtendFace={measureMode ? undefined : onExtendFace}
             hoverRef={hoverRef}
             resolveReference={(selfId, face, hoverId, point) => {
