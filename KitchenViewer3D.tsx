@@ -365,20 +365,9 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
         polygonOffsetUnits={1}
       />
       <Edges color={isResizing ? "#10b981" : (isDragging ? "#6366f1" : (selected ? "#ef4444" : "#3b2a1a"))} linewidth={isDragging || isResizing || selected ? 2 : 1} />
-      <Text
-        position={[0, 0, module.depth / 2000 + 0.01]}
-        fontSize={0.06}
-        fontWeight="bold"
-        color="white"
-        anchorX="center"
-        anchorY="middle"
-      >
-        {module.label || ''}
-      </Text>
-
-      {/* En planta no se ve la cara frontal: el nombre del módulo va sobre su cara superior */}
-      {isPlan && (
-        <Html position={[0, module.height / 2000 + 0.002, 0]} center zIndexRange={[50, 0]} style={{ pointerEvents: 'none' }}>
+      {/* El nombre del módulo se ve igual en todas las vistas: en planta sobre su cara superior y en las demás al centro de su cara frontal */}
+      {(
+        <Html position={isPlan ? [0, module.height / 2000 + 0.002, 0] : [0, 0, module.depth / 2000 + 0.01]} center zIndexRange={[50, 0]} style={{ pointerEvents: 'none' }}>
           <div className="select-none whitespace-nowrap text-[10px] leading-none font-bold text-white" style={{ textShadow: '0 0 3px #000, 0 0 3px #000, 0 0 2px #000', fontSize: 14 }}>
             {module.label || ''}
           </div>
