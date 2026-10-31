@@ -1241,6 +1241,34 @@ export default function App() {
     setModules(prev => [...prev, newModule]); return newModule.uniqueId;
   };
 
+  // Clic simple en la manija de una cara: el módulo se estira por esa cara hasta la siguiente cara de referencia (otro módulo,
+  // electrodoméstico, el límite del muro o el techo). Se busca el mayor valor (de 5 en 5 mm) que no crea choques nuevos.
+  const extendModuleFace = (id: string, face: 'left' | 'right' | 'front' | 'top' | 'bottom') => {
+    const m = modules.find(x => x.uniqueId === id);
+    if (!m) return;
+    const zh = hasZocalo ? zocaloHeight : 0;
+    const ceiling = spaceHeight - TOP_MARGIN;
+    const before = collisionKeys(modules);
+    const valid = (mods: KitchenModule[]) => { for (const k of collisionKeys(mods)) if (!before.has(k)) return false; return true; };
+    const wallLength = m.wall === 'Island' ? (islands.find(i => i.id === m.islandId)?.length ?? 0) : moduleWallLength(m.wall, m.type);
+    const withMod = (patch: Partial<KitchenModule>) => modules.map(x => (x.uniqueId === id ? { ...x, ...patch } : x));
+    let lo = 0, hi = 0;
+    let make: (v: number) => KitchenModule[] = () => modules;
+    if (face === 'right') { lo = m.width; hi = wallLength - m.positionX; make = v => withMod({ width: v }); }
+    else if (face === 'left') { lo = m.width; hi = m.positionX + m.width; make = v => withMod({ width: v, positionX: m.positionX + m.width - v }); }
+    else if (face === 'front') { lo = m.depth; hi = 1200; make = v => withMod({ depth: v }); }
+    else if (face === 'top' && m.type === 'UPPER') { lo = m.height; hi = m.height + (m.topGap ?? 0); make = v => withMod({ height: v, topGap: (m.topGap ?? 0) - (v - m.height), heightLocked: true }); }
+    else if (face === 'top') { lo = m.height; hi = ceiling - zh; make = v => withMod({ height: v, heightLocked: true }); }
+    else { lo = m.height; hi = ceiling - (m.topGap ?? 0) - zh; make = v => withMod({ height: v, heightLocked: true }); } // abajo (aéreos)
+    // Búsqueda binaria del mayor valor válido (si crece por una cara, los choques solo aumentan)
+    let a = 0, b = Math.max(0, Math.floor((hi - lo) / 5));
+    while (a < b) {
+      const mid = Math.ceil((a + b) / 2);
+      if (valid(make(lo + mid * 5))) a = mid; else b = mid - 1;
+    }
+    if (a > 0) setModules(make(lo + a * 5));
+  };
+
   // "+" del costado de un módulo (con el módulo seleccionado): lo divide en dos, uno frontal y otro posterior, del mismo ancho,
   // alto y posición. El posterior queda contra el muro; el frontal se corre el fondo del posterior (`depthOffset`).
   const splitModuleDepthwise = (id: string) => {
@@ -3638,6 +3666,7 @@ export default function App() {
                   onSetModuleVistos={setModuleVistos}
                   onSplitHorizontal={splitModuleHorizontal}
                   onSplitDepth={splitModuleDepthwise}
+                  onExtendFace={extendModuleFace}
                   onDragModule={handleDragModule3D}
                   onResizeEdge={handleResizeEdge3D}
                   onMoveAppliance={moveAppliance}

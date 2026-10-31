@@ -87,6 +87,83 @@ function useDocumentDrag(onMove: (dx: number, dy: number, ev: MouseEvent) => voi
   };
 }
 
+type FaceKey = 'left' | 'right' | 'front' | 'top' | 'bottom';
+/** Módulo bajo el cursor (y el punto tocado) mientras se arrastra una manija: su cara sirve de referencia para el estiramiento */
+type HoverRef = React.MutableRefObject<{ id: string; point: THREE.Vector3 } | null>;
+/** Medidas que dejaría esa cara de referencia en el módulo que se estira */
+type ReferenceResult = { width?: number; depth?: number; height?: number; topGap?: number };
+
+/**
+ * Manija azul de una cara del módulo seleccionado. Flota frente al centro de la cara y su flecha apunta hacia donde se
+ * extruye o jala (se calcula con la dirección de la cara en pantalla, así sirve en cualquier vista). Con clic sostenido y
+ * arrastre la cara se mueve y se muestra la cota; con un clic simple el módulo se estira hasta la siguiente cara de referencia.
+ */
+const FaceHandle: React.FC<{
+  position: [number, number, number];
+  normal: [number, number, number];
+  meshPosition: [number, number, number];
+  meshRotation: [number, number, number];
+  label: string;
+  title: string;
+  onStart: (e: { clientX: number; clientY: number }) => void;
+  onClick: () => void;
+}> = ({ position, normal, meshPosition, meshRotation, label, title, onStart, onClick }) => {
+  const { camera, size } = useThree();
+  const [angle, setAngle] = useState<number | null>(0);
+  const [holding, setHolding] = useState(false);
+  useFrame(() => {
+    const eul = new THREE.Euler(...meshRotation);
+    const c = new THREE.Vector3(...position).applyEuler(eul).add(new THREE.Vector3(...meshPosition));
+    const d = new THREE.Vector3(...normal).applyEuler(eul).multiplyScalar(0.3);
+    const a = c.clone().project(camera);
+    const b = c.clone().add(d).project(camera);
+    const dx = ((b.x - a.x) * size.width) / 2;
+    const dy = (-(b.y - a.y) * size.height) / 2;
+    // La cara de frente a la cámara (flecha casi sin largo en pantalla) no se puede jalar desde esta vista
+    const next = Math.hypot(dx, dy) < 8 ? null : Math.round((Math.atan2(dy, dx) * 180) / Math.PI / 3) * 3;
+    if (next !== angle) setAngle(next);
+  });
+  if (angle === null) return null;
+
+  const down = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    const x0 = e.clientX, y0 = e.clientY;
+    setHolding(true);
+    onStart(e);
+    let done = false;
+    const up = (ev: MouseEvent | PointerEvent) => {
+      if (done) return;
+      done = true;
+      document.removeEventListener('mouseup', up);
+      document.removeEventListener('pointerup', up);
+      setHolding(false);
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) onClick(); // clic simple: estirar hasta la siguiente cara
+    };
+    document.addEventListener('mouseup', up);
+    document.addEventListener('pointerup', up);
+  };
+
+  return (
+    <Html position={position} center zIndexRange={[115, 0]} style={{ pointerEvents: 'none' }}>
+      <div data-overlay className="relative">
+        {holding && (
+          <div className="absolute left-1/2 -translate-x-1/2 -top-8 whitespace-nowrap px-2 py-1 rounded-lg bg-blue-600 text-white text-[12px] leading-none font-black shadow-lg border-2 border-white">{label}</div>
+        )}
+        <button
+          onPointerDown={down}
+          title={title}
+          className={`pointer-events-auto flex items-center justify-center w-7 h-7 rounded-full border-2 border-white shadow-lg text-white transition-colors ${holding ? 'bg-blue-800' : 'bg-blue-600 hover:bg-blue-700'}`}
+          style={{ cursor: 'grab' }}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" style={{ transform: `rotate(${angle}deg)` }}>
+            <path d="M2 8 H12 M8 3 L13 8 L8 13" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </div>
+    </Html>
+  );
+};
+
 interface Module3DProps {
   module: KitchenModule;
   position: [number, number, number];
@@ -111,10 +188,14 @@ interface Module3DProps {
   onSetVistos?: (id: string, v: SideConfig) => void;
   onSplitHorizontal?: (id: string) => void; // divide el módulo en dos a lo alto
   onSplitDepth?: (id: string) => void;       // divide el módulo en dos: frente y fondo
+  faces?: { left: boolean; right: boolean; front: boolean; top: boolean; bottom: boolean }; // caras que no tocan otro módulo
+  onExtendFace?: (id: string, face: FaceKey) => void;
+  hoverRef?: HoverRef;
+  resolveReference?: (selfId: string, face: FaceKey, hoverId: string, point: THREE.Vector3) => ReferenceResult | null;
   source?: KitchenModule; // módulo completo (la copia `module` puede venir con el cuerpo acortado por los vistos)
 }
 
-const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0, 0], onDelete, onSplit, onEditDimension, onDragPosition, onResizeEdge, controlsRef, hideLeftArrow, hideRightArrow, viewMode, selected, costado = 'right', editing, onSelect, onOpenEditor, onCloseEditor, onApplyMeasures, onSetTop, onSetVistos, onSplitHorizontal, onSplitDepth, source }) => {
+const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0, 0], onDelete, onSplit, onEditDimension, onDragPosition, onResizeEdge, controlsRef, hideLeftArrow, hideRightArrow, viewMode, selected, costado = 'right', editing, onSelect, onOpenEditor, onCloseEditor, onApplyMeasures, onSetTop, onSetVistos, onSplitHorizontal, onSplitDepth, faces, onExtendFace, hoverRef, resolveReference, source }) => {
   const isPlan = viewMode === 'plan';
   const [hovered, setHover] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -138,6 +219,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
   };
 
   const handlePointerMove = (e: ThreeEvent<PointerEvent>) => {
+    if (hoverRef) hoverRef.current = { id: module.uniqueId, point: e.point.clone() };
     if (isDragging && dragStart.current && onDragPosition && !isResizing) {
       e.stopPropagation();
       const deltaMm = (e.point.dot(wallAxis(module.wall)) - dragStart.current.along) * 1000;
@@ -172,6 +254,13 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
     (dx, dy) => {
       const st = edgeStart.current;
       if (!st || !onResizeEdge) return;
+      // Si el cursor toca la cara de otro módulo, esa cara es la referencia: el costado se alinea con ella
+      const hv = hoverRef?.current;
+      const ref = hv && hv.id !== module.uniqueId ? resolveReference?.(module.uniqueId, st.side, hv.id, hv.point) : null;
+      if (ref?.width != null) {
+        onResizeEdge(module.uniqueId, st.side, st.side === 'right' ? ref.width - st.initialWidth : st.initialWidth - ref.width, st.initialWidth, st.moduleX);
+        return;
+      }
       onResizeEdge(module.uniqueId, st.side, pixelsToMm(dx, dy, st.sx, st.sy), st.initialWidth, st.moduleX);
     },
     () => {
@@ -188,6 +277,17 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
     (dx, dy) => {
       const st = measureStart.current;
       if (!st || !onApplyMeasures) return;
+      const hv = hoverRef?.current;
+      if (hv && hv.id !== module.uniqueId) {
+        const face: FaceKey = st.field === 'depth' ? 'front' : st.field === 'top' ? 'top' : 'bottom';
+        const ref = resolveReference?.(module.uniqueId, face, hv.id, hv.point);
+        if (ref) {
+          const clampH = (n: number) => Math.min(2400, Math.max(100, n));
+          if (st.field === 'top') { if (ref.height != null) onSetTop?.(module.uniqueId, clampH(ref.height), Math.max(0, ref.topGap ?? 0)); }
+          else onApplyMeasures(module.uniqueId, { width: module.width, depth: ref.depth != null ? Math.min(1200, Math.max(100, ref.depth)) : module.depth, height: ref.height != null ? clampH(ref.height) : module.height });
+          return;
+        }
+      }
       if (st.field === 'top') {
         // Borde superior: los bajos crecen o se acortan por arriba; los aéreos suben hasta el techo o bajan dejando
         // espacio arriba, y su borde inferior no se mueve
@@ -241,6 +341,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
       }}
       onPointerOut={(e) => {
         e.stopPropagation();
+        if (hoverRef?.current?.id === module.uniqueId) hoverRef.current = null;
         setHover(false);
         document.body.style.cursor = 'auto';
       }}
@@ -286,7 +387,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
 
       {/* Controles en miniatura */}
       {/* Botón eliminar - esquina superior izquierda */}
-      {onDelete && (
+      {selected && onDelete && (
         // Los dos botones van en el centro superior del módulo, uno a cada lado del centro. En las esquinas, el "+" de un
         // módulo caía exactamente sobre la "X" del siguiente y la tapaba (y en Planta, las flechas dobles).
         <HtmlScaled
@@ -311,7 +412,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
       )}
 
       {/* Botón dividir - esquina superior derecha */}
-      {onSplit && (
+      {selected && onSplit && (
         <HtmlScaled
           position={[0, module.height / 2000 - 0.05, module.depth / 2000 + 0.01]}
           center
@@ -407,25 +508,32 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
         );
       })()}
 
-      {/* Módulo seleccionado: flechas en los dos extremos para alargarlo o contraerlo (sustituyen a las esferas en planta) */}
-      {selected && onResizeEdge && !isDragging && (['left', 'right'] as const).filter(side => !(side === 'left' ? hideLeftArrow : hideRightArrow)).map(side => (
-        <Html
-          key={`handle-${side}`}
-          position={[(side === 'left' ? -1 : 1) * module.width / 2000, isPlan ? module.height / 2000 + 0.002 : 0, isPlan ? 0 : module.depth / 2000 + 0.03]}
-          center
-          zIndexRange={[110, 0]}
-          style={{ pointerEvents: 'none' }}
-        >
-          <button
-            data-overlay
-            onPointerDown={(e) => { e.stopPropagation(); handleEdgePointerDown(e, side); }}
-            className={`pointer-events-auto flex items-center justify-center w-7 h-7 rounded-full border-2 border-white shadow-lg text-white text-[15px] leading-none font-black cursor-ew-resize ${isResizing === side ? 'bg-emerald-500' : 'bg-red-500 hover:bg-red-600'}`}
-            title="Arrastrar para alargar o contraer"
-          >
-            {side === 'left' ? '◀' : '▶'}
-          </button>
-        </Html>
-      ))}
+      {/* Módulo seleccionado: manijas azules flotando frente al centro de cada cara libre (sin otro módulo pegado). Clic sostenido y
+          arrastre = extruir o jalar esa cara con su cota; clic simple = estirar hasta la siguiente cara de referencia */}
+      {selected && faces && !isDragging && (() => {
+        const w = module.width / 2000, h = module.height / 2000, d = module.depth / 2000, out = 0.06;
+        const start = (field: 'depth' | 'height' | 'top', sign: number) => (e: { clientX: number; clientY: number }) => handleMeasurePointerDown(e, field, sign);
+        const list: Array<{ face: FaceKey; on: boolean; pos: [number, number, number]; n: [number, number, number]; label: string; title: string; start: (e: { clientX: number; clientY: number }) => void }> = [
+          { face: 'left', on: faces.left && !!onResizeEdge, pos: [-w - out, 0, 0], n: [-1, 0, 0], label: `${Math.round(module.width)} mm`, title: 'Jalar el costado izquierdo (clic simple: estirar hasta el siguiente tope)', start: (e) => handleEdgePointerDown(e, 'left') },
+          { face: 'right', on: faces.right && !!onResizeEdge, pos: [w + out, 0, 0], n: [1, 0, 0], label: `${Math.round(module.width)} mm`, title: 'Jalar el costado derecho (clic simple: estirar hasta el siguiente tope)', start: (e) => handleEdgePointerDown(e, 'right') },
+          { face: 'front', on: faces.front && !!onApplyMeasures, pos: [0, 0, d + out], n: [0, 0, 1], label: `${Math.round(module.depth)} mm`, title: 'Jalar el frente (clic simple: estirar hasta el siguiente tope)', start: start('depth', 1) },
+          { face: 'top', on: faces.top && !!onApplyMeasures, pos: [0, h + out, 0], n: [0, 1, 0], label: `${Math.round(module.height)} mm`, title: 'Jalar la cara de arriba (clic simple: estirar hasta el siguiente tope)', start: start('top', 1) },
+          { face: 'bottom', on: faces.bottom && !!onApplyMeasures, pos: [0, -h - out, 0], n: [0, -1, 0], label: `${Math.round(module.height)} mm`, title: 'Jalar la cara de abajo (clic simple: estirar hasta el siguiente tope)', start: start('height', -1) },
+        ];
+        return list.filter(f => f.on).map(f => (
+          <FaceHandle
+            key={f.face}
+            position={f.pos}
+            normal={f.n}
+            meshPosition={position}
+            meshRotation={rotation}
+            label={f.label}
+            title={f.title}
+            onStart={f.start}
+            onClick={() => onExtendFace?.(module.uniqueId, f.face)}
+          />
+        ));
+      })()}
 
       {/* Con el módulo seleccionado (clic), cada cara trae su X roja (eliminar) y su + verde (dividir): la cara de arriba lo divide
           en uno superior y uno inferior; el costado, en uno frontal y uno posterior. Solo en isométrica y 3D, donde esas caras se ven */}
@@ -456,32 +564,6 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
           </div>
         </HtmlScaled>
       ))}
-
-      {/* Flechas de fondo y alto. Planta: ▼ del frente = fondo. Frontal: ▲ y ▼ = alto. Isométrica/3D: ▲ y ▼ = alto y ↘ en el costado = fondo */}
-      {selected && onApplyMeasures && !isDragging && (() => {
-        const arrows: Array<{ key: string; pos: [number, number, number]; glyph: string; field: 'depth' | 'height' | 'top'; sign: number; title: string }> = [];
-        const h = module.height / 2000;
-        const front = module.depth / 2000 + 0.03;
-        if (isPlan) {
-          arrows.push({ key: 'depth', pos: [0, h + 0.002, module.depth / 2000], glyph: '▼', field: 'depth', sign: 1, title: 'Arrastrar para cambiar el fondo' });
-        } else {
-          arrows.push({ key: 'h-top', pos: [module.width / 2000 * 0.5, h + 0.03, front], glyph: '▲', field: 'top', sign: 1, title: 'Arrastrar para cambiar el alto' });
-          arrows.push({ key: 'h-bottom', pos: [0, -h - 0.03, front], glyph: '▼', field: 'height', sign: -1, title: 'Arrastrar para cambiar el alto' });
-          if (viewMode !== 'frontal') arrows.push({ key: 'depth', pos: [module.width / 2000, h * 0.6, 0], glyph: '↘', field: 'depth', sign: 1, title: 'Arrastrar para cambiar el fondo' });
-        }
-        return arrows.map(ar => (
-          <Html key={ar.key} position={ar.pos} center zIndexRange={[110, 0]} style={{ pointerEvents: 'none' }}>
-            <button
-              data-overlay
-              onPointerDown={(e) => { e.stopPropagation(); handleMeasurePointerDown(e, ar.field, ar.sign); }}
-              className="pointer-events-auto flex items-center justify-center w-7 h-7 rounded-full border-2 border-white shadow-lg bg-red-500 hover:bg-red-600 text-white text-[15px] leading-none font-black cursor-ns-resize"
-              title={ar.title}
-            >
-              {ar.glyph}
-            </button>
-          </Html>
-        ));
-      })()}
 
       {/* Doble clic: editor de largo, ancho (fondo) y alto */}
       {editing && onApplyMeasures && onCloseEditor && (
@@ -1607,6 +1689,7 @@ interface KitchenViewer3DProps {
   onSetModuleVistos?: (id: string, v: SideConfig) => void;
   onSplitHorizontal?: (id: string) => void;
   onSplitDepth?: (id: string) => void;
+  onExtendFace?: (id: string, face: FaceKey) => void;
   onDragModule?: (id: string, newPositionX: number) => void;
   onResizeEdge?: (id: string, side: 'left' | 'right', deltaX: number, initialWidth: number, initialPositionX: number) => void;
   onMoveAppliance?: (type: ApplianceType, wall: WallName, distance: number) => void;
@@ -1618,7 +1701,7 @@ interface KitchenViewer3DProps {
 
 export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   layout, lArm, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules, boxes, appliances, hasIsland, island, islands = [], onEditIsland, onDeleteIsland, viewMode, hasZocalo, zocaloHeight = 100,
-  hasLeftClosure, hasRightClosure, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSplitHorizontal, onSplitDepth, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
+  hasLeftClosure, hasRightClosure, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSplitHorizontal, onSplitDepth, onExtendFace, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
 }) => {
   const controlsRef = useRef<any>(null);
   // Módulo seleccionado (clic) y módulo cuyo editor de medidas está abierto (doble clic)
@@ -1627,6 +1710,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   const [selectedCounter, setSelectedCounter] = useState<string | null>(null);
   const [editingCounter, setEditingCounter] = useState<string | null>(null);
   const [measures, setMeasures] = useState<Measure[]>([]);
+  // Módulo bajo el cursor mientras se arrastra una manija: su cara es la referencia del estiramiento
+  const hoverRef = useRef<{ id: string; point: THREE.Vector3 } | null>(null);
   // Al salir de la cinta se borran las mediciones, y mientras se mide no hay selección
   useEffect(() => {
     if (!measureMode) setMeasures([]);
@@ -1838,6 +1923,51 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             module={mod}
             onSplitHorizontal={(!measureMode && mod.height >= 200) ? onSplitHorizontal : undefined}
             onSplitDepth={(!measureMode && mod.depth >= 200) ? onSplitDepth : undefined}
+            onExtendFace={measureMode ? undefined : onExtendFace}
+            hoverRef={hoverRef}
+            resolveReference={(selfId, face, hoverId, point) => {
+              const sb = findModuleBox(boxes, selfId);
+              const hb = findModuleBox(boxes, hoverId);
+              const sm = modules.find(m => m.uniqueId === selfId);
+              if (!sb || !hb || !sm) return null;
+              const snap = (n: number) => Math.round(n / 5) * 5;
+              const nearest = (cands: number[], x: number) => cands.reduce((p, c) => (Math.abs(c - x) < Math.abs(p - x) ? c : p));
+              const alongA = sm.wall === 'A' || sm.wall === 'Island';
+              const X = point.x * 1000 + wallA / 2, Y = (point.z - offsetZ) * 1000, Z = point.y * 1000;
+              const along = (b: Box) => (alongA ? [b.x, b.x + b.sx] : [b.y, b.y + b.sy]);
+              const across = (b: Box) => (sm.wall === 'C' ? [wallA - (b.x + b.sx), wallA - b.x] : sm.wall === 'B' ? [b.x, b.x + b.sx] : [b.y, b.y + b.sy]);
+              const hitAlong = alongA ? X : Y;
+              const hitAcross = sm.wall === 'C' ? wallA - X : sm.wall === 'B' ? X : Y;
+              if (face === 'right') return { width: snap(nearest(along(hb), hitAlong) - along(sb)[0]) };
+              if (face === 'left') return { width: snap(along(sb)[1] - nearest(along(hb), hitAlong)) };
+              if (face === 'front') return { depth: snap(nearest(across(hb), hitAcross) - across(sb)[0]) };
+              const P = nearest([hb.z, hb.z + hb.sz], Z);
+              if (face === 'top') return { height: snap(P - sb.z), topGap: sm.type === 'UPPER' ? snap(spaceHeight - TOP_MARGIN - P) : 0 };
+              return { height: snap(sb.z + sb.sz - P) };
+            }}
+            faces={(() => {
+              // Una cara está libre si no tiene otro módulo (o electrodoméstico) pegado
+              const solids = boxes.filter(o => (o.kind === 'lower' || o.kind === 'upper' || o.kind === 'tall' || o.kind === 'appliance') && o.id !== box.id);
+              const ov = (a0: number, a1: number, b0: number, b1: number) => Math.min(a1, b1) - Math.max(a0, b0) > 1;
+              const near = (a: number, b: number) => Math.abs(a - b) <= 1;
+              const touches = (dir: 'x+' | 'x-' | 'y+' | 'z+' | 'z-') => solids.some(o => {
+                const ox = ov(box.x, box.x + box.sx, o.x, o.x + o.sx), oy = ov(box.y, box.y + box.sy, o.y, o.y + o.sy), oz = ov(box.z, box.z + box.sz, o.z, o.z + o.sz);
+                if (dir === 'z+') return near(o.z, box.z + box.sz) && ox && oy;
+                if (dir === 'z-') return near(o.z + o.sz, box.z) && ox && oy;
+                if (dir === 'y+') return near(o.y, box.y + box.sy) && ox && oz;
+                if (dir === 'x+') return near(o.x, box.x + box.sx) && oy && oz;
+                return near(o.x + o.sx, box.x) && oy && oz;
+              });
+              const frontDir = mod.wall === 'B' ? 'x+' : mod.wall === 'C' ? 'x-' : 'y+';
+              const isUpper = mod.type === 'UPPER';
+              return {
+                left: !hasLeftJunction,
+                right: !hasRightJunction,
+                front: !touches(frontDir),
+                top: !touches('z+') && !(isUpper && (mod.topGap ?? 0) <= 0),
+                bottom: isUpper && !touches('z-'),
+              };
+            })()}
             onSetVistos={onSetModuleVistos}
             position={pos}
             rotation={rot}
