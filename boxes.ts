@@ -1,4 +1,4 @@
-import { KitchenModule, Appliance, LayoutType, WallName } from './types';
+import { KitchenModule, Appliance, LayoutType, WallName, IslandItem } from './types';
 
 /**
  * LISTA ÚNICA DE CAJAS: fuente de verdad de la geometría de la cocina.
@@ -46,6 +46,7 @@ export interface Box {
   moduleId?: string;
   applianceType?: string;
   cutouts?: Cutout[]; // aberturas (poceta, estufa) cuando la caja es un mesón
+  islandId?: string;  // módulos y piezas de una isla o península (no cuentan como parte de los muros A, B o C)
   // Ingletes a 45° entre el mesón y la cascada (solo se dibujan; las cajas siguen siendo prismas)
   mitreBottom?: Array<'x-' | 'x+' | 'y-' | 'y+'>; // mesón: lados donde el canto de abajo se recorta un espesor
   mitreTop?: 'x-' | 'x+' | 'y-' | 'y+';           // cascada: lado (el del mesón) donde el canto de arriba baja un espesor
@@ -54,6 +55,7 @@ export interface Box {
 // Constantes de geometría compartidas por la app, la escena y la exportación
 export const WALL_THICKNESS = 150;       // espesor de los muros (mm)
 export const LOWER_DEPTH = 570;          // fondo módulo base (mm)
+export const ISLAND_PLINTH_INSET = 50;   // el zócalo de una isla o península queda 5 cm hacia adentro de su medida general, por cada lado
 export const SPLASH_HEIGHT_DEFAULT = 70;   // alto del salpicadero (mm)
 export const UPPER_DEPTH = 330;          // fondo módulo aéreo (mm)
 export const CORNER_BLIND_OFFSET = LOWER_DEPTH; // esquina ciega: el muro B/C arranca tras el fondo del MB del muro A
@@ -120,6 +122,8 @@ export interface BuildBoxesInput {
   hasSplash?: boolean;   // salpicadero: pieza del mismo material del mesón, atrás y en los lados con muro o módulo más alto
   splashHeight?: number; // alto del salpicadero (por defecto 70 mm)
   counterExtras?: Record<string, CounterExtras>;
+  islands?: IslandItem[];
+  lArm?: 'left' | 'right'; // cocina en L: de qué lado está el brazo (izquierda = muro B, derecha = muro C)
 }
 
 export function buildBoxes(input: BuildBoxesInput): Box[] {
@@ -132,8 +136,9 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   const T = WALL_THICKNESS;
   const zh = hasZocalo ? zocaloHeight : 0;
   const boxes: Box[] = [];
-  const hasB = layout === 'L_SHAPE' || layout === 'U_SHAPE';
-  const hasC = layout === 'U_SHAPE';
+  // En L el brazo es el muro B (izquierda) o el muro C (derecha); en U están los dos
+  const hasB = layout === 'U_SHAPE' || (layout === 'L_SHAPE' && input.lArm !== 'right');
+  const hasC = layout === 'U_SHAPE' || (layout === 'L_SHAPE' && input.lArm === 'right');
 
   // --- Muros ---
   boxes.push({ id: 'wall-A', name: 'Muro A', kind: 'wall', wall: 'A', x: 0, y: -T, z: 0, sx: wallA, sy: T, sz: spaceHeight, facing: null });
@@ -152,16 +157,16 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   const CT = CLOSURE_THICKNESS;
   const CD = CLOSURE_DEPTH;
   if (input.hasLeftClosure) {
-    const c = layout === 'STRAIGHT'
+    const c = !hasB
       ? { x: -CT, y: -T, sx: CT, sy: CD + T }      // junto al extremo izquierdo de A, hasta la cara exterior de A
       : { x: -T, y: wallB, sx: T + CD, sy: CT };   // al final del brazo B, desde la cara exterior de B
-    boxes.push({ id: 'closure-left', name: 'Muro auxiliar izquierdo', kind: 'wall', wall: layout === 'STRAIGHT' ? 'A' : 'B', ...c, z: 0, sz: spaceHeight, facing: null });
+    boxes.push({ id: 'closure-left', name: 'Muro auxiliar izquierdo', kind: 'wall', wall: !hasB ? 'A' : 'B', ...c, z: 0, sz: spaceHeight, facing: null });
   }
   if (input.hasRightClosure) {
-    const c = layout === 'U_SHAPE'
+    const c = hasC
       ? { x: wallA - CD, y: wallC, sx: CD + T, sy: CT }   // al final del brazo C, hasta la cara exterior de C
       : { x: wallA, y: -T, sx: CT, sy: CD + T };          // junto al extremo derecho de A, hasta la cara exterior de A
-    boxes.push({ id: 'closure-right', name: 'Muro auxiliar derecho', kind: 'wall', wall: layout === 'U_SHAPE' ? 'C' : 'A', ...c, z: 0, sz: spaceHeight, facing: null });
+    boxes.push({ id: 'closure-right', name: 'Muro auxiliar derecho', kind: 'wall', wall: hasC ? 'C' : 'A', ...c, z: 0, sz: spaceHeight, facing: null });
   }
 
   // --- Zócalo ---
@@ -185,6 +190,18 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       return segments.filter(([x0, x1]) => x1 - x0 > 1);
     };
 
+    // Zócalo de cada isla o península: misma altura que el de la cocina, con el perímetro 5 cm más pequeño que su medida general
+    (input.islands ?? []).forEach(isl => {
+      const inset = ISLAND_PLINTH_INSET;
+      // La península está pegada al muro perpendicular: ese costado no se retrae
+      const wallSide = isl.kind === 'peninsula' ? inset : 0;
+      if (isl.length - 2 * inset + wallSide < 50 || isl.width - 2 * inset < 50) return;
+      boxes.push({
+        id: `zocalo-isla-${isl.id}`, name: `Zócalo ${isl.kind === 'peninsula' ? 'península' : 'isla'}`, kind: 'zocalo', wall: 'A',
+        x: isl.dx + inset - (input.lArm === 'right' ? 0 : wallSide), y: isl.dy + inset, z: 0, sx: isl.length - 2 * inset + wallSide, sy: isl.width - 2 * inset, sz: zh, facing: null,
+      });
+    });
+
     const yStart = Math.min(zocaloDepth, CORNER_BLIND_OFFSET);
     plinthSegments('A', 0, wallA).forEach(([x0, x1], i) => {
       boxes.push({ id: `zocalo-A-${i}`, name: 'Zócalo A', kind: 'zocalo', wall: 'A', x: x0, y: 0, z: 0, sx: x1 - x0, sy: zocaloDepth, sz: zh, facing: null });
@@ -207,24 +224,30 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
 
   // Coloca una caja contra el muro indicado: "along" es la posición a lo largo del muro (desde el inicio de ese brazo)
   // y "width" su ancho en ese sentido
-  const placeOnWall = (wall: WallName, along: number, width: number, depth: number, origin: number = CORNER_BLIND_OFFSET) => {
-    if (wall === 'B') return { x: 0, y: origin + along, sx: depth, sy: width, facing: '+X' as BoxFacing };
-    if (wall === 'C') return { x: wallA - depth, y: origin + along, sx: depth, sy: width, facing: '-X' as BoxFacing };
-    return { x: along, y: 0, sx: width, sy: depth, facing: '+Y' as BoxFacing };
+  // across: distancia del muro a la cara trasera (módulos partidos en frente y fondo)
+  const placeOnWall = (wall: WallName, along: number, width: number, depth: number, origin: number = CORNER_BLIND_OFFSET, across: number = 0) => {
+    if (wall === 'B') return { x: across, y: origin + along, sx: depth, sy: width, facing: '+X' as BoxFacing };
+    if (wall === 'C') return { x: wallA - depth - across, y: origin + along, sx: depth, sy: width, facing: '-X' as BoxFacing };
+    return { x: along, y: across, sx: width, sy: depth, facing: '+Y' as BoxFacing };
   };
 
   // --- Módulos ---
   modules.forEach(mod => {
-    if (mod.wall === 'Island') return;
+    const isl = mod.wall === 'Island' ? (input.islands ?? []).find(i => i.id === mod.islandId) : undefined;
+    if (mod.wall === 'Island' && !isl) return; // módulo de una isla que ya no está activa
+    const boxWall: WallName = mod.wall === 'Island' ? 'A' : mod.wall;
     const kind: BoxKind = mod.type === 'UPPER' ? 'upper' : mod.type === 'TALL' ? 'tall' : 'lower';
     // Los aéreos cuelgan desde el techo (queda TOP_MARGIN libre); el resto se apoya sobre el zócalo
     const z = mod.type === 'UPPER' ? spaceHeight - TOP_MARGIN - (mod.topGap ?? 0) - mod.height : zh;
-    const p = placeOnWall(mod.wall, mod.positionX, mod.width, mod.depth, armOrigin(mod.wall, mod.type === 'UPPER'));
+    // Isla o península: el módulo va a lo largo del largo de la isla, con el frente hacia +Y
+    const p = isl
+      ? { x: isl.dx + mod.positionX, y: isl.dy + (mod.depthOffset ?? 0), sx: mod.width, sy: mod.depth, facing: '+Y' as BoxFacing }
+      : placeOnWall(mod.wall as WallName, mod.positionX, mod.width, mod.depth, armOrigin(mod.wall as WallName, mod.type === 'UPPER'), mod.depthOffset ?? 0);
     // Piezas laterales pegadas al módulo: la dilatada (con su propio fondo y alto) y el visto (todo el fondo). El ancho del
     // módulo ya viene restado, así que el conjunto ocupa la misma medida. De adentro hacia afuera: dilatada y luego visto.
     // Mirando el frente, la izquierda es el inicio del muro A y del C, y el final del B.
     const leftAtStart = mod.wall !== 'B';
-    const alongA = mod.wall === 'A';
+    const alongA = boxWall === 'A';
     const lateralTier = mod.type === 'UPPER' ? 'upper' : 'lower';
     const lateral = (l?: boolean, r?: boolean) => ({ start: leftAtStart ? l : r, end: leftAtStart ? r : l });
     const vs = lateral(mod.vistoLeft, mod.vistoRight);
@@ -242,7 +265,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         const acrossStart = full ? (alongA ? p.y : p.x) : (alongA ? p.y + p.sy - depthMm : mod.wall === 'B' ? p.x + p.sx - depthMm : p.x);
         const across = full ? (alongA ? p.sy : p.sx) : depthMm;
         boxes.push({
-          id, name, kind: 'filler', wall: mod.wall as WallName,
+          id, name, kind: 'filler', wall: boxWall, islandId: isl?.id,
           x: alongA ? p.x + along0 : acrossStart, y: alongA ? acrossStart : p.y + along0, z,
           sx: alongA ? thick : across, sy: alongA ? across : thick, sz: heightMm, facing: null,
         });
@@ -255,7 +278,8 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       id: mod.uniqueId,
       name: `${mod.label ? mod.label + ' ' : ''}${mod.name}`,
       kind,
-      wall: mod.wall,
+      wall: boxWall,
+      islandId: isl?.id,
       x: p.x, y: p.y, z,
       sx: p.sx, sy: p.sy, sz: mod.height,
       facing: p.facing,
@@ -276,7 +300,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
 
     (['A', 'B', 'C'] as WallName[]).forEach(wall => {
       (['lower', 'upper'] as const).forEach(tier => {
-        const run = boxes.filter(bx => bx.moduleId && bx.wall === wall && bx.kind === tier)
+        const run = boxes.filter(bx => bx.moduleId && bx.wall === wall && bx.kind === tier && !bx.islandId)
           .sort((p, q) => alongStart(p, wall, tier) - alongStart(q, wall, tier));
         if (run.length === 0) return;
 
@@ -297,8 +321,8 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         const last = run[run.length - 1];
         // Extremos que tocan un muro: el inicio de A toca el muro B (L y U) o el muro auxiliar izquierdo (recta);
         // el final de A toca el muro C (U) o el muro auxiliar derecho; el final de cada brazo toca su muro auxiliar.
-        const closesStart = wall === 'A' && (layout !== 'STRAIGHT' || !!input.hasLeftClosure);
-        const closesEnd = wall === 'A' ? layout === 'U_SHAPE' || !!input.hasRightClosure
+        const closesStart = wall === 'A' && (hasB || !!input.hasLeftClosure);
+        const closesEnd = wall === 'A' ? hasC || !!input.hasRightClosure
           : wall === 'B' ? !!input.hasLeftClosure : !!input.hasRightClosure;
         if (closesStart && Math.abs(alongStart(first, wall, tier) - dilGap) <= 1) place('start', first);
         if (closesEnd && Math.abs(alongStart(last, wall, tier) + alongSize(last, wall) - (armLength(wall, tier) - dilGap)) <= 1) place('end', last);
@@ -329,7 +353,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   // --- Mesón: una losa por tramo continuo de módulos bajos de cada muro, con aberturas para poceta y estufa ---
   if (hasCounter && counterThickness > 0) {
     (['A', 'B', 'C'] as WallName[]).forEach(wall => {
-      const lowers = boxes.filter(b => b.kind === 'lower' && b.wall === wall);
+      const lowers = boxes.filter(b => b.kind === 'lower' && b.wall === wall && !b.islandId);
       if (lowers.length === 0) return;
       const range = (b: Box) => (wall === 'A' ? { start: b.x, end: b.x + b.sx } : { start: b.y, end: b.y + b.sy });
       const sorted = [...lowers].sort((a, b) => range(a).start - range(b).start);
@@ -349,7 +373,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
           && run.some(m => f.id.includes(`-lower-${m.moduleId}-`)));
         const start = Math.min(range(run[0]).start, ...lateral.map(f => range(f).start));
         const end = Math.max(range(run[run.length - 1]).end, ...lateral.map(f => range(f).end));
-        const depth = Math.max(...run.map(b => (wall === 'A' ? b.sy : b.sx)));
+        const depth = Math.max(...run.map(b => (wall === 'A' ? b.y + b.sy : wall === 'B' ? b.x + b.sx : wallA - b.x)));
         const topOfModules = Math.max(...run.map(b => b.z + b.sz));
         const slabDepth = depth + counterOverhang;
         const ct = counterThickness;

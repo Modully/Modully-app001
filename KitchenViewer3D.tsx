@@ -3,7 +3,7 @@ import React, { useMemo, useRef, useEffect, useState } from 'react';
 import { Canvas, useFrame, useThree, ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, Grid, Environment, Text, Edges, PerspectiveCamera, OrthographicCamera, Html, Line } from '@react-three/drei';
 import * as THREE from 'three';
-import { KitchenModule, Appliance, ApplianceType, LayoutType, WallName } from './types';
+import { IslandItem, KitchenModule, Appliance, ApplianceType, LayoutType, WallName } from './types';
 import { Box, findModuleBox, boxesBounds, applianceCenter, counterTopZ, CORNER_BLIND_OFFSET, WALL_THICKNESS } from './boxes';
 import { COLORS } from './constants';
 import { X, Plus, Ruler } from 'lucide-react';
@@ -49,7 +49,7 @@ const HtmlScaled: React.FC<React.ComponentProps<typeof Html> & { zoomScale?: boo
 };
 
 /** Eje a lo largo del cual crece "positionX" en cada muro (A: +X de la escena; B y C: +Z) */
-const wallAxis = (wall: string) => (wall === 'A' ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1));
+const wallAxis = (wall: string) => (wall === 'A' || wall === 'Island' ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1));
 
 /** Píxeles de pantalla que recorre 1 metro a lo largo de un eje, vistos desde la cámara actual */
 function screenPixelsPerMeter(camera: THREE.Camera, size: { width: number; height: number }, origin: THREE.Vector3, axis: THREE.Vector3) {
@@ -110,10 +110,11 @@ interface Module3DProps {
   onSetTop?: (id: string, height: number, topGap: number) => void;
   onSetVistos?: (id: string, v: SideConfig) => void;
   onSplitHorizontal?: (id: string) => void; // divide el módulo en dos a lo alto
+  onSplitDepth?: (id: string) => void;       // divide el módulo en dos: frente y fondo
   source?: KitchenModule; // módulo completo (la copia `module` puede venir con el cuerpo acortado por los vistos)
 }
 
-const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0, 0], onDelete, onSplit, onEditDimension, onDragPosition, onResizeEdge, controlsRef, hideLeftArrow, hideRightArrow, viewMode, selected, costado = 'right', editing, onSelect, onOpenEditor, onCloseEditor, onApplyMeasures, onSetTop, onSetVistos, onSplitHorizontal, source }) => {
+const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0, 0], onDelete, onSplit, onEditDimension, onDragPosition, onResizeEdge, controlsRef, hideLeftArrow, hideRightArrow, viewMode, selected, costado = 'right', editing, onSelect, onOpenEditor, onCloseEditor, onApplyMeasures, onSetTop, onSetVistos, onSplitHorizontal, onSplitDepth, source }) => {
   const isPlan = viewMode === 'plan';
   const [hovered, setHover] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -210,7 +211,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
   const handleMeasurePointerDown = (e: { clientX: number; clientY: number }, field: 'depth' | 'height' | 'top', sign = 1) => {
     if (!onApplyMeasures || !controlsRef?.current) return;
     const axis = field === 'height' || field === 'top' ? new THREE.Vector3(0, 1, 0)
-      : module.wall === 'A' ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(module.wall === 'B' ? 1 : -1, 0, 0);
+      : module.wall === 'A' || module.wall === 'Island' ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(module.wall === 'B' ? 1 : -1, 0, 0);
     const { sx, sy } = screenPixelsPerMeter(camera, size, new THREE.Vector3(...position), axis);
     measureStart.current = { field, value: field === 'depth' ? module.depth : module.height, gap: module.topGap ?? 0, sx, sy, sign };
     controlsRef.current.enabled = false;
@@ -426,20 +427,35 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
         </Html>
       ))}
 
-      {/* "+" arriba del módulo seleccionado: lo divide en dos a lo alto */}
-      {selected && onSplitHorizontal && !isPlan && (
-        <Html position={[0, module.height / 2000 + 0.07, module.depth / 2000 + 0.02]} center zIndexRange={[105, 0]} style={{ pointerEvents: 'none' }}>
-          <button
-            data-overlay
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); onSplitHorizontal(module.uniqueId); }}
-            className="pointer-events-auto flex items-center justify-center w-6 h-6 rounded-full border-2 border-white shadow-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[16px] leading-none font-black"
-            title="Dividir este módulo en dos a lo alto"
-          >
-            +
-          </button>
-        </Html>
-      )}
+      {/* Con el módulo seleccionado (clic), cada cara trae su X roja (eliminar) y su + verde (dividir): la cara de arriba lo divide
+          en uno superior y uno inferior; el costado, en uno frontal y uno posterior. Solo en isométrica y 3D, donde esas caras se ven */}
+      {selected && (viewMode === 'isometric' || viewMode === '3d') && ([
+        { key: 'top', pos: [0, module.height / 2000 + 0.002, 0] as [number, number, number], rot: [-Math.PI / 2, 0, 0] as [number, number, number], split: onSplitHorizontal, title: 'Dividir en uno superior y uno inferior' },
+        { key: 'side', pos: [module.width / 2000 + 0.002, 0, 0] as [number, number, number], rot: [0, Math.PI / 2, 0] as [number, number, number], split: onSplitDepth, title: 'Dividir en uno frontal y uno posterior' },
+      ]).map(face => (
+        <HtmlScaled key={face.key} position={face.pos} rotation={face.rot} center distanceFactor={1} zIndexRange={[105, 0]}>
+          <div data-overlay className="flex items-center gap-2" onPointerDown={(e) => e.stopPropagation()}>
+            {onDelete && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(module.uniqueId); }}
+                className="w-18 h-18 rounded-full bg-red-500 hover:bg-red-600 text-white shadow-lg border-2 border-white flex items-center justify-center transition-all hover:scale-110"
+                title="Eliminar"
+              >
+                <X size={36} strokeWidth={3} />
+              </button>
+            )}
+            {face.split && (
+              <button
+                onClick={(e) => { e.stopPropagation(); face.split!(module.uniqueId); }}
+                className="w-18 h-18 rounded-full bg-green-500 hover:bg-green-600 text-white shadow-lg border-2 border-white flex items-center justify-center transition-all hover:scale-110"
+                title={face.title}
+              >
+                <Plus size={36} strokeWidth={3} />
+              </button>
+            )}
+          </div>
+        </HtmlScaled>
+      ))}
 
       {/* Flechas de fondo y alto. Planta: ▼ del frente = fondo. Frontal: ▲ y ▼ = alto. Isométrica/3D: ▲ y ▼ = alto y ↘ en el costado = fondo */}
       {selected && onApplyMeasures && !isDragging && (() => {
@@ -499,7 +515,7 @@ interface JunctionControl3DProps {
   rotation?: [number, number, number];
   onResizeJunction?: (leftId: string, rightId: string, deltaX: number, initialLeftWidth: number, initialRightWidth: number, initialLeftPositionX: number, initialRightPositionX: number) => void;
   controlsRef?: React.RefObject<any>;
-  wall: WallName;
+  wall: WallName | 'Island';
 }
 
 const JunctionControl3D: React.FC<JunctionControl3DProps> = ({ leftModule, rightModule, position, rotation = [0, 0, 0], onResizeJunction, controlsRef, wall }) => {
@@ -839,6 +855,157 @@ const CounterEditor: React.FC<{
   );
 };
 
+/**
+ * Isla o península en la escena: medida general sobre el piso (se arrastra con el ratón), etiqueta, botón para eliminarla
+ * (con confirmación) y, en planta, las dos cotas editables desde el punto 0.
+ */
+const Island3D: React.FC<{
+  isl: IslandItem;
+  toWorld: (X: number, Y: number) => [number, number];
+  viewMode: string;
+  interactive: boolean;
+  controlsRef: React.RefObject<any>;
+  onEdit?: (id: string, patch: Partial<IslandItem>) => void;
+  onDelete?: (id: string) => void;
+}> = ({ isl, toWorld, viewMode, interactive, controlsRef, onEdit, onDelete }) => {
+  const { camera, size } = useThree();
+  const [confirming, setConfirming] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState({ length: '', width: '' });
+  const applyMeasure = () => {
+    const l = Math.round(parseFloat(draft.length) || 0);
+    const w = Math.round(parseFloat(draft.width) || 0);
+    if (l >= 300 && w >= 300 && onEdit) onEdit(isl.id, { length: l, width: w });
+    setEditing(false);
+  };
+  const start = useRef<{ dx: number; dy: number; ax: { x: number; y: number }; az: { x: number; y: number } } | null>(null);
+
+  const [x0, z0] = toWorld(isl.dx, isl.dy);
+  const [x1, z1] = toWorld(isl.dx + isl.length, isl.dy + isl.width);
+  const [ox, oz] = toWorld(0, 0);
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  const y = 0.004;
+  const label = isl.kind === 'peninsula' ? 'Península' : 'Isla';
+
+  // El arrastre se mide en pantalla y se pasa a milímetros a lo largo de los ejes X (muro A) y Y (hacia el frente) de la
+  // cocina, resolviendo el sistema 2x2 de cómo se ven esos ejes desde la cámara (sirve igual en planta y en perspectiva)
+  const startDrag = useDocumentDrag(
+    (px, py) => {
+      const st = start.current;
+      if (!st || !onEdit) return;
+      const det = st.ax.x * st.az.y - st.ax.y * st.az.x;
+      if (Math.abs(det) < 1) return;
+      const mx = ((px * st.az.y - py * st.az.x) / det) * 1000;
+      const my = ((st.ax.x * py - st.ax.y * px) / det) * 1000;
+      // La península va pegada al muro perpendicular: solo se desliza hacia el frente
+      onEdit(isl.id, { dx: isl.kind === 'peninsula' ? isl.dx : Math.max(0, Math.round((st.dx + mx) / 5) * 5), dy: Math.max(0, Math.round((st.dy + my) / 5) * 5) });
+    },
+    () => {
+      start.current = null;
+      setDragging(false);
+      if (controlsRef.current) controlsRef.current.enabled = true;
+      document.body.style.cursor = 'auto';
+    }
+  );
+  const handleDown = (e: ThreeEvent<PointerEvent>) => {
+    if (!interactive || !onEdit || isOverlay(e) || !controlsRef.current) return;
+    e.stopPropagation();
+    const origin = new THREE.Vector3(cx, y, cz);
+    const a = screenPixelsPerMeter(camera, size, origin, new THREE.Vector3(1, 0, 0));
+    const b = screenPixelsPerMeter(camera, size, origin, new THREE.Vector3(0, 0, 1));
+    start.current = { dx: isl.dx, dy: isl.dy, ax: { x: a.sx, y: a.sy }, az: { x: b.sx, y: b.sy } };
+    setDragging(true);
+    controlsRef.current.enabled = false;
+    document.body.style.cursor = 'grabbing';
+    startDrag(e.nativeEvent);
+  };
+
+  return (
+    <group>
+      <mesh
+        position={[cx, y, cz]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        onPointerDown={handleDown}
+        onPointerOver={() => { if (interactive && !dragging) document.body.style.cursor = 'grab'; }}
+        onPointerOut={() => { if (!dragging) document.body.style.cursor = 'auto'; }}
+      >
+        <planeGeometry args={[isl.length / 1000, isl.width / 1000]} />
+        <meshBasicMaterial color="#6366f1" transparent opacity={dragging ? 0.28 : 0.12} depthWrite={false} />
+      </mesh>
+      <Line points={[[x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1], [x0, y, z0]]} color="#6366f1" lineWidth={2} dashed dashSize={0.06} gapSize={0.04} />
+      <Html position={[cx, y, cz]} center zIndexRange={[110, 0]} style={{ pointerEvents: 'none' }}>
+        {editing ? (
+          <div data-overlay className="pointer-events-auto p-2 w-44 rounded-xl bg-white border border-slate-300 shadow-xl space-y-1.5" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">{label}: medida general</div>
+            {(['length', 'width'] as const).map(k => (
+              <label key={k} className="flex items-center justify-between gap-2 text-[11px] font-bold text-slate-600">
+                {k === 'length' ? 'Largo' : 'Ancho'}
+                <input
+                  autoFocus={k === 'length'}
+                  type="number"
+                  value={draft[k]}
+                  onChange={(e) => setDraft({ ...draft, [k]: e.target.value })}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') applyMeasure(); if (e.key === 'Escape') setEditing(false); }}
+                  className="w-20 px-1.5 py-1 rounded border border-slate-300 bg-white text-[12px] font-black text-slate-800 outline-none focus:border-indigo-500"
+                />
+              </label>
+            ))}
+            <div className="flex gap-1.5 pt-0.5">
+              <button className="flex-1 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black" onClick={applyMeasure}>Aplicar</button>
+              <button className="flex-1 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-black" onClick={() => setEditing(false)}>Cerrar</button>
+            </div>
+          </div>
+        ) : (
+          <div
+            data-overlay
+            className={`select-none whitespace-nowrap px-2 py-1 rounded-lg bg-indigo-600/90 text-white text-[10px] leading-none font-black shadow ${interactive && onEdit ? 'pointer-events-auto cursor-text hover:bg-indigo-700' : ''}`}
+            title={interactive && onEdit ? 'Clic para editar la medida general' : undefined}
+            onClick={() => { if (interactive && onEdit) { setDraft({ length: String(Math.round(isl.length)), width: String(Math.round(isl.width)) }); setEditing(true); } }}
+          >
+            {label} {Math.round(isl.length)} × {Math.round(isl.width)}
+          </div>
+        )}
+      </Html>
+
+      {/* Eliminar: pide confirmación antes de borrar */}
+      {interactive && onDelete && (
+        <Html position={[x1, y, z0]} center zIndexRange={[120, 0]} style={{ pointerEvents: 'none' }}>
+          <div data-overlay className="pointer-events-auto">
+            {confirming ? (
+              <div className="p-2 w-40 rounded-xl bg-white border border-slate-300 shadow-xl space-y-1.5 text-center" onMouseDown={(e) => e.stopPropagation()}>
+                <div className="text-[11px] font-black text-slate-700">¿Eliminar {label.toLowerCase()}?</div>
+                <div className="flex gap-1.5">
+                  <button className="flex-1 py-1 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[11px] font-black" onClick={() => { setConfirming(false); onDelete(isl.id); }}>Eliminar</button>
+                  <button className="flex-1 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-black" onClick={() => setConfirming(false)}>Cancelar</button>
+                </div>
+              </div>
+            ) : (
+              <button className="w-6 h-6 rounded-full bg-red-500 hover:bg-red-600 text-white border-2 border-white shadow-lg flex items-center justify-center text-[14px] leading-none font-black" title={`Eliminar ${label.toLowerCase()}`} onPointerDown={(e) => e.stopPropagation()} onClick={() => setConfirming(true)}>×</button>
+            )}
+          </div>
+        </Html>
+      )}
+
+      {viewMode === 'plan' && (
+        <>
+          {/* Cota X: del punto 0 a la esquina de la isla, a lo largo del muro A (la península está pegada al muro: sin cota X) */}
+          {isl.kind !== 'peninsula' && <Line points={[[ox, y, z0], [x0, y, z0]]} color="#6366f1" lineWidth={2} />}
+          {isl.kind !== 'peninsula' && <Html position={[(ox + x0) / 2, y, z0]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
+            <div data-overlay><DimLabel text={String(Math.round(isl.dx))} value={isl.dx} onCommit={onEdit ? (typed) => onEdit(isl.id, { dx: Math.max(0, Math.round(typed)) }) : undefined} title={`${Math.round(isl.dx)} mm desde el punto 0. Clic para editar`} /></div>
+          </Html>}
+          {/* Cota Y: del muro A a la esquina de la isla, hacia el frente */}
+          <Line points={[[x0, y, oz], [x0, y, z0]]} color="#6366f1" lineWidth={2} />
+          <Html position={[x0, y, (oz + z0) / 2]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
+            <div data-overlay><DimLabel text={String(Math.round(isl.dy))} value={isl.dy} onCommit={onEdit ? (typed) => onEdit(isl.id, { dy: Math.max(0, Math.round(typed)) }) : undefined} title={`${Math.round(isl.dy)} mm desde el punto 0. Clic para editar`} /></div>
+          </Html>
+        </>
+      )}
+    </group>
+  );
+};
+
 const Counter3D: React.FC<{
   box: Box; wallA: number; offsetZ: number; translucent: boolean;
   selected?: boolean; editing?: boolean; settings?: CounterSettings; sides?: CounterSides;
@@ -927,15 +1094,16 @@ interface ApplianceDrag {
 const ApplianceDragController: React.FC<{
   drag: ApplianceDrag | null;
   layout: LayoutType;
+  lArm?: 'left' | 'right';
   wallA: number; wallB: number; wallC: number;
   offsetZ: number;
   controlsRef: React.RefObject<any>;
   onMove: (type: ApplianceType, wall: WallName, distance: number) => void;
   onEnd: () => void;
-}> = ({ drag, layout, wallA, wallB, wallC, offsetZ, controlsRef, onMove, onEnd }) => {
+}> = ({ drag, layout, lArm, wallA, wallB, wallC, offsetZ, controlsRef, onMove, onEnd }) => {
   const { camera, gl, raycaster } = useThree();
-  const latest = useRef({ layout, wallA, wallB, wallC, onMove, onEnd });
-  latest.current = { layout, wallA, wallB, wallC, onMove, onEnd };
+  const latest = useRef({ layout, lArm, wallA, wallB, wallC, onMove, onEnd });
+  latest.current = { layout, lArm, wallA, wallB, wallC, onMove, onEnd };
 
   useEffect(() => {
     if (!drag) return;
@@ -972,7 +1140,9 @@ const ApplianceDragController: React.FC<{
       // Muro según la zona: pegado al muro A, o en la zona de los brazos laterales (más allá de la esquina ciega)
       let wall: WallName = 'A';
       if (p.planView && cy > CORNER_BLIND_OFFSET + 100 && L.layout !== 'STRAIGHT') {
-        if (L.layout === 'U_SHAPE' && cx > L.wallA / 2) wall = 'C';
+        // L: el brazo está a la izquierda (B) o a la derecha (C); U: B a la izquierda y C a la derecha
+        if (L.layout === 'U_SHAPE') wall = cx > L.wallA / 2 ? 'C' : 'B';
+        else if (L.lArm === 'right') { if (cx > L.wallA / 2) wall = 'C'; }
         else if (cx <= L.wallA / 2) wall = 'B';
       } else if (!p.planView && currentWall !== 'A') {
         return; // en la vista frontal no se puede mover algo que está en un brazo lateral
@@ -1407,6 +1577,7 @@ const CameraController: React.FC<{ viewMode: 'plan' | 'frontal' | 'isometric' | 
 
 interface KitchenViewer3DProps {
   layout: LayoutType;
+  lArm?: 'left' | 'right';
   wallA: number;
   wallB: number;
   wallC: number;
@@ -1418,6 +1589,9 @@ interface KitchenViewer3DProps {
   appliances: Appliance[];
   hasIsland: boolean;
   island: { length: number; width: number; height: number; dx: number; dy: number };
+  islands?: IslandItem[];
+  onEditIsland?: (id: string, patch: Partial<IslandItem>) => void;
+  onDeleteIsland?: (id: string) => void;
   viewMode: 'plan' | 'frontal' | 'isometric' | '3d';
   hasZocalo?: boolean;
   zocaloHeight?: number;
@@ -1432,6 +1606,7 @@ interface KitchenViewer3DProps {
   onEditCounter?: (s: CounterSettings, counterId: string, extras: { splashLeft?: boolean; splashRight?: boolean; waterfallLeft?: boolean; waterfallRight?: boolean }) => void;
   onSetModuleVistos?: (id: string, v: SideConfig) => void;
   onSplitHorizontal?: (id: string) => void;
+  onSplitDepth?: (id: string) => void;
   onDragModule?: (id: string, newPositionX: number) => void;
   onResizeEdge?: (id: string, side: 'left' | 'right', deltaX: number, initialWidth: number, initialPositionX: number) => void;
   onMoveAppliance?: (type: ApplianceType, wall: WallName, distance: number) => void;
@@ -1442,8 +1617,8 @@ interface KitchenViewer3DProps {
 }
 
 export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
-  layout, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules, boxes, appliances, hasIsland, island, viewMode, hasZocalo, zocaloHeight = 100,
-  hasLeftClosure, hasRightClosure, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSplitHorizontal, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
+  layout, lArm, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules, boxes, appliances, hasIsland, island, islands = [], onEditIsland, onDeleteIsland, viewMode, hasZocalo, zocaloHeight = 100,
+  hasLeftClosure, hasRightClosure, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSplitHorizontal, onSplitDepth, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
 }) => {
   const controlsRef = useRef<any>(null);
   // Módulo seleccionado (clic) y módulo cuyo editor de medidas está abierto (doble clic)
@@ -1507,19 +1682,19 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
 
   // Calcular junctions (uniones entre módulos adyacentes)
   // Formato: { leftModule, rightModule, leftId, rightId, wall }
-  const junctions: { leftModule: KitchenModule; rightModule: KitchenModule; leftId: string; rightId: string; wall: WallName }[] = [];
+  const junctions: { leftModule: KitchenModule; rightModule: KitchenModule; leftId: string; rightId: string; wall: WallName | 'Island' }[] = [];
 
   // Agrupar módulos por muro y tipo (UPPER o LOWER)
   const modulesByWallAndType: Record<string, KitchenModule[]> = {};
   modules.forEach(m => {
-    const key = `${m.wall}-${m.type}`;
+    const key = `${m.wall}${m.islandId ? ':' + m.islandId : ''}-${m.type}`;
     if (!modulesByWallAndType[key]) modulesByWallAndType[key] = [];
     modulesByWallAndType[key].push(m);
   });
 
   // Para cada grupo, detectar módulos adyacentes
   Object.entries(modulesByWallAndType).forEach(([key, mods]) => {
-    const [wall] = key.split('-');
+    const wall = mods[0].wall;
     const sortedMods = [...mods].sort((a, b) => a.positionX - b.positionX);
 
     for (let i = 0; i < sortedMods.length - 1; i++) {
@@ -1533,7 +1708,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           rightModule: right,
           leftId: left.uniqueId,
           rightId: right.uniqueId,
-          wall: wall as WallName
+          wall
         });
       }
     }
@@ -1561,7 +1736,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         <ambientLight intensity={0.6} /><directionalLight position={[5, 10, 5]} intensity={1.5} castShadow shadow-mapSize={[1024, 1024]} /><Environment preset="apartment" /><CameraController viewMode={viewMode} plan={planFrame} frontal={frontalFrame} />
         {viewMode === 'plan' && vis.appliances && <PlanDimensions appliances={appliances} wallA={wallA} offsetZ={offsetZ} onMoveAppliance={onMoveAppliance} />}
         <ApplianceDragController
-          drag={dragApp} layout={layout} wallA={wallA} wallB={wallB} wallC={wallC} offsetZ={offsetZ} controlsRef={controlsRef}
+          drag={dragApp} layout={layout} lArm={lArm} wallA={wallA} wallB={wallB} wallC={wallC} offsetZ={offsetZ} controlsRef={controlsRef}
           onMove={(type, wall, distance) => onMoveAppliance?.(type, wall, distance)}
           onEnd={() => setDragApp(null)}
         />
@@ -1643,6 +1818,11 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           />
         ))}
 
+        {/* Islas y penínsulas */}
+        {islands.map(isl => (
+          <Island3D key={isl.id} isl={isl} toWorld={toWorldXZ} viewMode={viewMode} interactive={!measureMode} controlsRef={controlsRef} onEdit={onEditIsland} onDelete={onDeleteIsland} />
+        ))}
+
         {modules.map((mod) => {
           const box = findModuleBox(boxes, mod.uniqueId);
           if (!box) return null;
@@ -1657,6 +1837,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             key={mod.uniqueId}
             module={mod}
             onSplitHorizontal={(!measureMode && mod.height >= 200) ? onSplitHorizontal : undefined}
+            onSplitDepth={(!measureMode && mod.depth >= 200) ? onSplitDepth : undefined}
             onSetVistos={onSetModuleVistos}
             position={pos}
             rotation={rot}
@@ -1700,8 +1881,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           const front = Math.max(leftModule.depth, rightModule.depth);
           let X: number, Y: number;
           let junctionRot: [number, number, number] = [0, 0, 0];
-          if (wall === 'A') {
-            X = leftBox.x + leftBox.sx; Y = front;
+          if (wall === 'A' || wall === 'Island') {
+            X = leftBox.x + leftBox.sx; Y = leftBox.y + front;
           } else if (wall === 'B') {
             X = front; Y = leftBox.y + leftBox.sy; junctionRot = [0, Math.PI / 2, 0];
           } else {

@@ -30,10 +30,10 @@ export function resizeSymmetric(
   minWidth = 100
 ): KitchenModule[] {
   const target = modules.find(m => m.uniqueId === id);
-  if (!target || target.wall === 'Island') return modules;
+  if (!target) return modules;
 
   const peers = modules
-    .filter(p => p.wall === target.wall && p.type === target.type)
+    .filter(p => p.wall === target.wall && p.islandId === target.islandId && p.type === target.type)
     .sort((a, b) => a.positionX - b.positionX);
   const index = peers.findIndex(p => p.uniqueId === id);
   const left = index > 0 ? peers[index - 1] : undefined;
@@ -111,8 +111,8 @@ export function snapToNeighbors(
   threshold = 15
 ): KitchenModule[] {
   const m = modules.find(x => x.uniqueId === id);
-  if (!m || m.wall === 'Island') return modules;
-  const peers = modules.filter(p => p.uniqueId !== id && p.wall === m.wall && p.type === m.type);
+  if (!m) return modules;
+  const peers = modules.filter(p => p.uniqueId !== id && p.wall === m.wall && p.islandId === m.islandId && p.type === m.type);
   const start = m.positionX;
   const end = m.positionX + m.width;
   // Separación hasta el vecino más cercano de cada lado (solo si es positiva y pequeña)

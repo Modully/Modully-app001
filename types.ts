@@ -33,6 +33,8 @@ export interface KitchenModule extends ModuleTemplate {
   drawerCount: number;
   // Vistos: pieza lateral (15 o 19 mm) que cierra el costado del módulo que queda sin muro. Izquierda/derecha se ven
   // desde el frente del módulo. La pieza queda dentro de la medida del módulo (el cuerpo se acorta ese espesor).
+  depthOffset?: number; // distancia (mm) del muro a la cara trasera del módulo: módulos partidos en frente y fondo
+  islandId?: string; // módulos de una isla o península (wall = 'Island'): la isla a la que pertenecen; positionX va a lo largo de su largo
   vistoLeft?: boolean;
   vistoRight?: boolean;
   vistoThickness?: number;
@@ -135,4 +137,14 @@ export interface BOM {
     lineType: string;
     faceColor: string;
   };
+}
+
+/** Isla o península: medida general (largo x ancho) y su esquina superior izquierda a (dx, dy) del punto 0 */
+export interface IslandItem {
+  id: string;
+  kind: 'isla' | 'peninsula';
+  length: number; // mm, a lo largo del muro A
+  width: number;  // mm, hacia el frente
+  dx: number;     // mm desde el punto 0 (esquina interior superior izquierda) a lo largo del muro A
+  dy: number;     // mm desde el punto 0 hacia el frente
 }

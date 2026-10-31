@@ -21,6 +21,7 @@ import { getAgentAdvice, type KitchenAgentContext } from './agentService';
 import { generateBOM, exportBOMToExcel } from './bomService';
 import { resizeSymmetric, snapToNeighbors } from './moduleResize';
 import type { CounterExtras, Box as BoxData } from './boxes';
+import type { IslandItem } from './types';
 import { buildBoxes, boxesToJSON, armUpperOrigin, findCollisions, LOWER_DEPTH, UPPER_DEPTH, CORNER_BLIND_OFFSET, TOP_MARGIN, SPLASH_HEIGHT_DEFAULT, COUNTER_THICKNESS_DEFAULT, COUNTER_OVERHANG_DEFAULT, FRIDGE_CLEARANCE, OVER_FRIDGE_DEPTH, DILATATION_GAP_DEFAULT, DILATATION_DEPTH_DEFAULT } from './boxes';
 
 // Constantes de diseño técnico
@@ -354,6 +355,11 @@ export default function App() {
 
   const [hasIsland, setHasIsland] = useState(false);
   const [island] = useState({ length: 1800, width: 900, height: 900, dx: 1500, dy: 1000 });
+  // Islas y penínsulas (Módulos especiales): medida general y dos cotas editables desde el punto 0
+  const [islands, setIslands] = useState<IslandItem[]>([]);
+  // Cocina en L: el brazo va a la izquierda (muro B) o a la derecha (muro C); se pregunta al elegir la forma
+  const [lArm, setLArm] = useState<'left' | 'right'>('left');
+  const [islandDraft, setIslandDraft] = useState<{ kind: 'isla' | 'peninsula'; length: string; width: string }>({ kind: 'isla', length: '1800', width: '900' });
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [suggestMessage, setSuggestMessage] = useState('');
 
@@ -362,11 +368,11 @@ export default function App() {
   // largo o varias teclas seguidas cuentan como un solo paso.
   const designSnapshot = useMemo(() => ({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, hasLeftClosure, hasRightClosure,
+    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
     modules, specialModules, appliances, hasIsland, lineType, faceColor,
   }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, hasLeftClosure, hasRightClosure,
+    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
     modules, specialModules, appliances, hasIsland, lineType, faceColor]);
   type DesignSnapshot = typeof designSnapshot;
@@ -424,16 +430,16 @@ export default function App() {
   // Si la forma de la cocina ya no tiene el muro B o C, los electrodomésticos que estaban ahí pasan al muro A
   useEffect(() => {
     setAppliances(prev => {
-      const orphan = (a: Appliance) => (a.wall === 'B' && layout === 'STRAIGHT') || (a.wall === 'C' && layout !== 'U_SHAPE');
+      const orphan = (a: Appliance) => (a.wall === 'B' && !(layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left'))) || (a.wall === 'C' && !(layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')));
       return prev.some(orphan) ? prev.map(a => (orphan(a) ? { ...a, wall: 'A' as WallName, distance: 0 } : a)) : prev;
     });
-  }, [layout]);
+  }, [layout, lArm]);
 
   const applySnapshot = (snap: DesignSnapshot) => {
     setLayout(snap.layout); setWallA(snap.wallA); setWallB(snap.wallB); setWallC(snap.wallC);
     setSpaceHeight(snap.spaceHeight); setHasZocalo(snap.hasZocalo); setZocaloHeight(snap.zocaloHeight);
     setZocaloDepth(snap.zocaloDepth); setHasCounter(snap.hasCounter); setCounterThickness(snap.counterThickness);
-    setCounterOverhang(snap.counterOverhang); setHasSplash(snap.hasSplash); setSplashHeight(snap.splashHeight); setCounterExtras(snap.counterExtras); setHasLeftClosure(snap.hasLeftClosure); setHasRightClosure(snap.hasRightClosure);
+    setCounterOverhang(snap.counterOverhang); setHasSplash(snap.hasSplash); setSplashHeight(snap.splashHeight); setCounterExtras(snap.counterExtras); setIslands(snap.islands); setLArm(snap.lArm); setHasLeftClosure(snap.hasLeftClosure); setHasRightClosure(snap.hasRightClosure);
     setHasDilatation(snap.hasDilatation); setDilatationGap(snap.dilatationGap); setDilatationDepth(snap.dilatationDepth);
     setModules(snap.modules); setSpecialModules(snap.specialModules); setAppliances(snap.appliances);
     setHasIsland(snap.hasIsland); setLineType(snap.lineType); setFaceColor(snap.faceColor);
@@ -514,7 +520,9 @@ export default function App() {
   const frontalScale = 320 / Math.max(wallA, wallB, wallC, 3000);
   const frontalHeightScale = 120 / spaceHeight;
 
-  const labeledModules = useMemo(() => modules.map((m, i) => ({ ...m, label: String.fromCharCode(65 + i) })), [modules]);
+  // Los módulos de una isla o península que ya no está activa (península fuera de una L) se guardan pero no cuentan
+  const activeModules = useMemo(() => modules.filter(m => m.wall !== 'Island' || islands.some(i => i.id === m.islandId && (i.kind === 'isla' || layout === 'L_SHAPE'))), [modules, islands, layout]);
+  const labeledModules = useMemo(() => activeModules.map((m, i) => ({ ...m, label: String.fromCharCode(65 + i) })), [activeModules]);
 
   /**
    * Calcula las coordenadas 3D (x, y, z) y dimensiones 3D para cada módulo
@@ -601,12 +609,22 @@ export default function App() {
     });
   }, [labeledModules, wallA, wallB, wallC, layout, hasZocalo, zocaloHeight]);
 
+  // Muros presentes según la forma: el brazo de la L es B (izquierda) o C (derecha); la U tiene los dos
+  const armB = layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left');
+  const armC = layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right');
+
+  // La península solo existe en cocinas en L (va pegada al muro perpendicular: B a la izquierda o C a la derecha); si cambia
+  // la forma queda guardada pero no se dibuja
+  const activeIslands = useMemo(() => islands
+    .filter(i => i.kind === 'isla' || layout === 'L_SHAPE')
+    .map(i => (i.kind === 'peninsula' ? { ...i, dx: lArm === 'right' ? Math.max(0, wallA - i.length) : 0 } : i)), [islands, layout, lArm, wallA]);
+
   // Lista única de cajas: la escena 3D, el BOM y la exportación a Fusion leen la geometría de aquí
   const boxes = useMemo(() => buildBoxes({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    modules: labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, hasLeftClosure, hasRightClosure,
+    modules: labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
-  }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
+  }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
 
   // Regla: ningún módulo puede ocupar el mismo espacio que un electrodoméstico (ni otro módulo)
   const collisions = useMemo(() => findCollisions(boxes), [boxes]);
@@ -712,9 +730,9 @@ export default function App() {
   const resizeModuleFromLabel = (id: string, desiredWidth: number) => {
     setModulesNoCollision(prev => {
       const m = prev.find(x => x.uniqueId === id);
-      if (!m || m.wall === 'Island') return prev;
-      const peers = prev.filter(p => p.wall === m.wall && p.type === m.type);
-      const wallLength = moduleWallLength(m.wall, m.type);
+      if (!m) return prev;
+      const peers = prev.filter(p => p.wall === m.wall && p.islandId === m.islandId && p.type === m.type);
+      const wallLength = m.wall === 'Island' ? (islands.find(i => i.id === m.islandId)?.length ?? 0) : moduleWallLength(m.wall, m.type);
       const gap = hasDilatation ? dilatationGap : 0;
       const firstStart = Math.min(...peers.map(p => p.positionX));
       const lastEnd = Math.max(...peers.map(p => p.positionX + p.width));
@@ -830,8 +848,8 @@ export default function App() {
     
     // Determinar qué muros procesar según el layout
     const wallsToProcess: WallName[] = ['A'];
-    if (layout === 'L_SHAPE' || layout === 'U_SHAPE') wallsToProcess.push('B');
-    if (layout === 'U_SHAPE') wallsToProcess.push('C');
+    if (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')) wallsToProcess.push('B');
+    if (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')) wallsToProcess.push('C');
     
     // Procesar cada muro
     wallsToProcess.forEach(currentWall => {
@@ -839,8 +857,8 @@ export default function App() {
       const targetWidth = currentWall === 'A' ? wallA : currentWall === 'B' ? wallB - CORNER_BLIND_OFFSET : wallC - CORNER_BLIND_OFFSET;
       // Dilatación: en los extremos que tocan un muro. El inicio de A toca el muro B (L y U) o el muro auxiliar izquierdo
       // (recta); el final de A toca el muro C (U) o el auxiliar derecho; el final de cada brazo, su muro auxiliar.
-      const closesStart = currentWall === 'A' && (layout !== 'STRAIGHT' || hasLeftClosure);
-      const closesEnd = currentWall === 'A' ? layout === 'U_SHAPE' || hasRightClosure : currentWall === 'B' ? hasLeftClosure : hasRightClosure;
+      const closesStart = currentWall === 'A' && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left') || hasLeftClosure);
+      const closesEnd = currentWall === 'A' ? layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right') || hasRightClosure : currentWall === 'B' ? hasLeftClosure : hasRightClosure;
       const startGap = hasDilatation && closesStart ? dilatationGap : 0;
       const endGap = hasDilatation && closesEnd ? dilatationGap : 0;
       const usableEnd = targetWidth - endGap;
@@ -969,7 +987,12 @@ export default function App() {
               }] : []),
               ...(stove ? [{ distance: stove.distance, width: stove.width }] : []),
               ...(sink ? [{ distance: sink.distance, width: Math.max(600, sink.width) }] : []),
-              ...specialModulesActiveForWall.map(m => ({ distance: m.positionX, width: m.width }))
+              ...specialModulesActiveForWall.map(m => ({ distance: m.positionX, width: m.width })),
+              // La península pegada a este muro ocupa su espacio: ahí no van módulos del brazo (los pone la península)
+              ...activeIslands.filter(i => i.kind === 'peninsula' && currentWall === (lArm === 'right' ? 'C' : 'B')).map(i => ({
+                distance: Math.max(0, i.dy - CORNER_BLIND_OFFSET),
+                width: Math.max(0, Math.min(i.dy + i.width, (currentWall === 'B' ? wallB : wallC)) - Math.max(i.dy, CORNER_BLIND_OFFSET)),
+              }))
             ]
           : [
               ...(fridge ? [{ distance: overFridgeX, width: overFridgeWidth }] : []),
@@ -1101,12 +1124,74 @@ export default function App() {
     });
     
     // Agregar los módulos especiales preservados al final
+    // Islas y penínsulas: una hilera de módulos bajos a lo largo de su largo, del fondo de su ancho, que cubre su espacio
+    activeIslands.forEach(isl => {
+      const minW = prioritizedWidths[prioritizedWidths.length - 1];
+      let x = 0;
+      let remaining = isl.length;
+      const push = (w: number) => {
+        const template = MODULE_TEMPLATES.find(t => t.type === 'LOWER' && t.width === w) || MODULE_TEMPLATES.find(t => t.type === 'LOWER')!;
+        newModules.push({
+          ...template,
+          uniqueId: Math.random().toString(36).substr(2, 9),
+          wall: 'Island',
+          islandId: isl.id,
+          positionX: x,
+          width: w,
+          depth: isl.width,
+          height: currentBaseModuleHeight,
+          quantity: 1,
+          doorType: 'vertical',
+          configType: w > 300 ? 'drawers' : 'doors',
+          hasPlateRack: false,
+          drawerCount: w > 300 ? 3 : 0,
+        });
+        x += w;
+        remaining -= w;
+      };
+      while (remaining >= minW) push(prioritizedWidths.find(w => w <= remaining) || minW);
+      if (remaining >= 120) push(remaining);
+      else if (remaining > 0) {
+        // Sobra menos del mínimo: se suma al último módulo para que la hilera llegue justo al borde de la isla
+        const last = newModules.filter(m => m.wall === 'Island' && m.islandId === isl.id).slice(-1)[0];
+        if (last) last.width += remaining;
+      }
+    });
+
     setModules([...newModules, ...specialModulesActive]);
     setCounterExtras({}); // al optimizar se recalcula todo: los ajustes manuales del mesón (cascadas, salpicaderos laterales) se reinician
-  }, [wallA, wallB, wallC, layout, currentBaseModuleHeight, currentUpperModuleHeight, spaceHeight, modules, activeWall, hasDilatation, dilatationGap, hasLeftClosure, hasRightClosure]);
+  }, [wallA, wallB, wallC, layout, lArm, activeIslands, currentBaseModuleHeight, currentUpperModuleHeight, spaceHeight, modules, activeWall, hasDilatation, dilatationGap, hasLeftClosure, hasRightClosure]);
+
+  // Antes de optimizar se revisa que las islas y penínsulas no choquen entre sí ni con los muros de la cocina:
+  // si hay choques, la optimización no se hace y se dice cuáles son
+  const islandConflicts = (): string[] => {
+    type R = { name: string; x0: number; x1: number; y0: number; y1: number };
+    const overlap = (a: R, b: R) => Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > 1 && Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0) > 1;
+    const rooms: R[] = [{ name: 'los módulos del muro A', x0: 0, x1: wallA, y0: 0, y1: CORNER_BLIND_OFFSET }];
+    if (armB) rooms.push({ name: 'los módulos del muro B', x0: 0, x1: CORNER_BLIND_OFFSET, y0: 0, y1: wallB });
+    if (armC) rooms.push({ name: 'los módulos del muro C', x0: wallA - CORNER_BLIND_OFFSET, x1: wallA, y0: 0, y1: wallC });
+    const label = (i: IslandItem) => (i.kind === 'peninsula' ? 'la península' : 'la isla');
+    const out: string[] = [];
+    const rects = activeIslands.map(i => ({ i, r: { name: label(i), x0: i.dx, x1: i.dx + i.length, y0: i.dy, y1: i.dy + i.width } as R }));
+    rects.forEach(({ i, r }, idx) => {
+      if (r.x1 > wallA + 1) out.push(`${label(i)} de ${i.length} × ${i.width} se sale del largo del muro A`);
+      rooms.forEach(room => {
+        // La península ocupa su espacio en el brazo: no cuenta como choque con el muro al que va pegada
+        const ownArm = i.kind === 'peninsula' && room.name.endsWith(lArm === 'right' ? 'muro C' : 'muro B');
+        if (!ownArm && overlap(r, room)) out.push(`${label(i)} de ${i.length} × ${i.width} choca con ${room.name}`);
+      });
+      rects.slice(idx + 1).forEach(other => { if (overlap(r, other.r)) out.push(`${label(i)} choca con ${label(other.i)}`); });
+    });
+    return out;
+  };
 
   const handleMathematicalSuggestion = async (strategy: OptimizationStrategy) => {
     setIsOptMenuOpen(false);
+    const conflicts = islandConflicts();
+    if (conflicts.length > 0) {
+      window.alert('No se puede optimizar la modulación mientras haya choques:\n\n• ' + conflicts.join('\n• ') + '\n\nMueve o cambia la medida de la isla o península y vuelve a intentarlo.');
+      return;
+    }
     setIsSuggesting(true);
     const msg = strategy === 'efficiency' ? "Estrategia de Alta Eficiencia..." : (strategy === 'standard' ? "Ajuste Estándar ISO..." : "Modulación Detallada Rítmica...");
     setSuggestMessage(msg);
@@ -1154,6 +1239,24 @@ export default function App() {
 
     const newModule: KitchenModule = { ...template, uniqueId: Math.random().toString(36).substr(2, 9), wall, positionX: currentWidth, quantity: 1, height: finalHeight, doorType: 'vertical', configType: template.width > 300 ? 'drawers' : 'doors', hasPlateRack: false, drawerCount: 3 };
     setModules(prev => [...prev, newModule]); return newModule.uniqueId;
+  };
+
+  // "+" del costado de un módulo (con el módulo seleccionado): lo divide en dos, uno frontal y otro posterior, del mismo ancho,
+  // alto y posición. El posterior queda contra el muro; el frontal se corre el fondo del posterior (`depthOffset`).
+  const splitModuleDepthwise = (id: string) => {
+    setModules(prev => {
+      const index = prev.findIndex(m => m.uniqueId === id);
+      const target = prev[index];
+      if (!target || target.depth < 200) return prev;
+      const backDepth = Math.round((target.depth / 2) / 5) * 5;
+      const frontDepth = target.depth - backDepth;
+      const clean = { isFridgeCabinet: false, isHood: false, isStoveCabinet: false, isSinkCabinet: false };
+      const back = { ...target, depth: backDepth };
+      const front = { ...target, ...clean, uniqueId: Math.random().toString(36).substr(2, 9), depth: frontDepth, depthOffset: (target.depthOffset ?? 0) + backDepth } as KitchenModule;
+      const next = [...prev];
+      next.splice(index, 1, back, front);
+      return next;
+    });
   };
 
   // "+" arriba de un módulo (con el módulo seleccionado): lo divide en dos a lo alto, uno encima del otro, con el mismo
@@ -1226,7 +1329,7 @@ export default function App() {
   // o con un electrodoméstico. Los choques que ya existían no bloquean.
   const collisionKeys = (mods: KitchenModule[]) => new Set(findCollisions(buildBoxes({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    modules: mods, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, hasLeftClosure, hasRightClosure,
+    modules: mods, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
   })).map(([p, q]) => `${p.id}|${q.id}`));
   const setModulesNoCollision = (update: (prev: KitchenModule[]) => KitchenModule[]) => {
@@ -2986,6 +3089,18 @@ export default function App() {
     });
   };
 
+  // Isla o península: se pide la medida general y se crea a 1 m del punto 0 en ambas cotas (después se editan)
+  const addIsland = () => {
+    const length = Math.round(parseFloat(islandDraft.length) || 0);
+    const width = Math.round(parseFloat(islandDraft.width) || 0);
+    if (length < 300 || width < 300) { window.alert('La isla o península necesita al menos 300 mm de largo y de ancho.'); return; }
+    if (islandDraft.kind === 'peninsula' && layout !== 'L_SHAPE') { window.alert('La península solo se crea en cocinas en L: va pegada al muro perpendicular.'); return; }
+    // La isla nace a 1 m del punto 0 en ambas cotas; la península va pegada al muro perpendicular B (cota X = 0, contra su cara interior) y a 1 m en Y
+    setIslands(prev => [...prev, { id: Math.random().toString(36).substr(2, 6), kind: islandDraft.kind, length, width, dx: islandDraft.kind === 'peninsula' ? 0 : 1000, dy: 1000 }]);
+  };
+  const updateIsland = (id: string, patch: Partial<IslandItem>) => setIslands(prev => prev.map(i => (i.id === id ? { ...i, ...patch, ...(i.kind === 'peninsula' ? { dx: 0 } : {}) } : i)));
+  const removeIsland = (id: string) => { setIslands(prev => prev.filter(i => i.id !== id)); setModules(prev => prev.filter(m => m.islandId !== id)); };
+
   const toggleSpecialModule = (id: string) => {
     const special = specialModules.find(sm => sm.id === id);
     if (!special) return;
@@ -3186,7 +3301,7 @@ export default function App() {
                           <div className="space-y-1 animate-in fade-in slide-in-from-top-2 duration-300">
                             <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Muro</label>
                             <div className="flex gap-2">
-                              {(['A', 'B', 'C'] as WallName[]).filter(w => w === 'A' || (w === 'B' && layout !== 'STRAIGHT') || (w === 'C' && layout === 'U_SHAPE')).map(w => (
+                              {(['A', 'B', 'C'] as WallName[]).filter(w => w === 'A' || (w === 'B' && armB) || (w === 'C' && armC)).map(w => (
                                 <button
                                   key={w}
                                   onClick={() => moveAppliance(app.type, w, app.wall === w ? app.distance : 0)}
@@ -3218,6 +3333,40 @@ export default function App() {
                     <button onClick={() => setIsSpecialModulesPanelOpen(false)} className="p-2 bg-slate-100 rounded-xl text-slate-500 hover:text-red-500"><X size={20} /></button>
                   </div>
                   <div className="space-y-4">
+                    <div className="p-4 rounded-3xl border-2 border-slate-100 bg-white space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl bg-slate-100 text-slate-500"><Maximize size={20} /></div>
+                        <div>
+                          <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">Isla / Península</p>
+                          <p className="text-[9px] font-bold text-slate-400">Medida general · isla a 1 m del punto 0 · península solo en cocina en L, pegada al muro perpendicular · zócalo 5 cm más pequeño</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['isla', 'peninsula'] as const).map(k => (
+                          <button key={k} disabled={k === 'peninsula' && layout !== 'L_SHAPE'} title={k === 'peninsula' && layout !== 'L_SHAPE' ? 'La península solo se crea en cocinas en L' : undefined} onClick={() => setIslandDraft({ ...islandDraft, kind: k })} className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide border-2 disabled:opacity-40 disabled:cursor-not-allowed ${islandDraft.kind === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{k === 'isla' ? 'Isla' : 'Península'}</button>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Largo (mm)</label><input type="number" value={islandDraft.length} onChange={(e) => setIslandDraft({ ...islandDraft, length: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
+                        <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Ancho (mm)</label><input type="number" value={islandDraft.width} onChange={(e) => setIslandDraft({ ...islandDraft, width: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
+                      </div>
+                      <button onClick={addIsland} className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest">Aceptar y crear</button>
+
+                      {islands.map(isl => (
+                        <div key={isl.id} className="p-3 rounded-2xl bg-indigo-50 border border-indigo-200 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] font-black text-indigo-700 uppercase">{isl.kind === 'isla' ? 'Isla' : 'Península'} {isl.length} × {isl.width}{isl.kind === 'peninsula' && layout !== 'L_SHAPE' ? ' · inactiva (solo en L)' : ''}</p>
+                            <button onClick={() => { if (window.confirm(`¿Eliminar ${isl.kind === 'isla' ? 'la isla' : 'la península'} de ${isl.length} × ${isl.width}?`)) removeIsland(isl.id); }} className="p-1 rounded-lg bg-white text-slate-400 hover:text-red-500" title="Quitar"><X size={14} /></button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {([['length', 'Largo'], ['width', 'Ancho'], ['dx', 'Cota X desde 0'], ['dy', 'Cota Y desde 0']] as const).map(([key, label]) => (
+                              <div key={key} className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
+                                <input type="number" disabled={isl.kind === 'peninsula' && key === 'dx'} value={isl[key]} onChange={(e) => updateIsland(isl.id, { [key]: Math.max(key === 'length' || key === 'width' ? 300 : 0, parseInt(e.target.value) || 0) })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                     {specialModules.map((special) => (
                       <div key={special.id} className={`p-4 rounded-3xl border-2 transition-all space-y-4 ${special.active ? 'bg-indigo-50 border-indigo-600' : 'bg-white border-slate-100'}`}>
                         <div className="flex items-center justify-between">
@@ -3279,6 +3428,16 @@ export default function App() {
                         </button>
                       ))}
                     </div>
+                    {layout === 'L_SHAPE' && (
+                      <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">¿De qué lado va el brazo de la L?</label>
+                        <div className="grid grid-cols-2 gap-3">
+                          {(['left', 'right'] as const).map(side => (
+                            <button key={side} onClick={() => setLArm(side)} className={`py-3 rounded-2xl border-2 text-[11px] font-black uppercase tracking-wide transition-all ${lArm === side ? 'bg-indigo-50 border-indigo-600 text-indigo-600 shadow-md' : 'bg-white border-slate-100 text-slate-400 hover:bg-slate-50'}`}>{side === 'left' ? 'Izquierda' : 'Derecha'}</button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   
                   <div className="space-y-4">
@@ -3289,7 +3448,7 @@ export default function App() {
                     
                     {(layout === 'L_SHAPE' || layout === 'U_SHAPE') && (
                       <div className={`grid ${layout === 'U_SHAPE' ? 'grid-cols-2' : 'grid-cols-1'} gap-4 animate-in fade-in slide-in-from-top-2 duration-300`}>
-                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Largo Muro B (mm)</label><div className="relative group"><input type="number" value={wallB} onChange={e => setWallB(Math.max(500, parseInt(e.target.value) || 0))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
+                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{layout === 'L_SHAPE' && lArm === 'right' ? 'Largo del brazo (muro C) (mm)' : layout === 'L_SHAPE' ? 'Largo del brazo (muro B) (mm)' : 'Largo Muro B (mm)'}</label><div className="relative group"><input type="number" value={layout === 'L_SHAPE' && lArm === 'right' ? wallC : wallB} onChange={e => (layout === 'L_SHAPE' && lArm === 'right' ? setWallC : setWallB)(Math.max(500, parseInt(e.target.value) || 0))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
                         {layout === 'U_SHAPE' && (
                           <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Largo Muro C (mm)</label><div className="relative group"><input type="number" value={wallC} onChange={e => setWallC(Math.max(500, parseInt(e.target.value) || 0))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
                         )}
@@ -3460,6 +3619,10 @@ export default function App() {
                   appliances={appliances}
                   hasIsland={hasIsland} 
                   island={island} 
+                  islands={activeIslands}
+                  lArm={lArm}
+                  onEditIsland={updateIsland}
+                  onDeleteIsland={removeIsland}
                   viewMode={activeView} 
                   hasZocalo={hasZocalo} 
                   zocaloHeight={zocaloHeight} 
@@ -3474,6 +3637,7 @@ export default function App() {
                   onEditCounter={(s, counterId, extras) => { applyCounterEdit(s, counterId, extras); }}
                   onSetModuleVistos={setModuleVistos}
                   onSplitHorizontal={splitModuleHorizontal}
+                  onSplitDepth={splitModuleDepthwise}
                   onDragModule={handleDragModule3D}
                   onResizeEdge={handleResizeEdge3D}
                   onMoveAppliance={moveAppliance}
