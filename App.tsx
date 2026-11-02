@@ -58,6 +58,16 @@ const KitchenShapeIcon: React.FC<{ shape: LayoutType; size?: number }> = ({ shap
   </svg>
 );
 
+/** Isla y península vistas desde arriba: la cocina en L (muros y mueble) con una península pegada al brazo y una isla suelta */
+const IslandIcon: React.FC<{ size?: number }> = ({ size = 28 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M2 21.5V3H22" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" opacity="0.45" />
+    <path d="M5 6H22V9.5H8.5V21.5H5Z" fill="currentColor" strokeLinejoin="round" />
+    <rect x="8.5" y="14.5" width="5.5" height="4.5" rx="0.6" fill="currentColor" />
+    <rect x="16.5" y="13" width="5.5" height="6.5" rx="0.8" fill="currentColor" opacity="0.7" />
+  </svg>
+);
+
 /** Campo de medida: se escribe libremente y se aplica con Enter o al salir del campo; Escape cancela */
 /** Campo numérico que deja escribir libremente y aplica (con sus límites) al salir del campo o con Enter; así un mínimo no impide teclear */
 const DeferredNumber: React.FC<{ value: number; onCommit: (n: number) => void; className?: string }> = ({ value, onCommit, className }) => {
@@ -3656,7 +3666,7 @@ export default function App() {
                   <div className="space-y-4">
                     <div className="p-4 rounded-3xl border-2 border-slate-100 bg-white space-y-3">
                       <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl bg-slate-100 text-slate-500"><Maximize size={20} /></div>
+                        <div className="p-2 rounded-xl bg-slate-100 text-slate-500"><IslandIcon size={22} /></div>
                         <div>
                           <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">Isla / Península</p>
                           <p className="text-[9px] font-bold text-slate-400">Medida general · isla a 1 m del punto 0 · península solo en cocina en L, pegada al muro perpendicular · zócalo 5 cm más pequeño</p>
