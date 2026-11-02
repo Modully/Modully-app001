@@ -393,7 +393,7 @@ export default function App() {
   const [lArm, setLArm] = useState<'left' | 'right'>('left');
   // Borrado con confirmación dentro de la app (isla o tarjeta especial pendiente de confirmar)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  const [islandDraft, setIslandDraft] = useState<{ kind: 'isla' | 'peninsula'; length: string; width: string }>({ kind: 'isla', length: '1800', width: '900' });
+  const [islandDraft, setIslandDraft] = useState<{ kind: 'isla' | 'peninsula'; length: string; width: string; bar: string }>({ kind: 'isla', length: '1800', width: '900', bar: '0' });
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [suggestMessage, setSuggestMessage] = useState('');
 
@@ -1172,7 +1172,7 @@ export default function App() {
           islandId: isl.id,
           positionX: x,
           width: w,
-          depth: isl.width,
+          depth: Math.max(200, isl.width - (isl.bar ?? 0)), // la barra (voladizo del mesón) queda libre por el frente
           height: currentBaseModuleHeight,
           quantity: 1,
           doorType: 'vertical',
@@ -3241,7 +3241,8 @@ export default function App() {
     if (length < 300 || width < 300) { window.alert('La isla o península necesita al menos 300 mm de largo y de ancho.'); return; }
     if (islandDraft.kind === 'peninsula' && layout !== 'L_SHAPE') { window.alert('La península solo se crea en cocinas en L: va pegada al muro perpendicular.'); return; }
     // La isla nace a 1 m del punto 0 en ambas cotas; la península va pegada al muro perpendicular B (cota X = 0, contra su cara interior) y a 1 m en Y
-    setIslands(prev => [...prev, { id: Math.random().toString(36).substr(2, 6), kind: islandDraft.kind, length, width, dx: islandDraft.kind === 'peninsula' ? 0 : 1000, dy: 1000 }]);
+    const bar = Math.max(0, Math.min(Math.round(parseFloat(islandDraft.bar) || 0), width - 200));
+    setIslands(prev => [...prev, { id: Math.random().toString(36).substr(2, 6), kind: islandDraft.kind, length, width, dx: islandDraft.kind === 'peninsula' ? 0 : 1000, dy: 1000, bar }]);
   };
   const updateIsland = (id: string, patch: Partial<IslandItem>) => setIslands(prev => prev.map(i => (i.id === id ? { ...i, ...patch, ...(i.kind === 'peninsula' ? { dx: 0 } : {}) } : i)));
   const removeIsland = (id: string) => { setIslands(prev => prev.filter(i => i.id !== id)); setModules(prev => prev.filter(m => m.islandId !== id)); };
@@ -3682,6 +3683,7 @@ export default function App() {
                         <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Largo (mm)</label><input type="number" value={islandDraft.length} onChange={(e) => setIslandDraft({ ...islandDraft, length: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
                         <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Ancho (mm)</label><input type="number" value={islandDraft.width} onChange={(e) => setIslandDraft({ ...islandDraft, width: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
                       </div>
+                      <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Barra (mm) · voladizo del mesón por el frente</label><input type="number" value={islandDraft.bar} onChange={(e) => setIslandDraft({ ...islandDraft, bar: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
                       <button onClick={addIsland} className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest">Aceptar y crear</button>
 
                       {islands.map(isl => (
@@ -3710,7 +3712,7 @@ export default function App() {
                             ))}
                           </div>
                           <div className="grid grid-cols-2 gap-2">
-                            {([['length', 'Largo'], ['width', 'Ancho'], ['dx', 'Cota X desde 0'], ['dy', 'Cota Y desde 0']] as const).map(([key, label]) => (
+                            {([['length', 'Largo'], ['width', 'Ancho'], ['dx', 'Cota X desde 0'], ['dy', 'Cota Y desde 0'], ['bar', 'Barra']] as const).map(([key, label]) => (
                               <div key={key} className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
                                 <input type="number" disabled={isl.kind === 'peninsula' && key === 'dx'} value={isl[key]} onChange={(e) => updateIsland(isl.id, { [key]: Math.max(key === 'length' || key === 'width' ? 300 : 0, parseInt(e.target.value) || 0) })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
                             ))}

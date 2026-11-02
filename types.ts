@@ -150,4 +150,5 @@ export interface IslandItem {
   width: number;  // mm, hacia el frente
   dx: number;     // mm desde el punto 0 (esquina interior superior izquierda) a lo largo del muro A
   dy: number;     // mm desde el punto 0 hacia el frente
+  bar?: number;   // barra: voladizo del mesón por el frente (mm); los módulos miden ancho - barra de fondo y el zócalo retrocede la barra
 }

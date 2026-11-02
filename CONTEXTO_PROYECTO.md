@@ -238,3 +238,7 @@ Pendiente, en orden sugerido:
 - En la ventana Espacio, la tarjeta "Isla / Península" va justo encima de la sección del mesón (orden: zócalo, isla/península, mesón, dilatación, muros auxiliares).
 - Isla/península en Espacio: la × de cada una pide confirmación dentro de la app ("¿Eliminar? Sí / No"; los diálogos del navegador no se usan para borrar) y cada tarjeta trae los botones Isla | Península para cambiarla de tipo (la península solo en cocina en L; si no lo es, el botón sale desactivado y un aviso lo explica). Las tarjetas de alacena alta y torre de hornos borran igual, con "¿Borrar? Sí / No".
 - La tarjeta "Isla / Península" de Espacio usa su propio icono (`IslandIcon`): una cocina en L vista desde arriba, con una península pegada al brazo y una isla suelta.
+
+## Barra de la isla y península (2026-11-02)
+- La tarjeta de isla/península pide también la "Barra" (mm): el voladizo del mesón por el frente (0 = sin barra), también editable en cada isla creada. El mesón de la isla o península es EXACTAMENTE la medida general (largo x ancho, p. ej. 1800 x 900); los módulos miden ancho - barra de fondo (900 - 300 = 600) y empiezan atrás; el zócalo retrocede la barra por el frente (queda a ras de los módulos; sin barra retrocede 5 cm) y 5 cm atrás y a los lados. El cambio de barra o de medida se refleja al volver a optimizar (los módulos se recalculan). En el editor del mesón de una isla el ancho es de solo lectura (se cambia en su tarjeta).
+- Esto reemplaza lo anterior del mesón de las islas con voladizo en todos los lados.

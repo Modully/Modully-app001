@@ -907,7 +907,7 @@ const CounterEditor: React.FC<{
     const n = (s: string, f: number) => { const x = parseFloat(s); return isNaN(x) ? f : x; };
     onApply({
       thickness: Math.max(10, Math.min(80, n(vals.thickness, settings.thickness))),
-      overhang: Math.max(0, Math.min(100, (n(vals.depth, baseDepth + settings.overhang * overhangs) - baseDepth) / overhangs)),
+      overhang: isIsland ? settings.overhang : Math.max(0, Math.min(100, (n(vals.depth, baseDepth + settings.overhang * overhangs) - baseDepth) / overhangs)),
       hasSplash,
       splashHeight: Math.max(20, Math.min(600, n(vals.splashHeight, settings.splashHeight))),
     }, side);
@@ -933,7 +933,12 @@ const CounterEditor: React.FC<{
         Largo
         <span className="w-20 px-1.5 py-1 rounded bg-slate-100 text-[12px] font-black text-slate-500" title="Lo definen los módulos del tramo">{length}</span>
       </div>
-      {field('depth', 'Ancho (fondo)')}
+      {isIsland ? (
+        <div className="flex items-center justify-between text-[11px] font-bold text-slate-600">
+          Ancho (fondo)
+          <span className="w-20 px-1.5 py-1 rounded bg-slate-100 text-[12px] font-black text-slate-500" title="Es la medida general de la isla o península: se cambia en su tarjeta de Espacio">{vals.depth}</span>
+        </div>
+      ) : field('depth', 'Ancho (fondo)')}
       {field('thickness', 'Espesor')}
       {!isIsland && <>
       <div className="pt-1 border-t border-slate-200 space-y-1">
