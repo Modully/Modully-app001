@@ -59,6 +59,27 @@ const KitchenShapeIcon: React.FC<{ shape: LayoutType; size?: number }> = ({ shap
 );
 
 /** Campo de medida: se escribe libremente y se aplica con Enter o al salir del campo; Escape cancela */
+/** Campo numérico que deja escribir libremente y aplica (con sus límites) al salir del campo o con Enter; así un mínimo no impide teclear */
+const DeferredNumber: React.FC<{ value: number; onCommit: (n: number) => void; className?: string }> = ({ value, onCommit, className }) => {
+  const [draft, setDraft] = useState<string | null>(null);
+  const finish = (apply: boolean) => {
+    const n = draft === null ? NaN : parseFloat(draft);
+    setDraft(null);
+    if (apply && !isNaN(n)) onCommit(n);
+  };
+  return (
+    <input
+      type="number"
+      value={draft ?? value}
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={(e) => e.currentTarget.select()}
+      onKeyDown={(e) => { if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); }}
+      onBlur={() => finish(true)}
+      className={className}
+    />
+  );
+};
+
 const MeasureInput: React.FC<{ label: string; value: number; onCommit: (value: number) => void }> = ({ label, value, onCommit }) => {
   const [draft, setDraft] = useState<string | null>(null);
   const finish = (apply: boolean) => {
@@ -3567,15 +3588,15 @@ export default function App() {
                   
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Largo Muro A (mm)</label><div className="relative group"><input type="number" value={wallA} onChange={e => setWallA(Math.max(500, parseInt(e.target.value) || 0))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
-                      <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Altura Techo (mm)</label><div className="relative group"><input type="number" value={spaceHeight} onChange={e => setSpaceHeight(Math.max(1000, parseInt(e.target.value) || 0))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
+                      <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Largo Muro A (mm)</label><div className="relative group"><DeferredNumber  value={wallA} onCommit={n => setWallA(Math.max(500, n))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
+                      <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Altura Techo (mm)</label><div className="relative group"><DeferredNumber  value={spaceHeight} onCommit={n => setSpaceHeight(Math.max(1000, n))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
                     </div>
                     
                     {(layout === 'L_SHAPE' || layout === 'U_SHAPE') && (
                       <div className={`grid ${layout === 'U_SHAPE' ? 'grid-cols-2' : 'grid-cols-1'} gap-4 animate-in fade-in slide-in-from-top-2 duration-300`}>
-                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{layout === 'L_SHAPE' && lArm === 'right' ? 'Largo del brazo (muro C) (mm)' : layout === 'L_SHAPE' ? 'Largo del brazo (muro B) (mm)' : 'Largo Muro B (mm)'}</label><div className="relative group"><input type="number" value={layout === 'L_SHAPE' && lArm === 'right' ? wallC : wallB} onChange={e => (layout === 'L_SHAPE' && lArm === 'right' ? setWallC : setWallB)(Math.max(500, parseInt(e.target.value) || 0))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
+                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{layout === 'L_SHAPE' && lArm === 'right' ? 'Largo del brazo (muro C) (mm)' : layout === 'L_SHAPE' ? 'Largo del brazo (muro B) (mm)' : 'Largo Muro B (mm)'}</label><div className="relative group"><DeferredNumber  value={layout === 'L_SHAPE' && lArm === 'right' ? wallC : wallB} onCommit={n => (layout === 'L_SHAPE' && lArm === 'right' ? setWallC : setWallB)(Math.max(500, n))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
                         {layout === 'U_SHAPE' && (
-                          <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Largo Muro C (mm)</label><div className="relative group"><input type="number" value={wallC} onChange={e => setWallC(Math.max(500, parseInt(e.target.value) || 0))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
+                          <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Largo Muro C (mm)</label><div className="relative group"><DeferredNumber  value={wallC} onCommit={n => setWallC(Math.max(500, n))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
                         )}
                       </div>
                     )}
@@ -3597,10 +3618,10 @@ export default function App() {
                         <div className="space-y-2">
                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Altura Zócalo (mm)</label>
                           <div className="relative group">
-                            <input 
-                              type="number" 
+                            <DeferredNumber 
+                               
                               value={zocaloHeight} 
-                              onChange={e => setZocaloHeight(Math.max(50, Math.min(200, parseInt(e.target.value) || 100)))} 
+                              onCommit={n => setZocaloHeight(Math.max(50, Math.min(200, n)))} 
                               className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" 
                             />
                             <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div>
@@ -3609,10 +3630,10 @@ export default function App() {
                         <div className="space-y-2">
                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Profundidad (mm)</label>
                           <div className="relative group">
-                            <input 
-                              type="number" 
+                            <DeferredNumber 
+                               
                               value={zocaloDepth} 
-                              onChange={e => setZocaloDepth(Math.max(100, Math.min(800, parseInt(e.target.value) || 500)))} 
+                              onCommit={n => setZocaloDepth(Math.max(100, Math.min(800, n)))} 
                               className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" 
                             />
                             <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div>
@@ -3638,10 +3659,10 @@ export default function App() {
                         <div className="space-y-2">
                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Espesor (mm)</label>
                           <div className="relative group">
-                            <input
-                              type="number"
+                            <DeferredNumber
+                              
                               value={counterThickness}
-                              onChange={e => setCounterThickness(Math.max(10, Math.min(80, parseInt(e.target.value) || COUNTER_THICKNESS_DEFAULT)))}
+                              onCommit={n => setCounterThickness(Math.max(10, Math.min(80, n)))}
                               className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none"
                             />
                             <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div>
@@ -3650,10 +3671,10 @@ export default function App() {
                         <div className="space-y-2">
                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Voladizo frontal (mm)</label>
                           <div className="relative group">
-                            <input
-                              type="number"
+                            <DeferredNumber
+                              
                               value={counterOverhang}
-                              onChange={e => setCounterOverhang(Math.max(0, Math.min(100, parseInt(e.target.value) || 0)))}
+                              onCommit={n => setCounterOverhang(Math.max(0, Math.min(100, n)))}
                               className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none"
                             />
                             <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div>
@@ -3677,10 +3698,10 @@ export default function App() {
                           <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Altura del salpicadero (mm)</label>
                             <div className="relative group">
-                              <input
-                                type="number"
+                              <DeferredNumber
+                                
                                 value={splashHeight}
-                                onChange={e => setSplashHeight(Math.max(20, Math.min(600, parseInt(e.target.value) || SPLASH_HEIGHT_DEFAULT)))}
+                                onCommit={n => setSplashHeight(Math.max(20, Math.min(600, n)))}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none"
                               />
                               <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div>
