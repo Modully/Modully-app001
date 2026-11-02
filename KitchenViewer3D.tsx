@@ -1032,6 +1032,10 @@ const Island3D: React.FC<{
     startDrag(e.nativeEvent);
   };
 
+  // La huella, la nota, el borde punteado y la × de la isla o península son herramientas de la vista de planta; en las demás
+  // vistas solo se ven sus módulos y su zócalo
+  if (viewMode !== 'plan') return null;
+
   return (
     <group>
       <mesh
