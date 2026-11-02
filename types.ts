@@ -34,6 +34,9 @@ export interface KitchenModule extends ModuleTemplate {
   // Vistos: pieza lateral (15 o 19 mm) que cierra el costado del módulo que queda sin muro. Izquierda/derecha se ven
   // desde el frente del módulo. La pieza queda dentro de la medida del módulo (el cuerpo se acorta ese espesor).
   depthOffset?: number; // distancia (mm) del muro a la cara trasera del módulo: módulos partidos en frente y fondo
+  // Esquinero en L: dos módulos unidos en uno. El módulo conserva su tramo a lo largo del muro A y `cornerArm` es el brazo que sigue
+  // por el muro B o C (empieza tras la esquina ciega, CORNER_BLIND_OFFSET)
+  cornerArm?: { wall: 'B' | 'C'; width: number; depth: number; positionX: number };
   islandId?: string; // módulos de una isla o península (wall = 'Island'): la isla a la que pertenecen; positionX va a lo largo de su largo
   vistoLeft?: boolean;
   vistoRight?: boolean;

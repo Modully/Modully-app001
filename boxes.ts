@@ -56,6 +56,7 @@ export interface Box {
 export const WALL_THICKNESS = 150;       // espesor de los muros (mm)
 export const LOWER_DEPTH = 570;          // fondo módulo base (mm)
 export const ISLAND_PLINTH_INSET = 50;   // el zócalo de una isla o península queda 5 cm hacia adentro de su medida general, por cada lado
+export const MAX_MODULE_WIDTH = 900;     // ancho máximo de un módulo (mm)
 export const SPLASH_HEIGHT_DEFAULT = 70;   // alto del salpicadero (mm)
 export const UPPER_DEPTH = 330;          // fondo módulo aéreo (mm)
 export const CORNER_BLIND_OFFSET = LOWER_DEPTH; // esquina ciega: el muro B/C arranca tras el fondo del MB del muro A
@@ -285,6 +286,15 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       facing: p.facing,
       moduleId: mod.uniqueId,
     });
+    // Esquinero en L: el brazo sigue por el muro B o C, tras la esquina ciega, con la misma altura
+    if (mod.cornerArm && !isl) {
+      const ar = mod.cornerArm;
+      const pa = placeOnWall(ar.wall, ar.positionX ?? 0, ar.width, ar.depth, CORNER_BLIND_OFFSET);
+      boxes.push({
+        id: `${mod.uniqueId}-arm`, name: `${mod.label ? mod.label + ' ' : ''}${mod.name} (brazo)`, kind, wall: ar.wall,
+        x: pa.x, y: pa.y, z, sx: pa.sx, sy: pa.sy, sz: mod.height, facing: pa.facing, moduleId: mod.uniqueId,
+      });
+    }
   });
 
   // --- Piezas de dilatación ---

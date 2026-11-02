@@ -27,7 +27,8 @@ export function resizeSymmetric(
   desiredWidth: number,
   bounds: ResizeBounds,
   step = 5,
-  minWidth = 100
+  minWidth = 100,
+  maxWidth = Infinity // el máximo de 900 mm es solo de la optimización: al editar a mano no hay tope
 ): KitchenModule[] {
   const target = modules.find(m => m.uniqueId === id);
   if (!target) return modules;
@@ -41,7 +42,7 @@ export function resizeSymmetric(
 
   const snap = (v: number) => Math.round(v / step) * step;
   const floorStep = (v: number) => Math.max(0, Math.floor(v / step) * step);
-  const wanted = Math.max(minWidth, snap(desiredWidth));
+  const wanted = Math.min(maxWidth, Math.max(minWidth, snap(desiredWidth)));
   const delta = wanted - target.width;
   if (delta === 0) return modules;
 
@@ -51,13 +52,16 @@ export function resizeSymmetric(
   const touchesRight = !!right && Math.abs(right.positionX - end) <= 1;
 
   const updates = new Map<string, Update>();
+  // Esquinero en L: el costado de la esquina queda fijo (contra el muro del brazo); el cambio va solo por el otro lado
+  const cornerAtStart = target.cornerArm?.wall === 'B';
+  const cornerAtEnd = target.cornerArm?.wall === 'C';
 
   if (delta > 0) {
     // AMPLIAR: cuánto puede crecer cada borde = espacio libre + lo que el vecino pueda ceder (sin bajar de minWidth)
-    const leftRoom = floorStep(left
+    const leftRoom = cornerAtStart ? 0 : floorStep(left
       ? (start - (left.positionX + left.width)) + (hasFixedWidth(left) ? 0 : Math.max(0, left.width - minWidth))
       : start - bounds.low);
-    const rightRoom = floorStep(right
+    const rightRoom = cornerAtEnd ? 0 : floorStep(right
       ? (right.positionX - end) + (hasFixedWidth(right) ? 0 : Math.max(0, right.width - minWidth))
       : bounds.high - end);
 
@@ -83,16 +87,19 @@ export function resizeSymmetric(
   } else {
     // REDUCIR: los vecinos que lo tocan crecen para seguir pegados; si no lo tocan, queda el espacio libre
     const total = -delta;
-    const leftShrink = snap(total / 2);
-    const rightShrink = total - leftShrink;
+    let leftShrink = cornerAtStart ? 0 : cornerAtEnd ? total : snap(total / 2);
+    let rightShrink = total - leftShrink;
     const newStart = start + leftShrink;
     const newEnd = end - rightShrink;
     updates.set(id, { positionX: newStart, width: newEnd - newStart });
+    // Un vecino que crece para seguir pegado no pasa del ancho máximo: crece lo que pueda y el resto queda como hueco
     if (left && touchesLeft && !hasFixedWidth(left)) {
-      updates.set(left.uniqueId, { positionX: left.positionX, width: left.width + leftShrink });
+      const grow = Math.min(leftShrink, Math.max(0, maxWidth - left.width));
+      updates.set(left.uniqueId, { positionX: left.positionX, width: left.width + grow });
     }
     if (right && touchesRight && !hasFixedWidth(right)) {
-      updates.set(right.uniqueId, { positionX: right.positionX - rightShrink, width: right.width + rightShrink });
+      const grow = Math.min(rightShrink, Math.max(0, maxWidth - right.width));
+      updates.set(right.uniqueId, { positionX: right.positionX - grow, width: right.width + grow });
     }
   }
 

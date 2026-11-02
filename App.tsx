@@ -22,7 +22,7 @@ import { generateBOM, exportBOMToExcel } from './bomService';
 import { resizeSymmetric, snapToNeighbors } from './moduleResize';
 import type { CounterExtras, Box as BoxData } from './boxes';
 import type { IslandItem } from './types';
-import { buildBoxes, boxesToJSON, armUpperOrigin, findCollisions, LOWER_DEPTH, UPPER_DEPTH, CORNER_BLIND_OFFSET, TOP_MARGIN, SPLASH_HEIGHT_DEFAULT, COUNTER_THICKNESS_DEFAULT, COUNTER_OVERHANG_DEFAULT, FRIDGE_CLEARANCE, OVER_FRIDGE_DEPTH, DILATATION_GAP_DEFAULT, DILATATION_DEPTH_DEFAULT } from './boxes';
+import { buildBoxes, boxesToJSON, armUpperOrigin, findCollisions, LOWER_DEPTH, UPPER_DEPTH, CORNER_BLIND_OFFSET, TOP_MARGIN, MAX_MODULE_WIDTH, SPLASH_HEIGHT_DEFAULT, COUNTER_THICKNESS_DEFAULT, COUNTER_OVERHANG_DEFAULT, FRIDGE_CLEARANCE, OVER_FRIDGE_DEPTH, DILATATION_GAP_DEFAULT, DILATATION_DEPTH_DEFAULT } from './boxes';
 
 // Constantes de diseño técnico
 const BASE_MODULE_HEIGHT = 800; // Alto del módulo base (MB). El mesón queda a zócalo + módulo base
@@ -1159,6 +1159,23 @@ export default function App() {
       }
     });
 
+    // Ningún módulo pasa del ancho máximo (900 mm): si alguno lo supera (un resto sumado al último, el aéreo alargado hacia la
+    // esquina...) se parte en partes iguales, de 5 en 5 mm
+    const capped: KitchenModule[] = [];
+    newModules.forEach(m => {
+      if (m.width <= MAX_MODULE_WIDTH || m.type === 'TALL') { capped.push(m); return; }
+      const n = Math.ceil(m.width / MAX_MODULE_WIDTH);
+      const part = Math.floor(m.width / n / 5) * 5;
+      let x = m.positionX;
+      for (let i = 0; i < n; i++) {
+        const w = i === n - 1 ? m.width - part * (n - 1) : part;
+        capped.push({ ...m, uniqueId: i === 0 ? m.uniqueId : Math.random().toString(36).substr(2, 9), positionX: x, width: w, name: m.name.replace(/\d+mm/, `${w}mm`) });
+        x += w;
+      }
+    });
+    newModules.length = 0;
+    newModules.push(...capped);
+
     setModules([...newModules, ...specialModulesActive]);
     setCounterExtras({}); // al optimizar se recalcula todo: los ajustes manuales del mesón (cascadas, salpicaderos laterales) se reinician
   }, [wallA, wallB, wallC, layout, lArm, activeIslands, currentBaseModuleHeight, currentUpperModuleHeight, spaceHeight, modules, activeWall, hasDilatation, dilatationGap, hasLeftClosure, hasRightClosure]);
@@ -1255,8 +1272,8 @@ export default function App() {
     const withMod = (patch: Partial<KitchenModule>) => modules.map(x => (x.uniqueId === id ? { ...x, ...patch } : x));
     let lo = 0, hi = 0;
     let make: (v: number) => KitchenModule[] = () => modules;
-    if (face === 'right') { lo = m.width; hi = wallLength - m.positionX; make = v => withMod({ width: v }); }
-    else if (face === 'left') { lo = m.width; hi = m.positionX + m.width; make = v => withMod({ width: v, positionX: m.positionX + m.width - v }); }
+    if (face === 'right') { lo = m.width; hi = Math.max(lo, wallLength - m.positionX); make = v => withMod({ width: v }); }
+    else if (face === 'left') { lo = m.width; hi = Math.max(lo, m.positionX + m.width); make = v => withMod({ width: v, positionX: m.positionX + m.width - v }); }
     else if (face === 'front') { lo = m.depth; hi = 1200; make = v => withMod({ depth: v }); }
     else if (face === 'top' && m.type === 'UPPER') { lo = m.height; hi = m.height + (m.topGap ?? 0); make = v => withMod({ height: v, topGap: (m.topGap ?? 0) - (v - m.height), heightLocked: true }); }
     else if (face === 'top') { lo = m.height; hi = ceiling - zh; make = v => withMod({ height: v, heightLocked: true }); }
@@ -1268,6 +1285,55 @@ export default function App() {
       if (valid(make(lo + mid * 5))) a = mid; else b = mid - 1;
     }
     if (a > 0) setModules(make(lo + a * 5));
+  };
+
+  // Esquinero en L: el módulo del muro A y el primero del brazo (B o C) pasan a ser un solo módulo con dos brazos
+  const joinCornerModules = (aId: string, armId: string) => {
+    setModules(prev => {
+      const a = prev.find(m => m.uniqueId === aId);
+      const arm = prev.find(m => m.uniqueId === armId);
+      if (!a || !arm || (arm.wall !== 'B' && arm.wall !== 'C')) return prev;
+      const joined: KitchenModule = { ...a, name: `Esquinero L ${Math.round(a.width)}×${Math.round(arm.width)}`, cornerArm: { wall: arm.wall, width: arm.width, depth: arm.depth, positionX: arm.positionX } };
+      return prev.filter(m => m.uniqueId !== armId).map(m => (m.uniqueId === aId ? joined : m));
+    });
+  };
+
+  // Largo del brazo de un esquinero en L (se escribe en la medida del frente del brazo): el módulo siguiente del brazo cede o gana
+  // lo mismo, como con la flecha doble; si no hay siguiente, el brazo llega como mucho al final del muro
+  const editCornerArmWidth = (id: string, width: number) => {
+    setModulesNoCollision(prev => {
+      const m = prev.find(x => x.uniqueId === id);
+      if (!m?.cornerArm) return prev;
+      const ca = m.cornerArm;
+      const armStart = ca.positionX ?? 0;
+      const oldEnd = armStart + ca.width;
+      const next = prev.filter(x => x.wall === ca.wall && x.type === m.type && x.uniqueId !== id && Math.abs(x.positionX - oldEnd) <= 1).sort((p, q) => p.positionX - q.positionX)[0];
+      let w = Math.max(100, Math.round(width / 5) * 5);
+      if (next) {
+        // El siguiente conserva al menos 100 mm y queda pegado al brazo
+        w = Math.min(w, ca.width + next.width - 100);
+      } else {
+        w = Math.min(w, moduleWallLength(ca.wall, m.type) - armStart);
+      }
+      const delta = w - ca.width;
+      return prev.map(x => {
+        if (x.uniqueId === id) return { ...x, cornerArm: { ...ca, width: w } };
+        if (next && x.uniqueId === next.uniqueId) return { ...x, positionX: x.positionX + delta, width: x.width - delta };
+        return x;
+      });
+    });
+  };
+
+  // Separa un esquinero en L en dos módulos: el del muro A y el primero del brazo
+  const splitCornerModule = (id: string) => {
+    setModules(prev => {
+      const m = prev.find(x => x.uniqueId === id);
+      if (!m?.cornerArm) return prev;
+      const ca = m.cornerArm;
+      const first: KitchenModule = { ...m, name: `${m.type === 'UPPER' ? 'Aéreo' : 'Bajo'} ${Math.round(m.width)}mm`, cornerArm: undefined };
+      const arm: KitchenModule = { ...m, uniqueId: Math.random().toString(36).substr(2, 9), wall: ca.wall, positionX: ca.positionX ?? 0, width: ca.width, depth: ca.depth, name: `${m.type === 'UPPER' ? 'Aéreo' : 'Bajo'} ${Math.round(ca.width)}mm`, cornerArm: undefined, vistoLeft: false, vistoRight: false, dilatLeft: false, dilatRight: false };
+      return prev.flatMap(x => (x.uniqueId === id ? [first, arm] : [x]));
+    });
   };
 
   // "+" del costado de un módulo (con el módulo seleccionado): lo divide en dos, uno frontal y otro posterior, del mismo ancho,
@@ -1438,6 +1504,10 @@ export default function App() {
     const clamped = Math.min(Math.max(deltaX, MIN_WIDTH - initialLeftWidth), initialRightWidth - MIN_WIDTH);
     const change = Math.round(clamped / 5) * 5; // snap a 5mm
     setModules(prev => prev.map(m => {
+      // El brazo de un esquinero en L (id "<módulo>:arm") es el lado izquierdo de la unión: cambia el largo de su brazo
+      if (leftId.endsWith(':arm') && m.uniqueId === leftId.slice(0, -4) && m.cornerArm) {
+        return { ...m, cornerArm: { ...m.cornerArm, width: initialLeftWidth + change } };
+      }
       if (m.uniqueId === leftId) {
         // El módulo izquierdo crece/decrece desde el borde derecho
         return { ...m, width: initialLeftWidth + change };
@@ -3266,7 +3336,9 @@ export default function App() {
           ? { height: Math.max(bx.sx, bx.sy), depth: bx.sz, thickness: Math.min(bx.sx, bx.sy), name: bx.name, color: 'Material del mesón' }
           : { height: Math.max(bx.sx, bx.sy), depth: Math.min(bx.sx, bx.sy), thickness: bx.sz, name: bx.name, color: 'Material del mesón' });
       });
-      const generatedBOM = generateBOM(labeledModules, lineType, faceColor, wallA, fillers);
+      // El brazo de un esquinero en L se despieza como otro módulo bajo (del ancho y fondo de su brazo)
+      const forBom = labeledModules.flatMap(m => (m.cornerArm ? [m, { ...m, uniqueId: `${m.uniqueId}-arm`, wall: m.cornerArm.wall, positionX: m.cornerArm.positionX ?? 0, width: m.cornerArm.width, depth: m.cornerArm.depth, cornerArm: undefined }] : [m]));
+      const generatedBOM = generateBOM(forBom, lineType, faceColor, wallA, fillers);
       setBom(generatedBOM);
     }
   }, [labeledModules, lineType, faceColor, wallA, boxes]);
@@ -3726,6 +3798,9 @@ export default function App() {
                   onSplitHorizontal={splitModuleHorizontal}
                   onSplitDepth={splitModuleDepthwise}
                   onExtendFace={extendModuleFace}
+                  onJoinCorner={joinCornerModules}
+                  onSplitCorner={splitCornerModule}
+                  onEditCornerArm={editCornerArmWidth}
                   onDragModule={handleDragModule3D}
                   onResizeEdge={handleResizeEdge3D}
                   onMoveAppliance={moveAppliance}

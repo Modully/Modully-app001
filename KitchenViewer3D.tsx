@@ -180,7 +180,9 @@ interface Module3DProps {
   selected?: boolean;
   costado?: 'left' | 'right'; // lado libre (sin vecino) donde va la cota del fondo
   editing?: boolean;
-  onSelect?: (id: string) => void;
+  onSelect?: (id: string, additive?: boolean) => void; // additive: Shift + clic (elegir dos módulos para unirlos en esquina)
+  marked?: boolean; // módulo elegido con Shift + clic
+  lShape?: { x0: number; x1: number; z0: number; z1: number }; // esquinero en L: el brazo (m, respecto al centro del módulo)
   onOpenEditor?: (id: string) => void;
   onCloseEditor?: () => void;
   onApplyMeasures?: (id: string, m: { width: number; depth: number; height: number }) => void;
@@ -196,7 +198,7 @@ interface Module3DProps {
   source?: KitchenModule; // módulo completo (la copia `module` puede venir con el cuerpo acortado por los vistos)
 }
 
-const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0, 0], onDelete, onSplit, onEditDimension, onDragPosition, onResizeEdge, controlsRef, hideLeftArrow, hideRightArrow, viewMode, selected, costado = 'right', editing, onSelect, onOpenEditor, onCloseEditor, onApplyMeasures, onSetTop, onSetVistos, onSplitHorizontal, onSplitDepth, faces, onExtendFace, hoverRef, resolveReference, showLabel = true, source }) => {
+const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0, 0], onDelete, onSplit, onEditDimension, onDragPosition, onResizeEdge, controlsRef, hideLeftArrow, hideRightArrow, viewMode, selected, marked, lShape, costado = 'right', editing, onSelect, onOpenEditor, onCloseEditor, onApplyMeasures, onSetTop, onSetVistos, onSplitHorizontal, onSplitDepth, faces, onExtendFace, hoverRef, resolveReference, showLabel = true, source }) => {
   const isPlan = viewMode === 'plan';
   const [hovered, setHover] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -205,6 +207,28 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
   const dragStart = useRef<{ along: number; moduleX: number } | null>(null);
   const edgeStart = useRef<{ side: 'left' | 'right'; moduleX: number; initialWidth: number; sx: number; sy: number } | null>(null);
   const meshRef = useRef<THREE.Mesh>(null);
+
+  // Esquinero en L: un solo cuerpo con forma de L (sin la costura entre los dos tramos)
+  const lGeometry = useMemo(() => {
+    if (!lShape) return null;
+    const w = module.width / 2000, d = module.depth / 2000;
+    const m = { x0: -w, x1: w, z0: -d, z1: d };
+    const a = lShape;
+    if (Math.abs(a.z0 - m.z1) > 0.003) return null;
+    let pts: Array<[number, number]> | null = null;
+    if (Math.abs(a.x0 - m.x0) < 0.003) pts = [[m.x0, m.z0], [m.x1, m.z0], [m.x1, m.z1], [a.x1, m.z1], [a.x1, a.z1], [a.x0, a.z1]];
+    else if (Math.abs(a.x1 - m.x1) < 0.003) pts = [[m.x0, m.z0], [m.x1, m.z0], [m.x1, a.z1], [a.x0, a.z1], [a.x0, m.z1], [m.x0, m.z1]];
+    if (!pts) return null;
+    const shape = new THREE.Shape();
+    pts.forEach(([x, z], i) => (i === 0 ? shape.moveTo(x, -z) : shape.lineTo(x, -z)));
+    shape.closePath();
+    const h = module.height / 1000;
+    const g = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false });
+    g.rotateX(-Math.PI / 2);
+    g.translate(0, -h / 2, 0);
+    return g;
+  }, [lShape?.x0, lShape?.x1, lShape?.z0, lShape?.z1, module.width, module.depth, module.height]);
+  const isL = !!lGeometry;
 
   const color = isResizing ? '#10b981' : (isDragging ? '#4f46e5' : (hovered ? '#FFD700' : (COLORS[module.type] || '#cccccc')));
 
@@ -349,7 +373,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onClick={(e) => { e.stopPropagation(); if (isDragging) endDrag(); if (!isOverlay(e)) onSelect?.(module.uniqueId); }}
+      onClick={(e) => { e.stopPropagation(); if (isDragging) endDrag(); if (!isOverlay(e)) onSelect?.(module.uniqueId, !!(e.nativeEvent as MouseEvent).shiftKey); }}
       onDoubleClick={(e) => { e.stopPropagation(); if (isOverlay(e)) return; onSelect?.(module.uniqueId); onOpenEditor?.(module.uniqueId); }}
       castShadow
       receiveShadow
@@ -359,13 +383,20 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
           aristas y las tapa. polygonOffset empuja las caras hacia atrás para que las aristas queden a la vista. */}
       <meshStandardMaterial
         color={color}
-        opacity={isDragging || isResizing ? 0.7 : 1}
-        transparent={isDragging || isResizing !== null}
+        opacity={isL ? 0 : (isDragging || isResizing ? 0.7 : 1)}
+        transparent={isL || isDragging || isResizing !== null}
+        depthWrite={!isL}
         polygonOffset
         polygonOffsetFactor={1}
         polygonOffsetUnits={1}
       />
-      <Edges color={isResizing ? "#10b981" : (isDragging ? "#6366f1" : (selected ? "#ef4444" : "#3b2a1a"))} linewidth={isDragging || isResizing || selected ? 2 : 1} />
+      {!isL && <Edges color={isResizing ? "#10b981" : (isDragging ? "#6366f1" : (marked ? "#f59e0b" : (selected ? "#ef4444" : "#3b2a1a")))} linewidth={isDragging || isResizing || selected || marked ? 3 : 1} />}
+      {isL && lGeometry && (
+        <mesh geometry={lGeometry} castShadow receiveShadow>
+          <meshStandardMaterial color={color} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+          <Edges color={isResizing ? "#10b981" : (isDragging ? "#6366f1" : (marked ? "#f59e0b" : (selected ? "#ef4444" : "#3b2a1a")))} linewidth={isDragging || isResizing || selected || marked ? 3 : 1} />
+        </mesh>
+      )}
       {/* El nombre del módulo se ve igual en todas las vistas: en planta sobre su cara superior y en las demás al centro de su cara frontal */}
       {showLabel && (
         <Html position={isPlan ? [0, module.height / 2000 + 0.002, 0] : [0, 0, module.depth / 2000 + 0.01]} center zIndexRange={[50, 0]} style={{ pointerEvents: 'none' }}>
@@ -482,7 +513,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
                 </>
               );
             })()}
-            <Html position={labelPos} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }} {...(viewMode === 'isometric' || viewMode === '3d' ? { transform: true, distanceFactor: 3 } : {})}>
+            {!isL && <Html position={labelPos} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }} {...(viewMode === 'isometric' || viewMode === '3d' ? { transform: true, distanceFactor: 3 } : {})}>
               {/* Clic para escribir el largo: el módulo se amplía hacia los dos lados y arrastra a sus vecinos */}
               <div data-overlay>
                 <DimLabel
@@ -493,7 +524,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
                   onCommit={onEditDimension ? (typed) => onEditDimension(module.uniqueId, typed) : undefined}
                 />
               </div>
-            </Html>
+            </Html>}
           </>
         );
       })()}
@@ -1688,6 +1719,9 @@ interface KitchenViewer3DProps {
   onSplitHorizontal?: (id: string) => void;
   onSplitDepth?: (id: string) => void;
   onExtendFace?: (id: string, face: FaceKey) => void;
+  onJoinCorner?: (aId: string, armId: string) => void;
+  onSplitCorner?: (id: string) => void;
+  onEditCornerArm?: (id: string, width: number) => void;
   onDragModule?: (id: string, newPositionX: number) => void;
   onResizeEdge?: (id: string, side: 'left' | 'right', deltaX: number, initialWidth: number, initialPositionX: number) => void;
   onMoveAppliance?: (type: ApplianceType, wall: WallName, distance: number) => void;
@@ -1699,11 +1733,18 @@ interface KitchenViewer3DProps {
 
 export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   layout, lArm, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules, boxes, appliances, hasIsland, island, islands = [], onEditIsland, onDeleteIsland, viewMode, hasZocalo, zocaloHeight = 100,
-  hasLeftClosure, hasRightClosure, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSplitHorizontal, onSplitDepth, onExtendFace, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
+  hasLeftClosure, hasRightClosure, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSplitHorizontal, onSplitDepth, onExtendFace, onJoinCorner, onSplitCorner, onEditCornerArm, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
 }) => {
   const controlsRef = useRef<any>(null);
   // Módulo seleccionado (clic) y módulo cuyo editor de medidas está abierto (doble clic)
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Dos módulos elegidos con Shift + clic para unirlos en un esquinero en L
+  const [pair, setPair] = useState<string[]>([]);
+  const selectModule = (id: string, additive?: boolean) => {
+    setSelectedCounter(null); setEditingCounter(null);
+    if (additive && selectedId && selectedId !== id) { setPair([selectedId, id]); setSelectedId(null); setEditingId(null); return; }
+    setPair([]); setSelectedId(id);
+  };
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedCounter, setSelectedCounter] = useState<string | null>(null);
   const [editingCounter, setEditingCounter] = useState<string | null>(null);
@@ -1773,6 +1814,12 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
     const key = `${m.wall}${m.islandId ? ':' + m.islandId : ''}-${m.type}`;
     if (!modulesByWallAndType[key]) modulesByWallAndType[key] = [];
     modulesByWallAndType[key].push(m);
+    // El brazo de un esquinero en L cuenta como un módulo más del brazo: así tiene su unión con el siguiente módulo
+    if (m.cornerArm) {
+      const armKey = `${m.cornerArm.wall}-${m.type}`;
+      if (!modulesByWallAndType[armKey]) modulesByWallAndType[armKey] = [];
+      modulesByWallAndType[armKey].push({ ...m, uniqueId: `${m.uniqueId}:arm`, wall: m.cornerArm.wall, positionX: m.cornerArm.positionX ?? 0, width: m.cornerArm.width, depth: m.cornerArm.depth, cornerArm: undefined });
+    }
   });
 
   // Para cada grupo, detectar módulos adyacentes
@@ -1811,6 +1858,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           setEditingId(null);
           setSelectedCounter(null);
           setEditingCounter(null);
+          setPair([]);
         }}
       >
         {isOrtho
@@ -1916,8 +1964,14 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           const hasLeftJunction = junctions.some(j => j.rightId === mod.uniqueId);
           const hasRightJunction = junctions.some(j => j.leftId === mod.uniqueId);
 
-          return <Module3D
+          const armBox = mod.cornerArm ? boxes.find(b => b.id === `${mod.uniqueId}-arm`) : undefined;
+          return <React.Fragment key={mod.uniqueId}>
+          <Module3D
             key={mod.uniqueId}
+            lShape={armBox ? {
+              x0: (armBox.x - (box.x + box.sx / 2)) / 1000, x1: (armBox.x + armBox.sx - (box.x + box.sx / 2)) / 1000,
+              z0: (armBox.y - (box.y + box.sy / 2)) / 1000, z1: (armBox.y + armBox.sy - (box.y + box.sy / 2)) / 1000,
+            } : undefined}
             module={mod}
             onSplitHorizontal={(!measureMode && mod.height >= 200) ? onSplitHorizontal : undefined}
             onSplitDepth={(!measureMode && mod.depth >= 200) ? onSplitDepth : undefined}
@@ -1987,7 +2041,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             hideLeftArrow={hasLeftJunction}
             hideRightArrow={hasRightJunction}
             viewMode={viewMode}
-            selected={!measureMode && selectedId === mod.uniqueId}
+            selected={!measureMode && pair.length < 2 && selectedId === mod.uniqueId}
+            marked={!measureMode && pair.includes(mod.uniqueId)}
             costado={(() => {
               const touches = (a: number, b: number) => Math.abs(a - b) <= 1;
               const same = modules.filter(o => o.uniqueId !== mod.uniqueId && o.wall === mod.wall && o.type === mod.type);
@@ -1996,7 +2051,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               return rightBlocked && !leftBlocked ? 'left' : 'right';
             })()}
             editing={editingId === mod.uniqueId}
-            onSelect={measureMode ? undefined : (id) => { setSelectedId(id); setSelectedCounter(null); setEditingCounter(null); }}
+            onSelect={measureMode ? undefined : selectModule}
             onOpenEditor={measureMode ? undefined : setEditingId}
             onCloseEditor={() => setEditingId(null)}
             onSetTop={onSetModuleTopEdge}
@@ -2005,13 +2060,39 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               if (Math.round(m.height) !== Math.round(mod.height)) onEditModuleMeasure?.(id, 'height', m.height);
               if (Math.round(m.width) !== Math.round(mod.width)) onEditModuleDimension?.(id, m.width);
             }}
-          />;
+          />
+          {/* Medidas del esquinero en L: atrás (arriba, junto a cada muro) y al frente (abajo, junto al piso) de cada tramo */}
+          {armBox && (() => {
+            const mb = box, ab = armBox;
+            const right = mod.cornerArm!.wall === 'C';
+            const topY = (mb.z + mb.sz) / 1000 + 0.05, botY = mb.z / 1000 - 0.05;
+            const wp = (X: number, Y: number, y: number): [number, number, number] => { const [wx, wz] = toWorldXZ(X, Y); return [wx, y, wz]; };
+            const armWallX = right ? ab.x + ab.sx : ab.x;   // cara del muro B o C
+            const innerX = right ? ab.x : ab.x + ab.sx;     // cara del brazo hacia el cuarto
+            const innerA = right ? innerX - mb.x : mb.x + mb.sx - innerX; // frente del tramo del muro A
+            const labels: Array<{ key: string; pos: [number, number, number]; value: number; title: string; onCommit?: (n: number) => void }> = [
+              { key: 'atras-A', pos: wp(mb.x + mb.sx / 2, mb.y, topY), value: mb.sx, title: 'Largo atrás, a lo largo del muro A', onCommit: onEditModuleDimension ? (n) => onEditModuleDimension(mod.uniqueId, n) : undefined },
+              { key: 'atras-brazo', pos: wp(armWallX, (mb.y + ab.y + ab.sy) / 2, topY), value: ab.y + ab.sy - mb.y, title: 'Largo atrás, a lo largo del brazo' },
+              { key: 'frente-A', pos: wp(right ? (mb.x + innerX) / 2 : (innerX + mb.x + mb.sx) / 2, mb.y + mb.sy, botY), value: innerA, title: 'Largo del frente del tramo del muro A', onCommit: onEditModuleDimension ? (n) => onEditModuleDimension(mod.uniqueId, n + ab.sx) : undefined },
+              { key: 'frente-brazo', pos: wp(innerX, ab.y + ab.sy / 2, botY), value: ab.sy, title: 'Largo del frente del brazo', onCommit: onEditCornerArm ? (n) => onEditCornerArm(mod.uniqueId, n) : undefined },
+            ];
+            return labels.filter(l => l.value > 0).map(l => (
+              <Html key={l.key} position={l.pos} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
+                <div data-overlay>
+                  <DimLabel text={String(Math.round(l.value))} value={l.value} tone="white" title={`${Math.round(l.value)} mm. ${l.title}`} onCommit={l.onCommit} />
+                </div>
+              </Html>
+            ));
+          })()}
+          </React.Fragment>;
         })}
 
         {/* Renderizar controles de junctions */}
         {!measureMode && junctions.map((junction, idx) => {
           const { leftModule, rightModule, wall } = junction;
-          const leftBox = findModuleBox(boxes, leftModule.uniqueId);
+          const leftBox = leftModule.uniqueId.endsWith(':arm')
+            ? boxes.find(b => b.id === leftModule.uniqueId.replace(':arm', '-arm'))
+            : findModuleBox(boxes, leftModule.uniqueId);
           if (!leftBox) return null;
 
           // El control va en la cara frontal, en el punto de unión entre los dos módulos
@@ -2098,6 +2179,40 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         <OrbitControls ref={controlsRef} makeDefault enableDamping dampingFactor={0.1} maxPolarAngle={Math.PI / 2.1} />
         {measureMode && <MeasureTool corners={measureCorners} measures={measures} onChange={setMeasures} />}
       </Canvas>
+
+      {/* Esquinero en L: con dos módulos elegidos (clic + Shift + clic) se pueden unir; un esquinero elegido se puede separar */}
+      {!measureMode && (() => {
+        const mods = pair.map(id => modules.find(m => m.uniqueId === id));
+        let info: { ok: boolean; msg: string; a?: KitchenModule; arm?: KitchenModule } | null = null;
+        if (pair.length === 2 && mods[0] && mods[1]) {
+          const a = mods[0].wall === 'A' ? mods[0] : mods[1].wall === 'A' ? mods[1] : undefined;
+          const arm = a === mods[0] ? mods[1] : mods[0];
+          if (!a || (arm.wall !== 'B' && arm.wall !== 'C')) info = { ok: false, msg: 'Elige un módulo del muro A y uno del brazo de la L (B o C).' };
+          else if (a.type !== arm.type || (a.type !== 'LOWER' && a.type !== 'UPPER')) info = { ok: false, msg: 'Los dos módulos deben ser del mismo nivel: bajos con bajos o aéreos con aéreos.' };
+          else if (a.cornerArm || arm.cornerArm) info = { ok: false, msg: 'Uno de los dos ya es un esquinero en L.' };
+          else {
+            const aAtCorner = arm.wall === 'B' ? a.positionX <= 20 : a.positionX + a.width >= wallA - 20;
+            if (!aAtCorner || arm.positionX > 20) info = { ok: false, msg: 'Deben ser los dos módulos de la esquina: el primero del muro A y el primero del brazo.' };
+            else info = { ok: true, msg: `Unir ${a.label} y ${arm.label} en un solo módulo esquinero en L`, a, arm };
+          }
+        }
+        const single = pair.length < 2 && selectedId ? modules.find(m => m.uniqueId === selectedId) : undefined;
+        if (!info && !(single && single.cornerArm)) return null;
+        return (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[500] w-[min(90%,34rem)] flex justify-center">
+            <div className={`flex items-center justify-center flex-wrap gap-x-3 gap-y-2 w-max max-w-full px-4 py-2.5 rounded-2xl shadow-xl border-2 border-white text-white text-[12px] font-black ${info ? (info.ok ? 'bg-amber-500' : 'bg-red-500') : 'bg-indigo-600'}`}>
+              <span>{info ? info.msg : `Esquinero en L ${Math.round(single!.width)} × ${Math.round(single!.cornerArm!.width)}`}</span>
+              {info?.ok && (
+                <button className="px-3 py-1 rounded-xl bg-white text-amber-600 hover:bg-amber-50" onClick={() => { onJoinCorner?.(info!.a!.uniqueId, info!.arm!.uniqueId); setPair([]); setSelectedId(info!.a!.uniqueId); }}>Unir</button>
+              )}
+              {!info && (
+                <button className="px-3 py-1 rounded-xl bg-white text-indigo-600 hover:bg-indigo-50" onClick={() => { onSplitCorner?.(single!.uniqueId); setSelectedId(null); }}>Separar</button>
+              )}
+              {info && <button className="px-3 py-1 rounded-xl bg-white/25 hover:bg-white/40" onClick={() => setPair([])}>Cancelar</button>}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
