@@ -3644,6 +3644,43 @@ export default function App() {
                   </div>
 
                   <div className="space-y-4">
+                    <div className="p-4 rounded-3xl border-2 border-slate-100 bg-white space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl bg-slate-100 text-slate-500"><Maximize size={20} /></div>
+                        <div>
+                          <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">Isla / Península</p>
+                          <p className="text-[9px] font-bold text-slate-400">Medida general · isla a 1 m del punto 0 · península solo en cocina en L, pegada al muro perpendicular · zócalo 5 cm más pequeño</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['isla', 'peninsula'] as const).map(k => (
+                          <button key={k} disabled={k === 'peninsula' && layout !== 'L_SHAPE'} title={k === 'peninsula' && layout !== 'L_SHAPE' ? 'La península solo se crea en cocinas en L' : undefined} onClick={() => setIslandDraft({ ...islandDraft, kind: k })} className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide border-2 disabled:opacity-40 disabled:cursor-not-allowed ${islandDraft.kind === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{k === 'isla' ? 'Isla' : 'Península'}</button>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Largo (mm)</label><input type="number" value={islandDraft.length} onChange={(e) => setIslandDraft({ ...islandDraft, length: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
+                        <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Ancho (mm)</label><input type="number" value={islandDraft.width} onChange={(e) => setIslandDraft({ ...islandDraft, width: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
+                      </div>
+                      <button onClick={addIsland} className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest">Aceptar y crear</button>
+
+                      {islands.map(isl => (
+                        <div key={isl.id} className="p-3 rounded-2xl bg-indigo-50 border border-indigo-200 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] font-black text-indigo-700 uppercase">{isl.kind === 'isla' ? 'Isla' : 'Península'} {isl.length} × {isl.width}{isl.kind === 'peninsula' && layout !== 'L_SHAPE' ? ' · inactiva (solo en L)' : ''}</p>
+                            <button onClick={() => { if (window.confirm(`¿Eliminar ${isl.kind === 'isla' ? 'la isla' : 'la península'} de ${isl.length} × ${isl.width}?`)) removeIsland(isl.id); }} className="p-1 rounded-lg bg-white text-slate-400 hover:text-red-500" title="Quitar"><X size={14} /></button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {([['length', 'Largo'], ['width', 'Ancho'], ['dx', 'Cota X desde 0'], ['dy', 'Cota Y desde 0']] as const).map(([key, label]) => (
+                              <div key={key} className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
+                                <input type="number" disabled={isl.kind === 'peninsula' && key === 'dx'} value={isl[key]} onChange={(e) => updateIsland(isl.id, { [key]: Math.max(key === 'length' || key === 'width' ? 300 : 0, parseInt(e.target.value) || 0) })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
                       <div>
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mesón</label>
@@ -3715,43 +3752,6 @@ export default function App() {
                   <div className="p-4 bg-slate-50 rounded-2xl">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dilatación</label>
                     <p className="text-[9px] font-bold text-slate-500 mt-1">Se pide por módulo: doble clic sobre el módulo, sección "Dilatada" (lado, espesor, fondo y altura)</p>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="p-4 rounded-3xl border-2 border-slate-100 bg-white space-y-3">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl bg-slate-100 text-slate-500"><Maximize size={20} /></div>
-                        <div>
-                          <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">Isla / Península</p>
-                          <p className="text-[9px] font-bold text-slate-400">Medida general · isla a 1 m del punto 0 · península solo en cocina en L, pegada al muro perpendicular · zócalo 5 cm más pequeño</p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {(['isla', 'peninsula'] as const).map(k => (
-                          <button key={k} disabled={k === 'peninsula' && layout !== 'L_SHAPE'} title={k === 'peninsula' && layout !== 'L_SHAPE' ? 'La península solo se crea en cocinas en L' : undefined} onClick={() => setIslandDraft({ ...islandDraft, kind: k })} className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide border-2 disabled:opacity-40 disabled:cursor-not-allowed ${islandDraft.kind === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{k === 'isla' ? 'Isla' : 'Península'}</button>
-                        ))}
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Largo (mm)</label><input type="number" value={islandDraft.length} onChange={(e) => setIslandDraft({ ...islandDraft, length: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
-                        <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Ancho (mm)</label><input type="number" value={islandDraft.width} onChange={(e) => setIslandDraft({ ...islandDraft, width: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
-                      </div>
-                      <button onClick={addIsland} className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest">Aceptar y crear</button>
-
-                      {islands.map(isl => (
-                        <div key={isl.id} className="p-3 rounded-2xl bg-indigo-50 border border-indigo-200 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <p className="text-[10px] font-black text-indigo-700 uppercase">{isl.kind === 'isla' ? 'Isla' : 'Península'} {isl.length} × {isl.width}{isl.kind === 'peninsula' && layout !== 'L_SHAPE' ? ' · inactiva (solo en L)' : ''}</p>
-                            <button onClick={() => { if (window.confirm(`¿Eliminar ${isl.kind === 'isla' ? 'la isla' : 'la península'} de ${isl.length} × ${isl.width}?`)) removeIsland(isl.id); }} className="p-1 rounded-lg bg-white text-slate-400 hover:text-red-500" title="Quitar"><X size={14} /></button>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            {([['length', 'Largo'], ['width', 'Ancho'], ['dx', 'Cota X desde 0'], ['dy', 'Cota Y desde 0']] as const).map(([key, label]) => (
-                              <div key={key} className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
-                                <input type="number" disabled={isl.kind === 'peninsula' && key === 'dx'} value={isl[key]} onChange={(e) => updateIsland(isl.id, { [key]: Math.max(key === 'length' || key === 'width' ? 300 : 0, parseInt(e.target.value) || 0) })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
                   </div>
 
                   <div className="space-y-4">
