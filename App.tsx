@@ -381,6 +381,8 @@ export default function App() {
   const [islands, setIslands] = useState<IslandItem[]>([]);
   // Cocina en L: el brazo va a la izquierda (muro B) o a la derecha (muro C); se pregunta al elegir la forma
   const [lArm, setLArm] = useState<'left' | 'right'>('left');
+  // Borrado con confirmación dentro de la app (isla o tarjeta especial pendiente de confirmar)
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [islandDraft, setIslandDraft] = useState<{ kind: 'isla' | 'peninsula'; length: string; width: string }>({ kind: 'isla', length: '1800', width: '900' });
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [suggestMessage, setSuggestMessage] = useState('');
@@ -3520,11 +3522,19 @@ export default function App() {
                               {items.length > 1 && (
                                 <div className="flex items-center justify-between">
                                   <p className="text-[9px] font-black text-indigo-600 uppercase">{special.name}</p>
-                                  <button
-                                    onClick={() => { if (window.confirm(`¿Borrar ${special.name}?`)) removeSpecialModule(special.id); }}
-                                    className="w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white border-2 border-white shadow flex items-center justify-center"
-                                    title={`Borrar ${special.name}`}
-                                  ><X size={12} strokeWidth={3} /></button>
+                                  {pendingDelete === special.id ? (
+                                    <span className="flex items-center gap-1">
+                                      <span className="text-[9px] font-black text-slate-600 uppercase">¿Borrar?</span>
+                                      <button onClick={() => { removeSpecialModule(special.id); setPendingDelete(null); }} className="px-1.5 py-0.5 rounded-md bg-red-500 hover:bg-red-600 text-white text-[9px] font-black uppercase">Sí</button>
+                                      <button onClick={() => setPendingDelete(null)} className="px-1.5 py-0.5 rounded-md bg-white text-slate-500 text-[9px] font-black uppercase border border-slate-200">No</button>
+                                    </span>
+                                  ) : (
+                                    <button
+                                      onClick={() => setPendingDelete(special.id)}
+                                      className="w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white border-2 border-white shadow flex items-center justify-center"
+                                      title={`Borrar ${special.name}`}
+                                    ><X size={12} strokeWidth={3} /></button>
+                                  )}
                                 </div>
                               )}
                               <div className="grid grid-cols-2 gap-3">
@@ -3657,6 +3667,7 @@ export default function App() {
                           <button key={k} disabled={k === 'peninsula' && layout !== 'L_SHAPE'} title={k === 'peninsula' && layout !== 'L_SHAPE' ? 'La península solo se crea en cocinas en L' : undefined} onClick={() => setIslandDraft({ ...islandDraft, kind: k })} className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide border-2 disabled:opacity-40 disabled:cursor-not-allowed ${islandDraft.kind === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{k === 'isla' ? 'Isla' : 'Península'}</button>
                         ))}
                       </div>
+                      {layout !== 'L_SHAPE' && <p className="text-[9px] font-bold text-amber-600 px-1">La península solo está disponible en cocinas en L: elige "En L" en el tipo de cocina.</p>}
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Largo (mm)</label><input type="number" value={islandDraft.length} onChange={(e) => setIslandDraft({ ...islandDraft, length: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
                         <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Ancho (mm)</label><input type="number" value={islandDraft.width} onChange={(e) => setIslandDraft({ ...islandDraft, width: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
@@ -3667,7 +3678,26 @@ export default function App() {
                         <div key={isl.id} className="p-3 rounded-2xl bg-indigo-50 border border-indigo-200 space-y-2">
                           <div className="flex items-center justify-between">
                             <p className="text-[10px] font-black text-indigo-700 uppercase">{isl.kind === 'isla' ? 'Isla' : 'Península'} {isl.length} × {isl.width}{isl.kind === 'peninsula' && layout !== 'L_SHAPE' ? ' · inactiva (solo en L)' : ''}</p>
-                            <button onClick={() => { if (window.confirm(`¿Eliminar ${isl.kind === 'isla' ? 'la isla' : 'la península'} de ${isl.length} × ${isl.width}?`)) removeIsland(isl.id); }} className="p-1 rounded-lg bg-white text-slate-400 hover:text-red-500" title="Quitar"><X size={14} /></button>
+                            {pendingDelete === isl.id ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[9px] font-black text-slate-600 uppercase">¿Eliminar?</span>
+                                <button onClick={() => { removeIsland(isl.id); setPendingDelete(null); }} className="px-2 py-1 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[9px] font-black uppercase">Sí</button>
+                                <button onClick={() => setPendingDelete(null)} className="px-2 py-1 rounded-lg bg-white text-slate-500 hover:text-slate-700 text-[9px] font-black uppercase border border-slate-200">No</button>
+                              </div>
+                            ) : (
+                              <button onClick={() => setPendingDelete(isl.id)} className="p-1 rounded-lg bg-white text-slate-400 hover:text-red-500" title="Eliminar"><X size={14} /></button>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {(['isla', 'peninsula'] as const).map(k => (
+                              <button
+                                key={k}
+                                disabled={k === 'peninsula' && layout !== 'L_SHAPE' && isl.kind !== 'peninsula'}
+                                title={k === 'peninsula' && layout !== 'L_SHAPE' ? 'La península solo se crea en cocinas en L' : undefined}
+                                onClick={() => updateIsland(isl.id, k === 'peninsula' ? { kind: 'peninsula' } : { kind: 'isla', dx: 1000 })}
+                                className={`py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide border-2 disabled:opacity-40 disabled:cursor-not-allowed ${isl.kind === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}
+                              >{k === 'isla' ? 'Isla' : 'Península'}</button>
+                            ))}
                           </div>
                           <div className="grid grid-cols-2 gap-2">
                             {([['length', 'Largo'], ['width', 'Ancho'], ['dx', 'Cota X desde 0'], ['dy', 'Cota Y desde 0']] as const).map(([key, label]) => (
