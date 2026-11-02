@@ -207,13 +207,21 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     plinthSegments('A', 0, wallA).forEach(([x0, x1], i) => {
       boxes.push({ id: `zocalo-A-${i}`, name: 'Zócalo A', kind: 'zocalo', wall: 'A', x: x0, y: 0, z: 0, sx: x1 - x0, sy: zocaloDepth, sz: zh, facing: null });
     });
+    // Con una península pegada al brazo, el zócalo de la cocina llega hasta ella y ahí lo toma el de la península: el tramo del
+    // brazo que queda más allá de la península no lleva zócalo
+    const peninsula = (input.islands ?? []).filter(i => i.kind === 'peninsula').sort((p, q) => p.dy - q.dy)[0];
+    const armEnd = (wall: 'B' | 'C') => {
+      const full = wall === 'B' ? wallB : wallC;
+      const onThisArm = wall === (input.lArm === 'right' ? 'C' : 'B');
+      return peninsula && onThisArm ? Math.min(full, peninsula.dy + ISLAND_PLINTH_INSET) : full;
+    };
     if (hasB) {
-      plinthSegments('B', yStart, wallB).forEach(([y0, y1], i) => {
+      plinthSegments('B', yStart, armEnd('B')).forEach(([y0, y1], i) => {
         boxes.push({ id: `zocalo-B-${i}`, name: 'Zócalo B', kind: 'zocalo', wall: 'B', x: 0, y: y0, z: 0, sx: zocaloDepth, sy: y1 - y0, sz: zh, facing: null });
       });
     }
     if (hasC) {
-      plinthSegments('C', yStart, wallC).forEach(([y0, y1], i) => {
+      plinthSegments('C', yStart, armEnd('C')).forEach(([y0, y1], i) => {
         boxes.push({ id: `zocalo-C-${i}`, name: 'Zócalo C', kind: 'zocalo', wall: 'C', x: wallA - zocaloDepth, y: y0, z: 0, sx: zocaloDepth, sy: y1 - y0, sz: zh, facing: null });
       });
     }
