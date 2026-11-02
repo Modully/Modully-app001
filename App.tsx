@@ -90,6 +90,72 @@ const DeferredNumber: React.FC<{ value: number; onCommit: (n: number) => void; c
   );
 };
 
+/** Dibujito que muestra a qué medida se refiere un campo del Espacio (en indigo, la medida; en gris, el resto) */
+const MeasureSketch: React.FC<{ kind: 'A' | 'B' | 'C' | 'height' | 'zH' | 'zD' | 'iL' | 'iW' | 'iBar' | 'iX' | 'iY'; layout?: LayoutType; lArm?: 'left' | 'right' }> = ({ kind, layout = 'STRAIGHT', lArm = 'left' }) => {
+  const hi = '#4f46e5', lo = '#cbd5e1';
+  const arrow = (x1: number, y1: number, x2: number, y2: number) => {
+    const horiz = y1 === y2, d = 3;
+    return (
+      <g stroke={hi} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round">
+        <line x1={x1} y1={y1} x2={x2} y2={y2} />
+        {horiz ? <><polyline points={`${x1 + d},${y1 - d} ${x1},${y1} ${x1 + d},${y1 + d}`} /><polyline points={`${x2 - d},${y2 - d} ${x2},${y2} ${x2 - d},${y2 + d}`} /></>
+          : <><polyline points={`${x1 - d},${y1 + d} ${x1},${y1} ${x1 + d},${y1 + d}`} /><polyline points={`${x2 - d},${y2 - d} ${x2},${y2} ${x2 + d},${y2 - d}`} /></>}
+      </g>
+    );
+  };
+  let body: React.ReactNode = null;
+  if (kind === 'height') {
+    body = <><rect x="10" y="5" width="40" height="30" rx="1" fill="#f8fafc" stroke={lo} strokeWidth="2" />{arrow(30, 8, 30, 32)}</>;
+  } else if (kind === 'iL' || kind === 'iW' || kind === 'iBar') {
+    // isla vista desde arriba: mesón (con la barra al frente, abajo) y los módulos dentro
+    body = (
+      <>
+        <rect x="12" y="5" width="36" height="24" rx="1" fill="#f8fafc" stroke={lo} strokeWidth="2" />
+        <rect x="12" y="5" width="36" height="16" fill="#e2e8f0" />
+        {kind === 'iBar' && <rect x="12" y="21" width="36" height="8" fill="#e0e7ff" stroke={hi} strokeWidth="1.5" />}
+        {kind === 'iL' && arrow(12, 35, 48, 35)}
+        {kind === 'iW' && arrow(54, 5, 54, 29)}
+        {kind === 'iBar' && arrow(30, 21, 30, 29)}
+      </>
+    );
+  } else if (kind === 'iX' || kind === 'iY') {
+    // cotas de la isla desde el punto 0 (esquina del cuarto)
+    body = (
+      <>
+        <polyline points="6,34 6,5 54,5" fill="none" stroke={lo} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="6" cy="5" r="2.5" fill={hi} />
+        <rect x="26" y="16" width="24" height="14" rx="1" fill="#e2e8f0" stroke={lo} strokeWidth="2" />
+        {kind === 'iX' && arrow(8, 23, 26, 23)}
+        {kind === 'iY' && arrow(16, 7, 16, 30)}
+      </>
+    );
+  } else if (kind === 'zH' || kind === 'zD') {
+    body = (
+      <>
+        <rect x="14" y="4" width="32" height="22" rx="1" fill="#f1f5f9" stroke={lo} strokeWidth="2" />
+        <rect x="19" y="26" width="27" height="8" fill={kind === 'zH' ? '#e0e7ff' : '#f8fafc'} stroke={kind === 'zH' || kind === 'zD' ? hi : lo} strokeWidth="1.5" />
+        {kind === 'zH' ? arrow(52, 26, 52, 34) : arrow(19, 38, 46, 38)}
+      </>
+    );
+  } else {
+    // vista en planta de los muros: A arriba; el brazo de la L a un lado; en U, B y C a los dos lados
+    const hasB = layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left');
+    const hasC = layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right');
+    const wall = (k: 'A' | 'B' | 'C', x1: number, y1: number, x2: number, y2: number) => <line key={k} x1={x1} y1={y1} x2={x2} y2={y2} stroke={kind === k ? hi : lo} strokeWidth={kind === k ? 3.5 : 3} strokeLinecap="round" />;
+    body = (
+      <>
+        {wall('A', 12, 8, 48, 8)}
+        {hasB && wall('B', 12, 8, 12, 33)}
+        {hasC && wall('C', 48, 8, 48, 33)}
+        {kind === 'A' && arrow(14, 14, 46, 14)}
+        {kind === 'B' && arrow(18, 10, 18, 31)}
+        {kind === 'C' && arrow(42, 10, 42, 31)}
+      </>
+    );
+  }
+  return <svg width="52" height="36" viewBox="0 0 60 40" className="shrink-0" aria-hidden="true">{body}</svg>;
+};
+
 const MeasureInput: React.FC<{ label: string; value: number; onCommit: (value: number) => void }> = ({ label, value, onCommit }) => {
   const [draft, setDraft] = useState<string | null>(null);
   const finish = (apply: boolean) => {
@@ -166,7 +232,7 @@ const LoadingOverlay: React.FC<{ message: string }> = ({ message }) => (
   </div>
 );
 
-const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => {
+const Modal: React.FC<{ isOpen: boolean; onClose: () => void; onApply?: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, onApply, title, children }) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -182,7 +248,7 @@ const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; chi
         </div>
         <div className="p-6 bg-slate-50/50 border-t border-slate-100 flex justify-end">
           <button 
-            onClick={onClose}
+            onClick={() => { onApply?.(); onClose(); }}
             className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black uppercase tracking-widest text-xs shadow-lg shadow-indigo-200 active:scale-95 transition-all"
           >
             Aplicar Cambios
@@ -393,7 +459,8 @@ export default function App() {
   const [lArm, setLArm] = useState<'left' | 'right'>('left');
   // Borrado con confirmación dentro de la app (isla o tarjeta especial pendiente de confirmar)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  const [islandDraft, setIslandDraft] = useState<{ kind: 'isla' | 'peninsula'; length: string; width: string; bar: string }>({ kind: 'isla', length: '1800', width: '900', bar: '0' });
+  const [islandEnabled, setIslandEnabled] = useState(false); // sección Isla / Península activada (con islas creadas siempre está activa)
+  const [islandDraft, setIslandDraft] = useState<{ kind: 'isla' | 'peninsula' | null; length: string; width: string; bar: string }>({ kind: null, length: '1800', width: '900', bar: '0' });
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [suggestMessage, setSuggestMessage] = useState('');
 
@@ -3236,6 +3303,7 @@ export default function App() {
 
   // Isla o península: se pide la medida general y se crea a 1 m del punto 0 en ambas cotas (después se editan)
   const addIsland = () => {
+    if (!islandDraft.kind) return;
     const length = Math.round(parseFloat(islandDraft.length) || 0);
     const width = Math.round(parseFloat(islandDraft.width) || 0);
     if (length < 300 || width < 300) { window.alert('La isla o península necesita al menos 300 mm de largo y de ancho.'); return; }
@@ -3243,6 +3311,7 @@ export default function App() {
     // La isla nace a 1 m del punto 0 en ambas cotas; la península va pegada al muro perpendicular B (cota X = 0, contra su cara interior) y a 1 m en Y
     const bar = Math.max(0, Math.min(Math.round(parseFloat(islandDraft.bar) || 0), width - 200));
     setIslands(prev => [...prev, { id: Math.random().toString(36).substr(2, 6), kind: islandDraft.kind, length, width, dx: islandDraft.kind === 'peninsula' ? 0 : 1000, dy: 1000, bar }]);
+    setIslandDraft(d => ({ ...d, kind: null }));
   };
   const updateIsland = (id: string, patch: Partial<IslandItem>) => setIslands(prev => prev.map(i => (i.id === id ? { ...i, ...patch, ...(i.kind === 'peninsula' ? { dx: 0 } : {}) } : i)));
   const removeIsland = (id: string) => { setIslands(prev => prev.filter(i => i.id !== id)); setModules(prev => prev.filter(m => m.islandId !== id)); };
@@ -3583,7 +3652,7 @@ export default function App() {
                 </div>
               </Modal>
 
-              <Modal isOpen={isWorkspaceModalOpen} onClose={() => setIsWorkspaceModalOpen(false)} title="Configuración de Espacio">
+              <Modal isOpen={isWorkspaceModalOpen} onClose={() => setIsWorkspaceModalOpen(false)} onApply={addIsland} title="Configuración de Espacio">
                 <div className="space-y-8">
                   <div className="space-y-4">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Tipo de Cocina</label>
@@ -3609,15 +3678,15 @@ export default function App() {
                   
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Largo Muro A (mm)</label><div className="relative group"><DeferredNumber  value={wallA} onCommit={n => setWallA(Math.max(500, n))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
-                      <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Altura Techo (mm)</label><div className="relative group"><DeferredNumber  value={spaceHeight} onCommit={n => setSpaceHeight(Math.max(1000, n))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
+                      <div className="space-y-2"><div className="flex items-center justify-between gap-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Largo Muro A (mm)</label><MeasureSketch kind="A" layout={layout} lArm={lArm} /></div><div className="relative group"><DeferredNumber  value={wallA} onCommit={n => setWallA(Math.max(500, n))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
+                      <div className="space-y-2"><div className="flex items-center justify-between gap-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Altura Techo (mm)</label><MeasureSketch kind="height" /></div><div className="relative group"><DeferredNumber  value={spaceHeight} onCommit={n => setSpaceHeight(Math.max(1000, n))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
                     </div>
                     
                     {(layout === 'L_SHAPE' || layout === 'U_SHAPE') && (
                       <div className={`grid ${layout === 'U_SHAPE' ? 'grid-cols-2' : 'grid-cols-1'} gap-4 animate-in fade-in slide-in-from-top-2 duration-300`}>
-                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{layout === 'L_SHAPE' && lArm === 'right' ? 'Largo del brazo (muro C) (mm)' : layout === 'L_SHAPE' ? 'Largo del brazo (muro B) (mm)' : 'Largo Muro B (mm)'}</label><div className="relative group"><DeferredNumber  value={layout === 'L_SHAPE' && lArm === 'right' ? wallC : wallB} onCommit={n => (layout === 'L_SHAPE' && lArm === 'right' ? setWallC : setWallB)(Math.max(500, n))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
+                        <div className="space-y-2"><div className="flex items-center justify-between gap-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{layout === 'L_SHAPE' && lArm === 'right' ? 'Largo del brazo (muro C) (mm)' : layout === 'L_SHAPE' ? 'Largo del brazo (muro B) (mm)' : 'Largo Muro B (mm)'}</label><MeasureSketch kind={layout === 'L_SHAPE' && lArm === 'right' ? 'C' : 'B'} layout={layout} lArm={lArm} /></div><div className="relative group"><DeferredNumber  value={layout === 'L_SHAPE' && lArm === 'right' ? wallC : wallB} onCommit={n => (layout === 'L_SHAPE' && lArm === 'right' ? setWallC : setWallB)(Math.max(500, n))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
                         {layout === 'U_SHAPE' && (
-                          <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Largo Muro C (mm)</label><div className="relative group"><DeferredNumber  value={wallC} onCommit={n => setWallC(Math.max(500, n))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
+                          <div className="space-y-2"><div className="flex items-center justify-between gap-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Largo Muro C (mm)</label><MeasureSketch kind="C" layout={layout} lArm={lArm} /></div><div className="relative group"><DeferredNumber  value={wallC} onCommit={n => setWallC(Math.max(500, n))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
                         )}
                       </div>
                     )}
@@ -3637,7 +3706,7 @@ export default function App() {
                     {hasZocalo && (
                       <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
                         <div className="space-y-2">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Altura Zócalo (mm)</label>
+                          <div className="flex items-center justify-between gap-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Altura Zócalo (mm)</label><MeasureSketch kind="zH" /></div>
                           <div className="relative group">
                             <DeferredNumber 
                                
@@ -3649,7 +3718,7 @@ export default function App() {
                           </div>
                         </div>
                         <div className="space-y-2">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Profundidad (mm)</label>
+                          <div className="flex items-center justify-between gap-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Profundidad (mm)</label><MeasureSketch kind="zD" /></div>
                           <div className="relative group">
                             <DeferredNumber 
                                
@@ -3668,23 +3737,33 @@ export default function App() {
                     <div className="p-4 rounded-3xl border-2 border-slate-100 bg-white space-y-3">
                       <div className="flex items-center gap-3">
                         <div className="p-2 rounded-xl bg-slate-100 text-slate-500"><IslandIcon size={22} /></div>
-                        <div>
+                        <div className="flex-1">
                           <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">Isla / Península</p>
                           <p className="text-[9px] font-bold text-slate-400">Medida general · isla a 1 m del punto 0 · península solo en cocina en L, pegada al muro perpendicular · zócalo 5 cm más pequeño</p>
                         </div>
+                        <button
+                          disabled={islands.length > 0}
+                          title={islands.length > 0 ? 'Elimina primero las islas o penínsulas creadas' : undefined}
+                          onClick={() => { if (islandEnabled) setIslandDraft(d => ({ ...d, kind: null })); setIslandEnabled(!islandEnabled); }}
+                          className={`w-10 h-5 rounded-full transition-all relative shrink-0 disabled:opacity-60 disabled:cursor-not-allowed ${islandEnabled || islands.length > 0 ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                        >
+                          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${islandEnabled || islands.length > 0 ? 'left-5.5' : 'left-0.5'}`} />
+                        </button>
                       </div>
+                      {(islandEnabled || islands.length > 0) && <>
                       <div className="grid grid-cols-2 gap-2">
                         {(['isla', 'peninsula'] as const).map(k => (
-                          <button key={k} disabled={k === 'peninsula' && layout !== 'L_SHAPE'} title={k === 'peninsula' && layout !== 'L_SHAPE' ? 'La península solo se crea en cocinas en L' : undefined} onClick={() => setIslandDraft({ ...islandDraft, kind: k })} className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide border-2 disabled:opacity-40 disabled:cursor-not-allowed ${islandDraft.kind === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{k === 'isla' ? 'Isla' : 'Península'}</button>
+                          <button key={k} disabled={k === 'peninsula' && layout !== 'L_SHAPE'} title={k === 'peninsula' && layout !== 'L_SHAPE' ? 'La península solo se crea en cocinas en L' : undefined} onClick={() => setIslandDraft({ ...islandDraft, kind: islandDraft.kind === k ? null : k })} className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide border-2 disabled:opacity-40 disabled:cursor-not-allowed ${islandDraft.kind === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{k === 'isla' ? 'Isla' : 'Península'}</button>
                         ))}
                       </div>
                       {layout !== 'L_SHAPE' && <p className="text-[9px] font-bold text-amber-600 px-1">La península solo está disponible en cocinas en L: elige "En L" en el tipo de cocina.</p>}
+                      {islandDraft.kind && <>
                       <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Largo (mm)</label><input type="number" value={islandDraft.length} onChange={(e) => setIslandDraft({ ...islandDraft, length: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
-                        <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Ancho (mm)</label><input type="number" value={islandDraft.width} onChange={(e) => setIslandDraft({ ...islandDraft, width: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
+                        <div className="space-y-1"><div className="flex items-center justify-between gap-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Largo (mm)</label><MeasureSketch kind="iL" /></div><input type="number" value={islandDraft.length} onChange={(e) => setIslandDraft({ ...islandDraft, length: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
+                        <div className="space-y-1"><div className="flex items-center justify-between gap-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Ancho (mm)</label><MeasureSketch kind="iW" /></div><input type="number" value={islandDraft.width} onChange={(e) => setIslandDraft({ ...islandDraft, width: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
                       </div>
-                      <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Barra (mm) · voladizo del mesón por el frente</label><input type="number" value={islandDraft.bar} onChange={(e) => setIslandDraft({ ...islandDraft, bar: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
-                      <button onClick={addIsland} className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest">Aceptar y crear</button>
+                      <div className="space-y-1"><div className="flex items-center justify-between gap-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Barra (mm) · voladizo del mesón por el frente</label><MeasureSketch kind="iBar" /></div><input type="number" value={islandDraft.bar} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setIslandDraft({ ...islandDraft, bar: e.target.value.replace(/^0+(?=\d)/, '') })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
+                      </>}
 
                       {islands.map(isl => (
                         <div key={isl.id} className="p-3 rounded-2xl bg-indigo-50 border border-indigo-200 space-y-2">
@@ -3713,12 +3792,13 @@ export default function App() {
                           </div>
                           <div className="grid grid-cols-2 gap-2">
                             {([['length', 'Largo'], ['width', 'Ancho'], ['dx', 'Cota X desde 0'], ['dy', 'Cota Y desde 0'], ['bar', 'Barra']] as const).map(([key, label]) => (
-                              <div key={key} className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
+                              <div key={key} className="space-y-1"><div className="flex items-center justify-between gap-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label><MeasureSketch kind={({ length: 'iL', width: 'iW', dx: 'iX', dy: 'iY', bar: 'iBar' } as const)[key]} /></div>
                                 <input type="number" disabled={isl.kind === 'peninsula' && key === 'dx'} value={isl[key]} onChange={(e) => updateIsland(isl.id, { [key]: Math.max(key === 'length' || key === 'width' ? 300 : 0, parseInt(e.target.value) || 0) })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
                             ))}
                           </div>
                         </div>
                       ))}
+                      </>}
                     </div>
                   </div>
 
@@ -3791,11 +3871,6 @@ export default function App() {
                     )}
                   </div>
 
-                  <div className="p-4 bg-slate-50 rounded-2xl">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dilatación</label>
-                    <p className="text-[9px] font-bold text-slate-500 mt-1">Se pide por módulo: doble clic sobre el módulo, sección "Dilatada" (lado, espesor, fondo y altura)</p>
-                  </div>
-
                   <div className="space-y-4">
                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
                       <div>
@@ -3825,6 +3900,11 @@ export default function App() {
                         </button>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="p-4 bg-slate-50 rounded-2xl">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dilatación</label>
+                    <p className="text-[9px] font-bold text-slate-500 mt-1">Se pide por módulo: doble clic sobre el módulo, sección "Dilatada" (lado, espesor, fondo y altura)</p>
                   </div>
                 </div>
               </Modal>
