@@ -1,7 +1,7 @@
 
 import React, { useMemo, useRef, useEffect, useState } from 'react';
 import { Canvas, useFrame, useThree, ThreeEvent } from '@react-three/fiber';
-import { OrbitControls, Grid, Environment, Text, Edges, PerspectiveCamera, OrthographicCamera, Html, Line } from '@react-three/drei';
+import { OrbitControls, Grid, Environment, Text, Edges, PerspectiveCamera, OrthographicCamera, Html as DreiHtml, Line } from '@react-three/drei';
 import * as THREE from 'three';
 import { IslandItem, KitchenModule, Appliance, ApplianceType, LayoutType, WallName } from './types';
 import { Box, findModuleBox, boxesBounds, applianceCenter, counterTopZ, CORNER_BLIND_OFFSET, WALL_THICKNESS } from './boxes';
@@ -13,8 +13,18 @@ const COUNTER_HEIGHT = 800;      // Alto del módulo base; el mesón queda a zó
 const BACKSPLASH_GAP = 600;      // Espacio entre módulos bajos y aéreos
 const HOOD_GAP = 650;            // Espacio sobre el mesón para campana
 const TOP_MARGIN = 20;           // Espacio bajo el techo
+const SINK_BASIN_DEPTH = 0.2;    // profundidad de la cubeta de la poceta (m), medida desde la cara superior del mesón
 const UPPER_BASE_HEIGHT = COUNTER_HEIGHT + BACKSPLASH_GAP; // Base de aéreos sobre el zócalo (zócalo + 800 + 600)
 
+
+/**
+ * Html de drei que, en las vistas en perspectiva (isométrica y 3D), se oculta cuando algo de la escena (un muro, otro módulo) queda
+ * entre la cámara y su punto: letras, medidas, notas y botones solo se ven si están a la vista. En planta y frontal no se oculta.
+ */
+const Html: React.FC<React.ComponentProps<typeof DreiHtml>> = (props) => {
+  const persp = useThree((state) => (state.camera as any).isPerspectiveCamera);
+  return <DreiHtml occlude={persp ? true : undefined} {...props} />;
+};
 
 /**
  * Html de drei con tamaño coherente en cualquier cámara. Con cámara en perspectiva usa distanceFactor;
@@ -144,7 +154,8 @@ const FaceHandle: React.FC<{
   };
 
   return (
-    <Html position={position} center zIndexRange={[115, 0]} style={{ pointerEvents: 'none' }}>
+    // Las flechas de las caras libres no se ocultan por detrás del propio módulo: de canto, esa cara queda tapada por él mismo
+    <Html position={position} center zIndexRange={[115, 0]} occlude={false} style={{ pointerEvents: 'none' }}>
       <div data-overlay className="relative">
         {holding && (
           <div className="absolute left-1/2 -translate-x-1/2 -top-8 whitespace-nowrap px-2 py-1 rounded-lg bg-blue-600 text-white text-[12px] leading-none font-black shadow-lg border-2 border-white">{label}</div>
@@ -183,6 +194,7 @@ interface Module3DProps {
   onSelect?: (id: string, additive?: boolean) => void; // additive: Shift + clic (elegir dos módulos para unirlos en esquina)
   marked?: boolean; // módulo elegido con Shift + clic
   lShape?: { x0: number; x1: number; z0: number; z1: number }; // esquinero en L: el brazo (m, respecto al centro del módulo)
+  pocket?: { dx: number; dz: number; w: number; d: number; depth: number }; // mueble de la poceta: hueco de la cubeta en su cara superior (m, respecto al centro del módulo)
   onOpenEditor?: (id: string) => void;
   onCloseEditor?: () => void;
   onApplyMeasures?: (id: string, m: { width: number; depth: number; height: number }) => void;
@@ -198,7 +210,7 @@ interface Module3DProps {
   source?: KitchenModule; // módulo completo (la copia `module` puede venir con el cuerpo acortado por los vistos)
 }
 
-const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0, 0], onDelete, onSplit, onEditDimension, onDragPosition, onResizeEdge, controlsRef, hideLeftArrow, hideRightArrow, viewMode, selected, marked, lShape, costado = 'right', editing, onSelect, onOpenEditor, onCloseEditor, onApplyMeasures, onSetTop, onSetVistos, onSplitHorizontal, onSplitDepth, faces, onExtendFace, hoverRef, resolveReference, showLabel = true, source }) => {
+const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0, 0], onDelete, onSplit, onEditDimension, onDragPosition, onResizeEdge, controlsRef, hideLeftArrow, hideRightArrow, viewMode, selected, marked, lShape, pocket, costado = 'right', editing, onSelect, onOpenEditor, onCloseEditor, onApplyMeasures, onSetTop, onSetVistos, onSplitHorizontal, onSplitDepth, faces, onExtendFace, hoverRef, resolveReference, showLabel = true, source }) => {
   const isPlan = viewMode === 'plan';
   const [hovered, setHover] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -229,6 +241,25 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
     return g;
   }, [lShape?.x0, lShape?.x1, lShape?.z0, lShape?.z1, module.width, module.depth, module.height]);
   const isL = !!lGeometry;
+
+  // Mueble de la poceta: el cuerpo lleva un hueco en la cara superior, del tamaño de la cubeta, para que se vea su profundidad
+  const pocketGeos = useMemo(() => {
+    if (!pocket) return null;
+    const W = module.width / 1000, D = module.depth / 1000, H = module.height / 1000;
+    const pd = Math.max(0.02, Math.min(pocket.depth, H - 0.1));
+    const shape = new THREE.Shape();
+    shape.moveTo(-W / 2, D / 2); shape.lineTo(W / 2, D / 2); shape.lineTo(W / 2, -D / 2); shape.lineTo(-W / 2, -D / 2); shape.closePath();
+    const hole = new THREE.Path();
+    const m = 0.006; // el hueco es un poco mayor que la cubeta, para que las paredes de acero no se confundan con las del mueble
+    const x0 = pocket.dx - pocket.w / 2 - m, x1 = pocket.dx + pocket.w / 2 + m, z0 = pocket.dz - pocket.d / 2 - m, z1 = pocket.dz + pocket.d / 2 + m;
+    hole.moveTo(x0, -z0); hole.lineTo(x0, -z1); hole.lineTo(x1, -z1); hole.lineTo(x1, -z0); hole.closePath();
+    shape.holes.push(hole);
+    const ring = new THREE.ExtrudeGeometry(shape, { depth: pd, bevelEnabled: false });
+    ring.rotateX(-Math.PI / 2);
+    ring.translate(0, H / 2 - pd, 0);
+    return { ring, lowerH: H - pd, shift: -pd / 2 };
+  }, [pocket?.dx, pocket?.dz, pocket?.w, pocket?.d, pocket?.depth, module.width, module.depth, module.height]);
+  const isP = !!pocketGeos;
 
   const color = isResizing ? '#10b981' : (isDragging ? '#4f46e5' : (hovered ? '#FFD700' : (COLORS[module.type] || '#cccccc')));
 
@@ -383,14 +414,25 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
           aristas y las tapa. polygonOffset empuja las caras hacia atrás para que las aristas queden a la vista. */}
       <meshStandardMaterial
         color={color}
-        opacity={isL ? 0 : (isDragging || isResizing ? 0.7 : 1)}
-        transparent={isL || isDragging || isResizing !== null}
-        depthWrite={!isL}
+        opacity={isL || isP ? 0 : (isDragging || isResizing ? 0.7 : 1)}
+        transparent={isL || isP || isDragging || isResizing !== null}
+        depthWrite={!isL && !isP}
         polygonOffset
         polygonOffsetFactor={1}
         polygonOffsetUnits={1}
       />
       {!isL && <Edges color={isResizing ? "#10b981" : (isDragging ? "#6366f1" : (marked ? "#f59e0b" : (selected ? "#ef4444" : "#3b2a1a")))} linewidth={isDragging || isResizing || selected || marked ? 3 : 1} />}
+      {isP && pocketGeos && (
+        <>
+          <mesh position={[0, pocketGeos.shift, 0]} castShadow receiveShadow>
+            <boxGeometry args={[module.width / 1000, pocketGeos.lowerH, module.depth / 1000]} />
+            <meshStandardMaterial color={color} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+          </mesh>
+          <mesh geometry={pocketGeos.ring} castShadow receiveShadow>
+            <meshStandardMaterial color={color} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+          </mesh>
+        </>
+      )}
       {isL && lGeometry && (
         <mesh geometry={lGeometry} castShadow receiveShadow>
           <meshStandardMaterial color={color} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
@@ -739,7 +781,7 @@ const JunctionControl3D: React.FC<JunctionControl3DProps> = ({ leftModule, right
   );
 };
 
-const Appliance3D: React.FC<{ appliance: Appliance, position: [number, number, number], rotation?: [number, number, number], spaceHeight: number, zh: number, basinDepth?: number, onGrab?: (e: ThreeEvent<PointerEvent>) => void }> = ({ appliance, position, rotation = [0, 0, 0], spaceHeight, zh, basinDepth = 0.02, onGrab }) => {
+const Appliance3D: React.FC<{ appliance: Appliance, position: [number, number, number], rotation?: [number, number, number], spaceHeight: number, zh: number, basinDepth?: number, faucetFront?: boolean, onGrab?: (e: ThreeEvent<PointerEvent>) => void }> = ({ appliance, position, rotation = [0, 0, 0], spaceHeight, zh, basinDepth = 0.02, faucetFront = false, onGrab }) => {
   const color = appliance.type === 'fridge' ? COLORS.FRIDGE : (appliance.type === 'stove' ? '#0a0a0a' : appliance.type === 'pantry' ? '#d1d5db' : COLORS.SINK);
   const metalness = (appliance.type === 'fridge' || appliance.type === 'sink') ? 0.6 : 0.4;
   const roughness = 0.2;
@@ -844,8 +886,8 @@ const Appliance3D: React.FC<{ appliance: Appliance, position: [number, number, n
             <mesh position={[0, 0.002, -cd / 2 - rim / 2]}><boxGeometry args={[cw + 2 * rim, 0.004, rim]} />{steel}</mesh>
             <mesh position={[cw / 2 + rim / 2, 0.002, 0]}><boxGeometry args={[rim, 0.004, cd]} />{steel}</mesh>
             <mesh position={[-cw / 2 - rim / 2, 0.002, 0]}><boxGeometry args={[rim, 0.004, cd]} />{steel}</mesh>
-            {/* Grifería detrás de la cubeta */}
-            <group position={[0, 0, -(cd / 2 + rim + 0.03)]}>
+            {/* Grifería detrás de la cubeta (contra el muro). En la isla o península va al frente, vuelta hacia adentro: el pico apunta al muro A */}
+            <group position={[0, 0, (faucetFront ? 1 : -1) * (cd / 2 + rim + 0.03)]} rotation={[0, faucetFront ? Math.PI : 0, 0]}>
               <mesh><cylinderGeometry args={[0.035, 0.04, 0.04, 16]} /><meshStandardMaterial color="#eee" metalness={1} /></mesh>
               <mesh position={[0, 0.17, 0]}><cylinderGeometry args={[0.015, 0.015, 0.34, 16]} /><meshStandardMaterial color="#eee" metalness={1} /></mesh>
               <mesh position={[0, 0.34, 0.07]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.012, 0.012, 0.14, 16]} /><meshStandardMaterial color="#eee" metalness={1} /></mesh>
@@ -884,7 +926,7 @@ const Appliance3D: React.FC<{ appliance: Appliance, position: [number, number, n
 /** Doble clic en el mesón: sus tres medidas (largo, fondo y espesor) y el salpicadero */
 type CounterSettings = { thickness: number; overhang: number; hasSplash: boolean; splashHeight: number };
 /** Estado izquierda/derecha (visto desde el frente) del salpicadero lateral y de la cascada de un tramo de mesón */
-type CounterSides = { splashLeft: boolean; splashRight: boolean; waterfallLeft: boolean; waterfallRight: boolean };
+type CounterSides = { splashLeft: boolean; splashRight: boolean; waterfallLeft: boolean; waterfallRight: boolean; bottomLeft?: number; bottomRight?: number };
 
 const CounterEditor: React.FC<{
   box: Box;
@@ -895,7 +937,7 @@ const CounterEditor: React.FC<{
   onClose: () => void;
 }> = ({ box, wall, settings, sides, onApply, onClose }) => {
   // Largo = a lo largo del muro (lo definen los módulos); fondo = hacia el frente (módulos + voladizo)
-  // Isla o península: el voladizo va por delante y por detrás (2 lados); sin salpicadero ni cascada
+  // Isla o península: el voladizo va por delante y por detrás (2 lados); lleva salpicadero y cascada (con medida inferior)
   const isIsland = box.id.startsWith('counter-isla-');
   const overhangs = isIsland ? 2 : 1;
   const length = Math.round(wall === 'A' ? box.sx : box.sy);
@@ -940,7 +982,6 @@ const CounterEditor: React.FC<{
         </div>
       ) : field('depth', 'Ancho (fondo)')}
       {field('thickness', 'Espesor')}
-      {!isIsland && <>
       <div className="pt-1 border-t border-slate-200 space-y-1">
         <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
           <input type="checkbox" checked={hasSplash} onChange={(e) => setHasSplash(e.target.checked)} />
@@ -961,8 +1002,21 @@ const CounterEditor: React.FC<{
           <label className="flex items-center gap-1"><input type="checkbox" checked={side.waterfallLeft} onChange={(e) => setSide({ ...side, waterfallLeft: e.target.checked })} />Izquierda</label>
           <label className="flex items-center gap-1"><input type="checkbox" checked={side.waterfallRight} onChange={(e) => setSide({ ...side, waterfallRight: e.target.checked })} />Derecha</label>
         </div>
+        {/* Solo en la isla o península: medida inferior de la cascada (largo de su canto de abajo; arriba mide el ancho de la isla). Menor = chaflán */}
+        {isIsland && ([['left', 'Izq.', 'bottomLeft', side.waterfallLeft], ['right', 'Der.', 'bottomRight', side.waterfallRight]] as const).filter(r => r[3]).map(([k, label, key]) => (
+          <label key={k} className="flex items-center justify-between gap-2 text-[11px] font-bold text-slate-600" title="Largo del canto de abajo de la cascada. Arriba mide el ancho de la isla; si abajo mide menos, la cascada lleva un chaflán por el frente">
+            Medida inferior {label}
+            <input
+              type="number"
+              value={side[key] ?? Math.round(box.sy)}
+              onChange={(e) => setSide({ ...side, [key]: parseFloat(e.target.value) || 0 })}
+              onFocus={(e) => e.currentTarget.select()}
+              onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') apply(); if (e.key === 'Escape') onClose(); }}
+              className="w-20 px-1.5 py-1 rounded border border-slate-300 bg-white text-[12px] font-black text-slate-800 outline-none focus:border-indigo-500"
+            />
+          </label>
+        ))}
       </div>
-      </>}
       <div className="flex gap-1.5 pt-1">
         <button className="flex-1 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black" onClick={apply}>Aplicar</button>
         <button className="flex-1 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-black" onClick={onClose}>Cerrar</button>
@@ -1120,6 +1174,35 @@ const Island3D: React.FC<{
           <Html position={[x0, y, (oz + z0) / 2]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
             <div data-overlay><DimLabel text={String(Math.round(isl.dy))} value={isl.dy} onCommit={onEdit ? (typed) => onEdit(isl.id, { dy: Math.max(0, Math.round(typed)) }) : undefined} title={`${Math.round(isl.dy)} mm desde el punto 0. Clic para editar`} /></div>
           </Html>
+          {/* Cotas completas: del punto 0 al borde lejano de la isla, por fuera de ella (de dónde a dónde va). Escribir el total mueve la isla */}
+          {(() => {
+            const gap = 0.16;
+            const yTotX = x1 + gap, xTotZ = z1 + gap;
+            const totalY = isl.dy + isl.width, totalX = isl.dx + isl.length;
+            const tick = 0.05;
+            return (
+              <>
+                <Line points={[[yTotX, y, oz], [yTotX, y, z1]]} color="#6366f1" lineWidth={2} />
+                <Line points={[[yTotX - tick, y, oz], [yTotX + tick, y, oz]]} color="#6366f1" lineWidth={1.5} />
+                <Line points={[[yTotX - tick, y, z1], [yTotX + tick, y, z1]]} color="#6366f1" lineWidth={1.5} />
+                <Line points={[[x1, y, z1], [yTotX + tick, y, z1]]} color="#6366f1" lineWidth={1} dashed dashSize={0.03} gapSize={0.03} />
+                <Html position={[yTotX, y, (oz + z1) / 2]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
+                  <div data-overlay><DimLabel text={String(Math.round(totalY))} value={totalY} tone="white" onCommit={onEdit ? (typed) => onEdit(isl.id, { dy: Math.max(0, Math.round(typed) - isl.width) }) : undefined} title={`${Math.round(totalY)} mm: del punto 0 al borde lejano. Clic para editar`} /></div>
+                </Html>
+                {isl.kind !== 'peninsula' && (
+                  <>
+                    <Line points={[[ox, y, xTotZ], [x1, y, xTotZ]]} color="#6366f1" lineWidth={2} />
+                    <Line points={[[ox, y, xTotZ - tick], [ox, y, xTotZ + tick]]} color="#6366f1" lineWidth={1.5} />
+                    <Line points={[[x1, y, xTotZ - tick], [x1, y, xTotZ + tick]]} color="#6366f1" lineWidth={1.5} />
+                    <Line points={[[x1, y, z1], [x1, y, xTotZ + tick]]} color="#6366f1" lineWidth={1} dashed dashSize={0.03} gapSize={0.03} />
+                    <Html position={[(ox + x1) / 2, y, xTotZ]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
+                      <div data-overlay><DimLabel text={String(Math.round(totalX))} value={totalX} tone="white" onCommit={onEdit ? (typed) => onEdit(isl.id, { dx: Math.max(0, Math.round(typed) - isl.length) }) : undefined} title={`${Math.round(totalX)} mm: del punto 0 al borde lejano. Clic para editar`} /></div>
+                    </Html>
+                  </>
+                )}
+              </>
+            );
+          })()}
         </>
       )}
     </group>
@@ -1170,8 +1253,18 @@ const Counter3D: React.FC<{
       pos.needsUpdate = true;
       g.computeVertexNormals();
     }
+    // Cascada con chaflán: el canto de abajo retrocede por el frente (+Y) y el de arriba se queda donde está
+    if (box.chamferY) {
+      const pos = g.attributes.position as THREE.BufferAttribute;
+      const h = box.sz / 1000, zf = (box.y + box.sy) / 1000;
+      for (let i = 0; i < pos.count; i++) {
+        if (Math.abs(pos.getZ(i) - zf) < 1e-6) pos.setZ(i, pos.getZ(i) - (box.chamferY / 1000) * (1 - pos.getY(i) / h));
+      }
+      pos.needsUpdate = true;
+      g.computeVertexNormals();
+    }
     return g;
-  }, [box.x, box.y, box.sx, box.sy, box.sz, cutoutsKey, JSON.stringify(box.mitreBottom), box.mitreTop]);
+  }, [box.x, box.y, box.sx, box.sy, box.sz, cutoutsKey, JSON.stringify(box.mitreBottom), box.mitreTop, box.chamferY]);
 
   const interactive = !!onSelect && box.id.startsWith('counter-'); // los salpicaderos se editan desde su mesón
   return (
@@ -1641,6 +1734,38 @@ const PlanDimensions: React.FC<{ appliances: Appliance[]; wallA: number; offsetZ
   );
 };
 
+/** Medidas de los muros en planta (A arriba, el brazo B o C a un lado), por fuera de las cotas de los electrodomésticos; se editan con un clic */
+const WallDimensions: React.FC<{ layout: LayoutType; lArm: 'left' | 'right'; appliances: Appliance[]; wallA: number; wallB: number; wallC: number; offsetZ: number; onEditWall?: (wall: 'A' | 'B' | 'C', value: number) => void }> = ({ layout, lArm, appliances, wallA, wallB, wallC, offsetZ, onEditWall }) => {
+  const T = WALL_THICKNESS;
+  const lift = 0.03;
+  const toWorld = (X: number, Y: number): [number, number, number] => [(X - wallA / 2) / 1000, lift, offsetZ + Y / 1000];
+  const walls: Array<{ wall: 'A' | 'B' | 'C'; length: number }> = [{ wall: 'A', length: wallA }];
+  if (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')) walls.push({ wall: 'B', length: wallB });
+  if (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')) walls.push({ wall: 'C', length: wallC });
+  return (
+    <>
+      {walls.map(({ wall, length }) => {
+        const rows = new Set(appliances.filter(a => a.active && a.wall === wall).map(a => a.type)).size;
+        const off = DIM_BASE_OFFSET + Math.max(1, rows) * DIM_ROW_SPACING + 120;
+        const pt = (along: number, across: number): [number, number, number] =>
+          wall === 'A' ? toWorld(along, -T - across)
+            : wall === 'B' ? toWorld(-T - across, along)
+              : toWorld(wallA + T + across, along);
+        return (
+          <group key={wall}>
+            <Line points={[pt(0, off), pt(length, off)]} color="#0f172a" lineWidth={2} />
+            <Line points={[pt(0, off - 60), pt(0, off + 60)]} color="#0f172a" lineWidth={1.5} />
+            <Line points={[pt(length, off - 60), pt(length, off + 60)]} color="#0f172a" lineWidth={1.5} />
+            <Html position={pt(length / 2, off)} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
+              <div data-overlay><DimLabel text={`Muro ${wall} ${Math.round(length)}`} value={length} tone="white" onCommit={onEditWall ? (typed) => onEditWall(wall, typed) : undefined} title={`Largo del muro ${wall}: ${Math.round(length)} mm. Clic para editar`} /></div>
+            </Html>
+          </group>
+        );
+      })}
+    </>
+  );
+};
+
 // Encuadre (en metros) de las vistas ortogonales: centro y tamaño de lo que debe caber en pantalla
 interface ViewFrame { cx: number; cy: number; cz: number; w: number; h: number; }
 
@@ -1711,6 +1836,7 @@ interface KitchenViewer3DProps {
   island: { length: number; width: number; height: number; dx: number; dy: number };
   islands?: IslandItem[];
   onEditIsland?: (id: string, patch: Partial<IslandItem>) => void;
+  onEditWall?: (wall: 'A' | 'B' | 'C', value: number) => void;
   onDeleteIsland?: (id: string) => void;
   viewMode: 'plan' | 'frontal' | 'isometric' | '3d';
   hasZocalo?: boolean;
@@ -1741,7 +1867,7 @@ interface KitchenViewer3DProps {
 }
 
 export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
-  layout, lArm, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules, boxes, appliances, hasIsland, island, islands = [], onEditIsland, onDeleteIsland, viewMode, hasZocalo, zocaloHeight = 100,
+  layout, lArm, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules, boxes, appliances, hasIsland, island, islands = [], onEditIsland, onEditWall, onDeleteIsland, viewMode, hasZocalo, zocaloHeight = 100,
   hasLeftClosure, hasRightClosure, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSplitHorizontal, onSplitDepth, onExtendFace, onJoinCorner, onSplitCorner, onEditCornerArm, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
 }) => {
   const controlsRef = useRef<any>(null);
@@ -1808,8 +1934,9 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   const slabD = (bounds.maxY - bounds.minY) / 1000;
   const [planCx, planCz] = toWorldXZ((bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2);
   // Las cotas de los electrodomésticos van por fuera de los muros: la planta deja espacio para sus filas
-  const dimExtra = viewMode === 'plan' && dimensionRows(appliances.filter(a => a.active)) > 0
-    ? (DIM_BASE_OFFSET + (dimensionRows(appliances) - 1) * DIM_ROW_SPACING + 400) / 1000 : 0;
+  // y las medidas de los muros van una fila más afuera
+  const dimExtra = viewMode === 'plan'
+    ? (DIM_BASE_OFFSET + Math.max(1, dimensionRows(appliances.filter(a => a.active))) * DIM_ROW_SPACING + 450) / 1000 : 0;
   const planFrame: ViewFrame = { cx: planCx, cy: 0, cz: planCz, w: (bounds.maxX - bounds.minX) / 1000 + 0.8 + 2 * dimExtra, h: (bounds.maxY - bounds.minY) / 1000 + 0.8 + 2 * dimExtra };
   const frontalFrame: ViewFrame = { cx: 0, cy: spaceHeight / 2000, cz: 0, w: baseWidth + 0.8, h: spaceHeight / 1000 + 0.6 };
 
@@ -1874,6 +2001,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           ? <OrthographicCamera makeDefault position={[0, 10, 0]} near={0.1} far={100} />
           : <PerspectiveCamera makeDefault position={[5, 4, 5]} fov={45} />}
         <ambientLight intensity={0.6} /><directionalLight position={[5, 10, 5]} intensity={1.5} castShadow shadow-mapSize={[1024, 1024]} /><Environment preset="apartment" /><CameraController viewMode={viewMode} plan={planFrame} frontal={frontalFrame} />
+        {viewMode === 'plan' && <WallDimensions layout={layout} lArm={lArm} appliances={appliances} wallA={wallA} wallB={wallB} wallC={wallC} offsetZ={offsetZ} onEditWall={onEditWall} />}
         {viewMode === 'plan' && vis.appliances && <PlanDimensions appliances={appliances} wallA={wallA} offsetZ={offsetZ} onMoveAppliance={onMoveAppliance} />}
         <ApplianceDragController
           drag={dragApp} layout={layout} lArm={lArm} wallA={wallA} wallB={wallB} wallC={wallC} offsetZ={offsetZ} controlsRef={controlsRef}
@@ -1890,7 +2018,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               <meshStandardMaterial color="#f1f5f9" roughness={0.8} />
               <Edges color="#cbd5e1" />
             </mesh>
-            <mesh position={[slabX, spaceHeight / 1000 + 0.06, slabZ]}>
+            {/* El techo es translúcido: no tapa las herramientas y medidas (no cuenta al ocultar lo que no se ve) */}
+            <mesh position={[slabX, spaceHeight / 1000 + 0.06, slabZ]} raycast={() => null}>
               <boxGeometry args={[slabW, 0.12, slabD]} />
               <meshStandardMaterial color="#ffffff" transparent opacity={0.3} />
               <Edges color="#cbd5e1" />
@@ -1940,6 +2069,12 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             settings={counterSettings}
             sides={(() => {
               // Qué hay hoy a cada lado del tramo (visto desde el frente): inicio del muro en A y C, final en B
+              if (b.islandId) {
+                const hasI = (label: string) => boxes.some(x => x.id === `salpicadero-isla-${b.islandId}-${label}`);
+                const wf = (label: string) => boxes.find(x => x.id === `cascada-isla-${b.islandId}-${label}`);
+                const bottom = (label: string) => b.sy - (wf(label)?.chamferY ?? 0);
+                return { splashLeft: hasI('izquierda'), splashRight: hasI('derecha'), waterfallLeft: !!wf('izquierda'), waterfallRight: !!wf('derecha'), bottomLeft: bottom('izquierda'), bottomRight: bottom('derecha') };
+              }
               const has = (kind: string, label: string) => boxes.some(x => x.id === `${kind}-${b.wall}-${b.id.split('-')[2]}-${label}`);
               const l = b.wall === 'B' ? 'final' : 'inicio';
               const r = b.wall === 'B' ? 'inicio' : 'final';
@@ -1950,9 +2085,15 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             onCloseEditor={() => setEditingCounter(null)}
             onApply={onEditCounter ? ((s, now) => {
               // Solo se guarda lo que el usuario cambió; lo demás sigue automático
-              const before = { splashLeft: boxes.some(x => x.id === `salpicadero-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'final' : 'inicio'}`), splashRight: boxes.some(x => x.id === `salpicadero-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'inicio' : 'final'}`), waterfallLeft: boxes.some(x => x.id === `cascada-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'final' : 'inicio'}`), waterfallRight: boxes.some(x => x.id === `cascada-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'inicio' : 'final'}`) };
-              const extras: { splashLeft?: boolean; splashRight?: boolean; waterfallLeft?: boolean; waterfallRight?: boolean } = {};
-              (Object.keys(now) as Array<keyof typeof now>).forEach(k => { if (now[k] !== before[k]) extras[k] = now[k]; });
+              const before = b.islandId
+                ? { splashLeft: boxes.some(x => x.id === `salpicadero-isla-${b.islandId}-izquierda`), splashRight: boxes.some(x => x.id === `salpicadero-isla-${b.islandId}-derecha`), waterfallLeft: boxes.some(x => x.id === `cascada-isla-${b.islandId}-izquierda`), waterfallRight: boxes.some(x => x.id === `cascada-isla-${b.islandId}-derecha`), bottomLeft: b.sy - (boxes.find(x => x.id === `cascada-isla-${b.islandId}-izquierda`)?.chamferY ?? 0), bottomRight: b.sy - (boxes.find(x => x.id === `cascada-isla-${b.islandId}-derecha`)?.chamferY ?? 0) }
+                : { splashLeft: boxes.some(x => x.id === `salpicadero-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'final' : 'inicio'}`), splashRight: boxes.some(x => x.id === `salpicadero-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'inicio' : 'final'}`), waterfallLeft: boxes.some(x => x.id === `cascada-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'final' : 'inicio'}`), waterfallRight: boxes.some(x => x.id === `cascada-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'inicio' : 'final'}`) };
+              const extras: { splashLeft?: boolean; splashRight?: boolean; waterfallLeft?: boolean; waterfallRight?: boolean; waterfallBottomLeft?: number; waterfallBottomRight?: number } = {};
+              (['splashLeft', 'splashRight', 'waterfallLeft', 'waterfallRight'] as const).forEach(k => { if (now[k] !== before[k]) extras[k] = now[k]; });
+              if (b.islandId) {
+                if (now.bottomLeft !== undefined && Math.round(now.bottomLeft) !== Math.round(before.bottomLeft ?? 0)) extras.waterfallBottomLeft = Math.round(now.bottomLeft);
+                if (now.bottomRight !== undefined && Math.round(now.bottomRight) !== Math.round(before.bottomRight ?? 0)) extras.waterfallBottomRight = Math.round(now.bottomRight);
+              }
               onEditCounter(s, b.id, extras);
             }) : undefined}
           />
@@ -1977,6 +2118,20 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           return <React.Fragment key={mod.uniqueId}>
           <Module3D
             key={mod.uniqueId}
+            pocket={(() => {
+              if (!mod.isSinkCabinet) return undefined;
+              const slabs = boxes.filter(bx => bx.kind === 'counter' && bx.cutouts && bx.cutouts.length > 0);
+              const cut = slabs.flatMap(sb => (sb.cutouts || []).map(c => ({ c, ct: sb.sz }))).find(({ c }) => c.label === 'Poceta'
+                && c.x + c.sx / 2 >= box.x - 1 && c.x + c.sx / 2 <= box.x + box.sx + 1 && c.y + c.sy / 2 >= box.y - 1 && c.y + c.sy / 2 <= box.y + box.sy + 1);
+              if (!cut) return undefined;
+              const th = mod.wall === 'B' ? Math.PI / 2 : mod.wall === 'C' ? -Math.PI / 2 : 0;
+              const xw = (cut.c.x + cut.c.sx / 2 - (box.x + box.sx / 2)) / 1000, zw = (cut.c.y + cut.c.sy / 2 - (box.y + box.sy / 2)) / 1000;
+              return {
+                dx: xw * Math.cos(th) - zw * Math.sin(th), dz: xw * Math.sin(th) + zw * Math.cos(th),
+                w: (th === 0 ? cut.c.sx : cut.c.sy) / 1000, d: (th === 0 ? cut.c.sy : cut.c.sx) / 1000,
+                depth: SINK_BASIN_DEPTH - cut.ct / 1000,
+              };
+            })()}
             lShape={armBox ? {
               x0: (armBox.x - (box.x + box.sx / 2)) / 1000, x1: (armBox.x + armBox.sx - (box.x + box.sx / 2)) / 1000,
               z0: (armBox.y - (box.y + box.sy / 2)) / 1000, z1: (armBox.y + armBox.sy - (box.y + box.sy / 2)) / 1000,
@@ -2173,12 +2328,24 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           if (app.wall === 'B') rot = [0, Math.PI / 2, 0];
           else if (app.wall === 'C') rot = [0, -Math.PI / 2, 0];
 
-          return <Appliance3D key={idx} appliance={app} position={pos} rotation={rot} spaceHeight={spaceHeight} zh={zh} basinDepth={counterThickness}
+          return <Appliance3D key={idx} appliance={app} position={pos} rotation={rot} spaceHeight={spaceHeight} zh={zh} basinDepth={app.type === 'sink' ? SINK_BASIN_DEPTH : counterThickness}
             onGrab={onMoveAppliance ? (e) => {
               e.stopPropagation();
               setDragApp({ type: app.type, wall: app.wall as WallName, width: app.width, depth: app.depth, centerX, centerY, planeY: e.point.y });
             } : undefined}
           />;
+        })}
+
+        {/* Estufa y poceta de las islas y penínsulas: sobre su mesón, centradas en su mueble (Mueble Estufa / Mueble Poceta) */}
+        {vis.appliances && modules.filter(m => m.islandId && (m.isStoveCabinet || m.isSinkCabinet)).map(m => {
+          const mb = findModuleBox(boxes, m.uniqueId);
+          const kind = m.isStoveCabinet ? 'stove' : 'sink';
+          const tmpl = appliances.find(a => a.type === kind);
+          if (!mb || !tmpl) return null;
+          const slab = boxes.find(bx => bx.id === `counter-isla-${m.islandId}-0`);
+          const top = slab ? (slab.z + slab.sz) / 1000 : (mb.z + mb.sz) / 1000;
+          const [ax, az] = toWorldXZ(mb.x + mb.sx / 2, mb.y + mb.sy / 2);
+          return <Appliance3D key={`isl-${m.uniqueId}`} appliance={{ ...tmpl, wall: 'Island', active: true }} position={[ax, kind === 'stove' ? top + 0.0075 : top, az]} rotation={[0, 0, 0]} spaceHeight={spaceHeight} zh={zh} basinDepth={kind === 'sink' ? SINK_BASIN_DEPTH : 0.02} faucetFront={kind === 'sink'} />;
         })}
 
         <mesh position={[0, -0.001, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>

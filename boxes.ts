@@ -19,6 +19,9 @@ export interface CounterExtras {
   splashRight?: boolean;
   waterfallLeft?: boolean;  // cascada: el mesón baja hasta el piso por ese costado
   waterfallRight?: boolean;
+  // Isla o península: medida inferior de la cascada (mm): el largo de su canto de abajo (arriba mide el ancho de la isla). Menor = chaflán por el frente
+  waterfallBottomLeft?: number;
+  waterfallBottomRight?: number;
 }
 export type BoxFacing = '+Y' | '+X' | '-X' | null; // hacia dónde mira el frente del módulo
 
@@ -50,6 +53,7 @@ export interface Box {
   // Ingletes a 45° entre el mesón y la cascada (solo se dibujan; las cajas siguen siendo prismas)
   mitreBottom?: Array<'x-' | 'x+' | 'y-' | 'y+'>; // mesón: lados donde el canto de abajo se recorta un espesor
   mitreTop?: 'x-' | 'x+' | 'y-' | 'y+';           // cascada: lado (el del mesón) donde el canto de arriba baja un espesor
+  chamferY?: number;                               // cascada con chaflán: cuánto retrocede el canto de abajo por el frente (mm) respecto al de arriba
 }
 
 // Constantes de geometría compartidas por la app, la escena y la exportación
@@ -512,23 +516,101 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   }
 
   // --- Mesón de las islas y penínsulas: es la medida general que se pidió (largo x ancho), a la altura de sus módulos bajos. Los
-  // módulos miden ancho - barra de fondo, así la barra (voladizo del mesón por el frente) queda libre. Sin salpicadero ni cascada ---
+  // módulos miden ancho - barra de fondo, así la barra (voladizo del mesón por el frente) queda libre. Con cascada opcional ---
   if (hasCounter && counterThickness > 0) {
     (input.islands ?? []).forEach(isl => {
       const lowers = boxes.filter(bx => bx.kind === 'lower' && bx.islandId === isl.id);
       if (lowers.length === 0) return;
+      const islTop = Math.max(...lowers.map(bx => bx.z + bx.sz));
+      const islId = `counter-isla-${isl.id}-0`;
+      const islExtras = input.counterExtras?.[islId] ?? {};
+      // Aberturas de la estufa y la poceta: van centradas en su mueble (Mueble Estufa / Mueble Poceta), igual que en la cocina
+      const islandCutouts: Cutout[] = [];
+      lowers.forEach(lb => {
+        const mod = modules.find(m => m.uniqueId === lb.moduleId);
+        const kind = mod?.isStoveCabinet ? 'stove' : mod?.isSinkCabinet ? 'sink' : null;
+        const app = kind ? appliances.find(a => a.type === kind) : undefined;
+        if (!kind || !app) return;
+        const isSink = kind === 'sink';
+        const cw = app.width - 2 * (isSink ? SINK_CUTOUT_MARGIN : STOVE_CUTOUT_MARGIN_X);
+        const cd = app.depth - 2 * (isSink ? SINK_CUTOUT_MARGIN : STOVE_CUTOUT_MARGIN_Y);
+        islandCutouts.push({ label: isSink ? 'Poceta' : 'Estufa', x: lb.x + lb.sx / 2 - cw / 2, y: lb.y + lb.sy / 2 - cd / 2, sx: cw, sy: cd });
+      });
+      const wfL = !!islExtras.waterfallLeft, wfR = !!islExtras.waterfallRight;
       boxes.push({
-        id: `counter-isla-${isl.id}-0`,
+        id: islId,
         name: `Mesón ${isl.kind === 'peninsula' ? 'península' : 'isla'}`,
         kind: 'counter',
         wall: 'A',
         islandId: isl.id,
         x: isl.dx, y: isl.dy,
-        z: Math.max(...lowers.map(bx => bx.z + bx.sz)),
+        z: islTop,
         sx: isl.length, sy: isl.width, sz: counterThickness,
         facing: '+Y',
-        cutouts: [],
+        cutouts: islandCutouts,
+        mitreBottom: wfL || wfR ? [...(wfL ? ['x-' as const] : []), ...(wfR ? ['x+' as const] : [])] : undefined,
       });
+
+      // --- Cascada de la isla o península: dentro de la medida general (el módulo del extremo se acorta un espesor, como en la cocina),
+      // del piso al mesón, con inglete a 45°. Vista de frente, la cascada mide arriba el ancho de la isla; la medida inferior es el largo
+      // de su canto de abajo: si es menor, la cascada lleva un chaflán por el frente (el canto de abajo retrocede lo que falte) ---
+      ([['izquierda', wfL, islExtras.waterfallBottomLeft, isl.dx, 'x+', 1], ['derecha', wfR, islExtras.waterfallBottomRight, isl.dx + isl.length - counterThickness, 'x-', -1]] as const).forEach(([label, on, bottom, cx, inner, dir]) => {
+        if (!on) return;
+        const chamfer = bottom === undefined ? 0 : Math.max(0, Math.min(isl.width - 100, isl.width - bottom));
+        boxes.push({
+          id: `cascada-isla-${isl.id}-${label}`,
+          name: `Cascada ${isl.kind === 'peninsula' ? 'península' : 'isla'} ${label}`,
+          kind: 'counter',
+          wall: 'A',
+          islandId: isl.id,
+          x: cx, y: isl.dy, z: 0,
+          sx: counterThickness, sy: isl.width, sz: islTop + counterThickness,
+          facing: null,
+          mitreTop: inner,
+          chamferY: chamfer > 0 ? chamfer : undefined,
+        });
+      });
+
+      // --- Salpicadero de la isla o península: las mismas reglas del mesón de la cocina. Con el salpicadero activo, va en cada
+      // borde del mesón que toca un muro o un módulo más alto que el mesón (la península pegada al muro B lo lleva por ese lado;
+      // una isla suelta no lleva). Izquierda/derecha se pueden pedir a mano. Del mismo material y espesor que el mesón ---
+      if (splashHeight > 0) {
+        const st = counterThickness;
+        const top = islTop + counterThickness;
+        const x0 = isl.dx, x1 = isl.dx + isl.length, y0 = isl.dy, y1 = isl.dy + isl.width;
+        const REACH = 20;
+        const crosses = (ob: Box) => (ob.kind === 'wall' || ob.kind === 'tall' || ob.kind === 'appliance') && ob.islandId !== isl.id && ob.z < top - 1 && ob.z + ob.sz > top + 1;
+        const ovX = (ob: Box) => Math.min(ob.x + ob.sx, x1) - Math.max(ob.x, x0) > 0.5;
+        const ovY = (ob: Box) => Math.min(ob.y + ob.sy, y1) - Math.max(ob.y, y0) > 0.5;
+        const touch = (edge: 'x-' | 'x+' | 'y-' | 'y+') => boxes.some(ob => crosses(ob) && (
+          edge === 'x-' ? ovY(ob) && ob.x + ob.sx >= x0 - REACH && ob.x + ob.sx <= x0 + 1
+            : edge === 'x+' ? ovY(ob) && ob.x >= x1 - 1 && ob.x <= x1 + REACH
+              : edge === 'y-' ? ovX(ob) && ob.y + ob.sy >= y0 - REACH && ob.y + ob.sy <= y0 + 1
+                : ovX(ob) && ob.y >= y1 - 1 && ob.y <= y1 + REACH));
+        const extras = input.counterExtras?.[islId] ?? {};
+        const want = {
+          left: !wfL && (extras.splashLeft ?? (hasSplash && touch('x-'))),
+          right: !wfR && (extras.splashRight ?? (hasSplash && touch('x+'))),
+          back: hasSplash && touch('y-'),
+          front: hasSplash && touch('y+'),
+        };
+        const pieces: Array<[string, { x: number; y: number; sx: number; sy: number }]> = [];
+        if (want.back) pieces.push(['atrás', { x: x0, y: y0, sx: x1 - x0, sy: st }]);
+        if (want.front) pieces.push(['frente', { x: x0, y: y1 - st, sx: x1 - x0, sy: st }]);
+        const sy0 = y0 + (want.back ? st : 0), sy1 = y1 - (want.front ? st : 0);
+        if (want.left) pieces.push(['izquierda', { x: x0, y: sy0, sx: st, sy: sy1 - sy0 }]);
+        if (want.right) pieces.push(['derecha', { x: x1 - st, y: sy0, sx: st, sy: sy1 - sy0 }]);
+        pieces.forEach(([label, p]) => boxes.push({
+          id: `salpicadero-isla-${isl.id}-${label}`,
+          name: `Salpicadero ${isl.kind === 'peninsula' ? 'península' : 'isla'} ${label}`,
+          kind: 'counter',
+          wall: 'A',
+          islandId: isl.id,
+          x: p.x, y: p.y, z: top,
+          sx: p.sx, sy: p.sy, sz: splashHeight,
+          facing: null,
+        }));
+      }
     });
   }
 

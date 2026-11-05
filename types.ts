@@ -150,5 +150,7 @@ export interface IslandItem {
   width: number;  // mm, hacia el frente
   dx: number;     // mm desde el punto 0 (esquina interior superior izquierda) a lo largo del muro A
   dy: number;     // mm desde el punto 0 hacia el frente
+  stove?: { distance: number };  // lleva estufa: distancia (mm) desde el punto 0 de la isla (su extremo izquierdo) al inicio del mueble
+  sink?: { distance: number };   // lleva poceta / fregadero: igual
   bar?: number;   // barra: voladizo del mesón por el frente (mm); los módulos miden ancho - barra de fondo y el zócalo retrocede la barra
 }

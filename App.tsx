@@ -156,6 +156,90 @@ const MeasureSketch: React.FC<{ kind: 'A' | 'B' | 'C' | 'height' | 'zH' | 'zD' |
   return <svg width="52" height="36" viewBox="0 0 60 40" className="shrink-0" aria-hidden="true">{body}</svg>;
 };
 
+/** Campos de estufa y poceta de una isla o península: si lleva, y a qué distancia de su punto 0 (su extremo izquierdo) */
+const IslandApplianceFields: React.FC<{
+  stove?: { distance: number | string }; sink?: { distance: number | string };
+  onToggle: (kind: 'stove' | 'sink', on: boolean) => void;
+  onDistance: (kind: 'stove' | 'sink', value: string) => void;
+}> = ({ stove, sink, onToggle, onDistance }) => (
+  <div className="space-y-2 pt-1">
+    {([['stove', 'Lleva estufa', stove], ['sink', 'Lleva poceta / fregadero', sink]] as const).map(([kind, label, val]) => (
+      <div key={kind} className="space-y-1">
+        <label className="flex items-center gap-2 text-[10px] font-black text-slate-600 uppercase tracking-wide">
+          <input type="checkbox" checked={!!val} onChange={(e) => onToggle(kind, e.target.checked)} />
+          {label}
+        </label>
+        {val && (
+          <div className="space-y-1">
+            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Distancia desde el punto 0 de la isla (mm)</label>
+            <input
+              type="number"
+              value={val.distance}
+              onFocus={(e) => e.currentTarget.select()}
+              onChange={(e) => onDistance(kind, e.target.value.replace(/^0+(?=\d)/, ''))}
+              className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"
+            />
+          </div>
+        )}
+      </div>
+    ))}
+  </div>
+);
+
+/**
+ * Hilera de módulos bajos de una isla o península: a lo largo de su largo, del fondo de su ancho menos la barra. Si lleva estufa o
+ * poceta, van sus muebles (Mueble Estufa y Mueble Poceta, con las mismas reglas de la cocina) en la distancia pedida desde el
+ * punto 0 de la isla, y el resto se llena con módulos
+ */
+const buildIslandRow = (isl: IslandItem, widths: number[], baseHeight: number, stoveWidth = 600, sinkWidth = 600): KitchenModule[] => {
+  const row: KitchenModule[] = [];
+  const minW = widths[widths.length - 1];
+  const depth = Math.max(200, isl.width - (isl.bar ?? 0)); // la barra (voladizo del mesón) queda libre por el frente
+  const newId = () => Math.random().toString(36).substr(2, 9);
+  const base = (w: number, x: number): KitchenModule => {
+    const template = MODULE_TEMPLATES.find(t => t.type === 'LOWER' && t.width === w) || MODULE_TEMPLATES.find(t => t.type === 'LOWER')!;
+    return {
+      ...template, uniqueId: newId(), wall: 'Island', islandId: isl.id, positionX: x, width: w, depth, height: baseHeight,
+      quantity: 1, doorType: 'vertical', configType: w > 300 ? 'drawers' : 'doors', hasPlateRack: false, drawerCount: w > 300 ? 3 : 0,
+    };
+  };
+
+  // Muebles reservados (estufa y poceta), de izquierda a derecha, sin salirse de la isla ni pisarse
+  const reserved = ([
+    isl.stove ? { kind: 'stove' as const, start: isl.stove.distance, w: Math.min(stoveWidth, isl.length) } : null,
+    isl.sink ? { kind: 'sink' as const, start: isl.sink.distance, w: Math.min(Math.max(600, sinkWidth), isl.length) } : null,
+  ].filter(Boolean) as Array<{ kind: 'stove' | 'sink'; start: number; w: number }>).sort((p, q) => p.start - q.start);
+  let cursor = 0;
+  reserved.forEach((r, i) => {
+    r.start = Math.max(cursor, Math.min(Math.round(r.start), isl.length - r.w));
+    if (r.start - cursor > 0 && r.start - cursor < 120) r.start = cursor; // un hueco menor al mínimo: el mueble se pega al anterior
+    const last = i === reserved.length - 1;
+    if (last && isl.length - (r.start + r.w) > 0 && isl.length - (r.start + r.w) < 120) r.start = Math.max(cursor, isl.length - r.w);
+    cursor = r.start + r.w;
+  });
+
+  // Rellena un tramo [from, to] con módulos; si sobra menos del mínimo, se suma al último
+  const fill = (from: number, to: number) => {
+    let x = from;
+    let remaining = to - from;
+    const first = row.length;
+    while (remaining >= minW) { const w = widths.find(v => v <= remaining) || minW; row.push(base(w, x)); x += w; remaining -= w; }
+    if (remaining >= 120) row.push(base(remaining, x));
+    else if (remaining > 0 && row.length > first) row[row.length - 1].width += remaining;
+  };
+  let at = 0;
+  reserved.forEach(r => {
+    fill(at, r.start);
+    const m = base(r.w, r.start);
+    row.push(r.kind === 'stove'
+      ? { ...m, name: 'Mueble Estufa', isStoveCabinet: true, configType: 'drawers', drawerCount: 2 }
+      : { ...m, name: 'Mueble Poceta', isSinkCabinet: true, configType: 'doors', drawerCount: 0 });
+    at = r.start + r.w;
+  });
+  fill(at, isl.length);
+  return row;
+};
+
 const MeasureInput: React.FC<{ label: string; value: number; onCommit: (value: number) => void }> = ({ label, value, onCommit }) => {
   const [draft, setDraft] = useState<string | null>(null);
   const finish = (apply: boolean) => {
@@ -460,7 +544,7 @@ export default function App() {
   // Borrado con confirmación dentro de la app (isla o tarjeta especial pendiente de confirmar)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [islandEnabled, setIslandEnabled] = useState(false); // sección Isla / Península activada (con islas creadas siempre está activa)
-  const [islandDraft, setIslandDraft] = useState<{ kind: 'isla' | 'peninsula' | null; length: string; width: string; bar: string }>({ kind: null, length: '1800', width: '900', bar: '0' });
+  const [islandDraft, setIslandDraft] = useState<{ kind: 'isla' | 'peninsula' | null; length: string; width: string; bar: string; dx: string; dy: string; stove: { distance: string } | null; sink: { distance: string } | null }>({ kind: null, length: '1800', width: '900', bar: '0', dx: '1000', dy: '1000', stove: null, sink: null });
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [suggestMessage, setSuggestMessage] = useState('');
 
@@ -1226,38 +1310,7 @@ export default function App() {
     
     // Agregar los módulos especiales preservados al final
     // Islas y penínsulas: una hilera de módulos bajos a lo largo de su largo, del fondo de su ancho, que cubre su espacio
-    activeIslands.forEach(isl => {
-      const minW = prioritizedWidths[prioritizedWidths.length - 1];
-      let x = 0;
-      let remaining = isl.length;
-      const push = (w: number) => {
-        const template = MODULE_TEMPLATES.find(t => t.type === 'LOWER' && t.width === w) || MODULE_TEMPLATES.find(t => t.type === 'LOWER')!;
-        newModules.push({
-          ...template,
-          uniqueId: Math.random().toString(36).substr(2, 9),
-          wall: 'Island',
-          islandId: isl.id,
-          positionX: x,
-          width: w,
-          depth: Math.max(200, isl.width - (isl.bar ?? 0)), // la barra (voladizo del mesón) queda libre por el frente
-          height: currentBaseModuleHeight,
-          quantity: 1,
-          doorType: 'vertical',
-          configType: w > 300 ? 'drawers' : 'doors',
-          hasPlateRack: false,
-          drawerCount: w > 300 ? 3 : 0,
-        });
-        x += w;
-        remaining -= w;
-      };
-      while (remaining >= minW) push(prioritizedWidths.find(w => w <= remaining) || minW);
-      if (remaining >= 120) push(remaining);
-      else if (remaining > 0) {
-        // Sobra menos del mínimo: se suma al último módulo para que la hilera llegue justo al borde de la isla
-        const last = newModules.filter(m => m.wall === 'Island' && m.islandId === isl.id).slice(-1)[0];
-        if (last) last.width += remaining;
-      }
-    });
+    activeIslands.forEach(isl => newModules.push(...buildIslandRow(isl, prioritizedWidths, currentBaseModuleHeight, currentAppliances.find(a => a.type === 'stove')?.width, currentAppliances.find(a => a.type === 'sink')?.width)));
 
     // Ningún módulo pasa del ancho máximo (900 mm): si alguno lo supera (un resto sumado al último, el aéreo alargado hacia la
     // esquina...) se parte en partes iguales, de 5 en 5 mm
@@ -1316,6 +1369,24 @@ export default function App() {
     await new Promise(resolve => setTimeout(resolve, 800));
     runAutoModulation(appliances, strategy);
     setIsSuggesting(false); 
+    setActiveTab('design');
+  };
+
+  // Modula solo las islas y penínsulas (el resto de la cocina no se toca): reemplaza los módulos de cada una por una hilera nueva
+  const modulateIslandsOnly = async () => {
+    setIsOptMenuOpen(false);
+    const conflicts = islandConflicts();
+    if (conflicts.length > 0) {
+      window.alert('No se puede modular mientras haya choques:\n\n• ' + conflicts.join('\n• ') + '\n\nMueve o cambia la medida de la isla o península y vuelve a intentarlo.');
+      return;
+    }
+    if (activeIslands.length === 0) return;
+    setIsSuggesting(true);
+    setSuggestMessage('Modulando la isla o península...');
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const ids = new Set(activeIslands.map(i => i.id));
+    setModules(prev => [...prev.filter(m => !(m.wall === 'Island' && m.islandId && ids.has(m.islandId))), ...activeIslands.flatMap(isl => buildIslandRow(isl, [900, 600, 300], currentBaseModuleHeight, appliances.find(a => a.type === 'stove')?.width, appliances.find(a => a.type === 'sink')?.width))]);
+    setIsSuggesting(false);
     setActiveTab('design');
   };
 
@@ -3310,8 +3381,10 @@ export default function App() {
     if (islandDraft.kind === 'peninsula' && layout !== 'L_SHAPE') { window.alert('La península solo se crea en cocinas en L: va pegada al muro perpendicular.'); return; }
     // La isla nace a 1 m del punto 0 en ambas cotas; la península va pegada al muro perpendicular B (cota X = 0, contra su cara interior) y a 1 m en Y
     const bar = Math.max(0, Math.min(Math.round(parseFloat(islandDraft.bar) || 0), width - 200));
-    setIslands(prev => [...prev, { id: Math.random().toString(36).substr(2, 6), kind: islandDraft.kind, length, width, dx: islandDraft.kind === 'peninsula' ? 0 : 1000, dy: 1000, bar }]);
-    setIslandDraft(d => ({ ...d, kind: null }));
+    setIslands(prev => [...prev, { id: Math.random().toString(36).substr(2, 6), kind: islandDraft.kind, length, width, dx: islandDraft.kind === 'peninsula' ? 0 : Math.max(0, Math.round(parseFloat(islandDraft.dx) || 0)), dy: Math.max(0, Math.round(parseFloat(islandDraft.dy) || 0)), bar,
+      stove: islandDraft.stove ? { distance: Math.max(0, Math.round(parseFloat(islandDraft.stove.distance) || 0)) } : undefined,
+      sink: islandDraft.sink ? { distance: Math.max(0, Math.round(parseFloat(islandDraft.sink.distance) || 0)) } : undefined }]);
+    setIslandDraft(d => ({ ...d, kind: null, stove: null, sink: null }));
   };
   const updateIsland = (id: string, patch: Partial<IslandItem>) => setIslands(prev => prev.map(i => (i.id === id ? { ...i, ...patch, ...(i.kind === 'peninsula' ? { dx: 0 } : {}) } : i)));
   const removeIsland = (id: string) => { setIslands(prev => prev.filter(i => i.id !== id)); setModules(prev => prev.filter(m => m.islandId !== id)); };
@@ -3763,6 +3836,16 @@ export default function App() {
                         <div className="space-y-1"><div className="flex items-center justify-between gap-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Ancho (mm)</label><MeasureSketch kind="iW" /></div><input type="number" value={islandDraft.width} onChange={(e) => setIslandDraft({ ...islandDraft, width: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
                       </div>
                       <div className="space-y-1"><div className="flex items-center justify-between gap-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Barra (mm) · voladizo del mesón por el frente</label><MeasureSketch kind="iBar" /></div><input type="number" value={islandDraft.bar} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setIslandDraft({ ...islandDraft, bar: e.target.value.replace(/^0+(?=\d)/, '') })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1"><div className="flex items-center justify-between gap-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Cota X desde 0 (mm)</label><MeasureSketch kind="iX" /></div><input type="number" disabled={islandDraft.kind === 'peninsula'} value={islandDraft.kind === 'peninsula' ? '0' : islandDraft.dx} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setIslandDraft({ ...islandDraft, dx: e.target.value.replace(/^0+(?=\d)/, '') })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500 disabled:opacity-50"/></div>
+                        <div className="space-y-1"><div className="flex items-center justify-between gap-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Cota Y desde 0 (mm)</label><MeasureSketch kind="iY" /></div><input type="number" value={islandDraft.dy} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setIslandDraft({ ...islandDraft, dy: e.target.value.replace(/^0+(?=\d)/, '') })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
+                      </div>
+                      <IslandApplianceFields
+                        stove={islandDraft.stove ?? undefined}
+                        sink={islandDraft.sink ?? undefined}
+                        onToggle={(k, on) => setIslandDraft(d => ({ ...d, [k]: on ? { distance: k === 'stove' ? '0' : '900' } : null }))}
+                        onDistance={(k, v) => setIslandDraft(d => ({ ...d, [k]: { distance: v } }))}
+                      />
                       </>}
 
                       {islands.map(isl => (
@@ -3796,6 +3879,12 @@ export default function App() {
                                 <input type="number" disabled={isl.kind === 'peninsula' && key === 'dx'} value={isl[key]} onChange={(e) => updateIsland(isl.id, { [key]: Math.max(key === 'length' || key === 'width' ? 300 : 0, parseInt(e.target.value) || 0) })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
                             ))}
                           </div>
+                          <IslandApplianceFields
+                            stove={isl.stove}
+                            sink={isl.sink}
+                            onToggle={(k, on) => updateIsland(isl.id, { [k]: on ? { distance: k === 'stove' ? 0 : 900 } : undefined })}
+                            onDistance={(k, v) => updateIsland(isl.id, { [k]: { distance: Math.max(0, parseInt(v) || 0) } })}
+                          />
                         </div>
                       ))}
                       </>}
@@ -3927,6 +4016,7 @@ export default function App() {
                   islands={activeIslands}
                   lArm={lArm}
                   onEditIsland={updateIsland}
+                  onEditWall={(wall, v) => (wall === 'A' ? setWallA : wall === 'B' ? setWallB : setWallC)(Math.max(500, Math.round(v)))}
                   onDeleteIsland={removeIsland}
                   viewMode={activeView} 
                   hasZocalo={hasZocalo} 
@@ -4075,6 +4165,21 @@ export default function App() {
                           <p className="text-[9px] font-bold text-slate-400 uppercase">Prioriza módulos de 300mm</p>
                         </div>
                       </button>
+
+                      {activeIslands.length > 0 && (
+                        <button
+                          onClick={modulateIslandsOnly}
+                          className="flex items-center gap-4 p-3 rounded-2xl hover:bg-indigo-50 text-left transition-all group border-t border-slate-100 mt-1"
+                        >
+                          <div className="bg-violet-100 text-violet-600 p-2 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                            <IslandIcon size={18} />
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">Modular isla / península</p>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">Solo la isla; la cocina no se toca</p>
+                          </div>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
