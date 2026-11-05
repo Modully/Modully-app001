@@ -1,6 +1,6 @@
 """
 GENERADOR DE COCINAS MODULARES - FUSION 360
-Version validada 2026-08-10
+Version validada 2026-08-10; alineada con la app y el documento de Fusion 2026-11-04 (ver cambios abajo)
 
 COMO REUTILIZAR ESTE SCRIPT SIN IA (para una cocina nueva):
 
@@ -13,6 +13,12 @@ COMO REUTILIZAR ESTE SCRIPT SIN IA (para una cocina nueva):
      crear_modulo_campana, crear_modulo_aereo_puertas)
 4. Antes de ejecutar: borra todos los componentes existentes en el navegador de Fusion
 5. Ejecuta (Play). Luego corre extractor_bom_fusion_FINAL.py para el listado.
+
+Alineacion 2026-11-04 (con bomService.ts de la app y el documento de Fusion):
+ - Luz de las puertas de la campana: 4 mm (antes 3).
+ - Los amarres (MB y MA) van SIN canto: quedan ocultos.
+ - Base del MB y piso/techo del MA llevan el mismo canto que los laterales (canto de su propio color).
+ - "Test Frontal/Trasero" pasan a llamarse "Testero Frontal/Trasero".
 
 NO necesitas tocar nada de las funciones crear_panel, crear_estructura_mb, etc.
 Esas ya estan validadas y no deben modificarse salvo que encuentres un error real.
@@ -58,7 +64,7 @@ AMARRE_MA_ALTO = 60
 
 CAMPANA_RECORTE = 85      # mm: el modulo campana es 85 mm mas corto que los aereos vecinos
 CAMPANA_Z_OFFSET = CAMPANA_RECORTE   # y se eleva lo mismo para mantener el techo alineado
-CAMPANA_LUZ_PUERTA = 3    # mm: las puertas de la campana quedan 3 mm por encima de la base del modulo
+CAMPANA_LUZ_PUERTA = 4    # mm: las puertas de la campana quedan 4 mm por encima de la base del modulo (luz de seguridad)
 
 # Se recalculan en configurar_espacio()
 ZOCALO = ZOCALO_DEFECTO
@@ -157,17 +163,17 @@ def crear_estructura_mb(comp_modulo, letra, ancho_mm, color_estructura, lleva_en
     piezas.append(crear_panel(comp_modulo, f"Base {letra}",
         ancho_int, MB_FONDO, ESP, ESP, 0, 0,
         largo_mm=ancho_int, ancho_mm=MB_FONDO, calibre_mm=ESP,
-        color=f'{color_estructura} RH', canto=f'1L {color_estructura}'))
+        color=f'{color_estructura} RH', canto=canto_lateral))
 
     piezas.append(crear_panel(comp_modulo, f"Amarre Sup Tras {letra}",
         ancho_int, ESP, AMARRE_MB_ALTO, ESP, MB_FONDO - ESP, MB_ALTO - AMARRE_MB_ALTO,
         largo_mm=ancho_int, ancho_mm=AMARRE_MB_ALTO, calibre_mm=ESP,
-        color=f'{color_estructura} RH', canto=f'1L {color_estructura}'))
+        color=f'{color_estructura} RH', canto='-'))
 
     piezas.append(crear_panel(comp_modulo, f"Amarre Inf Tras {letra}",
         ancho_int, ESP, AMARRE_MB_ALTO, ESP, MB_FONDO - ESP, ESP,
         largo_mm=ancho_int, ancho_mm=AMARRE_MB_ALTO, calibre_mm=ESP,
-        color=f'{color_estructura} RH', canto=f'1L {color_estructura}'))
+        color=f'{color_estructura} RH', canto='-'))
 
     if lleva_entrepano:
         piezas.append(crear_panel(comp_modulo, f"Entrepano {letra}",
@@ -245,12 +251,12 @@ def crear_caja_cajon(comp_modulo, nombre_base, letra, ancho_mm, z_base, alto_caj
         largo_mm=alto_caj, ancho_mm=PROF_CAJON, calibre_mm=ESP,
         color=f'{color_estructura} RH', canto='1L {}'.format(color_estructura)))
 
-    piezas.append(crear_panel(comp_modulo, f"Test Frontal {nombre_base} {letra}",
+    piezas.append(crear_panel(comp_modulo, f"Testero Frontal {nombre_base} {letra}",
         ancho_ext - 2 * ESP, ESP, alto_caj, x_lat_izq + ESP, offset_y, z_base,
         largo_mm=ancho_ext - 2 * ESP, ancho_mm=alto_caj, calibre_mm=ESP,
         color=f'{color_estructura} RH', canto='1L {}'.format(color_estructura)))
 
-    piezas.append(crear_panel(comp_modulo, f"Test Trasero {nombre_base} {letra}",
+    piezas.append(crear_panel(comp_modulo, f"Testero Trasero {nombre_base} {letra}",
         ancho_ext - 2 * ESP, ESP, alto_caj, x_lat_izq + ESP, offset_y + PROF_CAJON - ESP, z_base,
         largo_mm=ancho_ext - 2 * ESP, ancho_mm=alto_caj, calibre_mm=ESP,
         color=f'{color_estructura} RH', canto='1L {}'.format(color_estructura)))
@@ -343,12 +349,12 @@ def crear_estructura_ma(comp_modulo, letra, ancho_mm, color_estructura, alto=Non
     piezas.append(crear_panel(comp_modulo, f"Piso {letra}",
         ancho_int, MA_FONDO, ESP, ESP, 0, 0,
         largo_mm=ancho_int, ancho_mm=MA_FONDO, calibre_mm=ESP,
-        color=f'{color_estructura} RH', canto=f'1L {color_estructura}'))
+        color=f'{color_estructura} RH', canto=canto_lateral))
 
     piezas.append(crear_panel(comp_modulo, f"Techo {letra}",
         ancho_int, MA_FONDO, ESP, ESP, 0, alto - ESP,
         largo_mm=ancho_int, ancho_mm=MA_FONDO, calibre_mm=ESP,
-        color=f'{color_estructura} RH', canto=f'1L {color_estructura}'))
+        color=f'{color_estructura} RH', canto=canto_lateral))
 
     alto_fondo = alto - 2 * ESP + 5
     piezas.append(crear_panel(comp_modulo, f"Espaldar {letra}",
@@ -359,12 +365,12 @@ def crear_estructura_ma(comp_modulo, letra, ancho_mm, color_estructura, alto=Non
     piezas.append(crear_panel(comp_modulo, f"Amarre Sup 1 {letra}",
         ancho_int, ESP, AMARRE_MA_ALTO, ESP, MA_FONDO - ESP, alto - ESP - AMARRE_MA_ALTO,
         largo_mm=ancho_int, ancho_mm=AMARRE_MA_ALTO, calibre_mm=ESP,
-        color=f'{color_estructura} RH', canto=f'1L {color_estructura}'))
+        color=f'{color_estructura} RH', canto='-'))
 
     piezas.append(crear_panel(comp_modulo, f"Amarre Sup 2 {letra}",
         ancho_int, ESP, AMARRE_MA_ALTO, ESP, MA_FONDO - ESP, alto - ESP - 2 * AMARRE_MA_ALTO,
         largo_mm=ancho_int, ancho_mm=AMARRE_MA_ALTO, calibre_mm=ESP,
-        color=f'{color_estructura} RH', canto=f'1L {color_estructura}'))
+        color=f'{color_estructura} RH', canto='-'))
 
     return piezas
 

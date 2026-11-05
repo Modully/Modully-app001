@@ -242,3 +242,11 @@ Pendiente, en orden sugerido:
 ## Barra de la isla y península (2026-11-02)
 - La tarjeta de isla/península pide también la "Barra" (mm): el voladizo del mesón por el frente (0 = sin barra), también editable en cada isla creada. El mesón de la isla o península es EXACTAMENTE la medida general (largo x ancho, p. ej. 1800 x 900); los módulos miden ancho - barra de fondo (900 - 300 = 600) y empiezan atrás; el zócalo retrocede la barra por el frente (queda a ras de los módulos; sin barra retrocede 5 cm) y 5 cm atrás y a los lados. El cambio de barra o de medida se refleja al volver a optimizar (los módulos se recalculan). En el editor del mesón de una isla el ancho es de solo lectura (se cambia en su tarjeta).
 - Esto reemplaza lo anterior del mesón de las islas con voladizo en todos los lados.
+
+## Alineación del generador de Fusion (2026-11-04)
+Se revisó el documento "cocina prueba 2" de Fusion contra `generador_cocina_fusion_FINAL.py` y `bomService.ts`. Se alineó el generador:
+- Luz de las puertas de la campana: 4 mm (regla validada; el script tenía 3).
+- Amarres (MB y MA) sin canto (quedan ocultos), igual que la app.
+- Base del MB y piso/techo del MA con el canto de sus laterales (canto de su propio color), como `structureEdge` en la app. El documento de Fusion tenía esas piezas sin canto: se siguió la regla de la app.
+- "Test Frontal/Trasero" → "Testero Frontal/Trasero".
+Pendiente: las posiciones del cajonero (35, 445, 605), la gola media (330) y el entrepaño (400) están fijas para un bajo de 800; no se adaptan si cambia el alto.

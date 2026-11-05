@@ -1,4 +1,4 @@
-import { KitchenModule, Appliance, LayoutType, WallName, IslandItem } from './types';
+import { KitchenModule, Appliance, LayoutType, WallName, IslandItem, ColumnItem } from './types';
 
 /**
  * LISTA ÚNICA DE CAJAS: fuente de verdad de la geometría de la cocina.
@@ -14,7 +14,16 @@ import { KitchenModule, Appliance, LayoutType, WallName, IslandItem } from './ty
 export type BoxKind = 'wall' | 'zocalo' | 'lower' | 'upper' | 'tall' | 'appliance' | 'counter' | 'filler';
 /** Ajustes manuales de un tramo de mesón (clave: id de la losa, p. ej. "counter-A-0"). Izquierda/derecha se ven desde el frente.
  *  Sin valor = automático (el salpicadero lateral va donde hay muro o un módulo más alto; la cascada no va). */
+/** Canto del mesón: frentero (pieza a 45° con el mesón, con su alto) o reengruese (una pieza pegada por debajo, de ancho x alto) */
+export interface CounterEdge {
+  kind: 'none' | 'frentero' | 'reengruese';
+  sides: { front: boolean; back: boolean; left: boolean; right: boolean }; // izquierda y derecha vistas desde el frente; "back" solo en islas
+  height: number; // frentero: alto total desde la cara de arriba del mesón (mm); reengruese: alto de la pieza (mm)
+  width: number;  // reengruese: ancho de la pieza hacia adentro (mm)
+}
+
 export interface CounterExtras {
+  edge?: CounterEdge;
   splashLeft?: boolean;
   splashRight?: boolean;
   waterfallLeft?: boolean;  // cascada: el mesón baja hasta el piso por ese costado
@@ -53,6 +62,8 @@ export interface Box {
   // Ingletes a 45° entre el mesón y la cascada (solo se dibujan; las cajas siguen siendo prismas)
   mitreBottom?: Array<'x-' | 'x+' | 'y-' | 'y+'>; // mesón: lados donde el canto de abajo se recorta un espesor
   mitreTop?: 'x-' | 'x+' | 'y-' | 'y+';           // cascada: lado (el del mesón) donde el canto de arriba baja un espesor
+  polygon?: Array<[number, number]>; // pieza con cortes a 45° (salpicadero que rodea una columna): contorno en planta (x, y); la caja es su rectángulo envolvente
+  notches?: Array<{ a0: number; a1: number; c: number }>; // mesón: muescas contra el muro por las columnas (a lo largo del muro de a0 a a1, c de profundidad)
   chamferY?: number;                               // cascada con chaflán: cuánto retrocede el canto de abajo por el frente (mm) respecto al de arriba
 }
 
@@ -128,6 +139,7 @@ export interface BuildBoxesInput {
   splashHeight?: number; // alto del salpicadero (por defecto 70 mm)
   counterExtras?: Record<string, CounterExtras>;
   islands?: IslandItem[];
+  columns?: ColumnItem[]; // columnas o muros atravesados, pegados a un muro y de la altura del techo
   lArm?: 'left' | 'right'; // cocina en L: de qué lado está el brazo (izquierda = muro B, derecha = muro C)
 }
 
@@ -153,6 +165,18 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   if (hasC) {
     boxes.push({ id: 'wall-C', name: 'Muro C', kind: 'wall', wall: 'C', x: wallA, y: -T, z: 0, sx: T, sy: wallC + T, sz: spaceHeight, facing: null });
   }
+
+  // --- Columnas o muros atravesados: pegados al muro A, B o C, de la altura del techo ---
+  (input.columns ?? []).forEach(c => {
+    if (c.wall === 'B' ? !hasB : c.wall === 'C' ? !hasC : false) return;
+    const armLen = c.wall === 'A' ? wallA : c.wall === 'B' ? wallB : wallC;
+    const w = Math.max(0, Math.min(c.width, armLen - c.distance)), d = Math.max(0, c.depth);
+    if (w <= 0 || d <= 0) return;
+    const pos = c.wall === 'A' ? { x: c.distance, y: 0, sx: w, sy: d }
+      : c.wall === 'B' ? { x: 0, y: c.distance, sx: d, sy: w }
+        : { x: wallA - d, y: c.distance, sx: d, sy: w };
+    boxes.push({ id: `column-${c.id}`, name: 'Columna', kind: 'wall', wall: c.wall, ...pos, z: 0, sz: spaceHeight, facing: null });
+  });
 
   // --- Muros auxiliares: cierran el extremo libre de cada brazo de la cocina ---
   //   Recta: izquierdo = extremo izquierdo de A; derecho = extremo derecho de A.
@@ -374,6 +398,63 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     });
   });
 
+  // --- Canto del mesón (frentero o reengruese): lados pedidos, uniones a 45° entre piezas y con el mesón (frentero) ---
+  type EdgeCode = 'x-' | 'x+' | 'y-' | 'y+';
+  const planEdge = (counterId: string, wall: WallName, island: boolean, blocked: EdgeCode[]) => {
+    const edge = input.counterExtras?.[counterId]?.edge;
+    if (!edge || edge.kind === 'none') return { edge: undefined, codes: [] as EdgeCode[] };
+    const maps: Record<WallName, Partial<Record<'front' | 'back' | 'left' | 'right', EdgeCode>>> = {
+      A: { front: 'y+', back: 'y-', left: 'x-', right: 'x+' },
+      B: { front: 'x+', left: 'y+', right: 'y-' },
+      C: { front: 'x-', left: 'y-', right: 'y+' },
+    };
+    const map = maps[wall];
+    const codes = (['front', 'left', 'right', 'back'] as const)
+      .filter(k => edge.sides[k] && map[k] && (k !== 'back' || island))
+      .map(k => map[k] as EdgeCode)
+      .filter(c => !blocked.includes(c));
+    return { edge, codes };
+  };
+  const addEdgePieces = (counterId: string, wall: WallName, slab: { x: number; y: number; sx: number; sy: number; z: number; sz: number }, plan: { edge?: CounterEdge; codes: EdgeCode[] }, islandId?: string) => {
+    const edge = plan.edge;
+    if (!edge || plan.codes.length === 0) return;
+    const frentero = edge.kind === 'frentero';
+    const T = frentero ? slab.sz : Math.max(5, edge.width);                       // espesor de la pieza hacia adentro
+    const H = frentero ? Math.max(slab.sz + 1, edge.height) : Math.max(5, edge.height); // alto
+    const X0 = slab.x, X1 = slab.x + slab.sx, Y0 = slab.y, Y1 = slab.y + slab.sy;
+    const has = (c: EdgeCode) => plan.codes.includes(c);
+    plan.codes.forEach(code => {
+      let poly: Array<[number, number]>;
+      let inner: EdgeCode;
+      if (code === 'y+' || code === 'y-') {
+        const yo = code === 'y+' ? Y1 : Y0, yi = code === 'y+' ? Y1 - T : Y0 + T;
+        const xa = X0, xb = X1, xai = has('x-') ? X0 + T : X0, xbi = has('x+') ? X1 - T : X1;
+        poly = [[xa, yo], [xb, yo], [xbi, yi], [xai, yi]];
+        inner = code === 'y+' ? 'y-' : 'y+';
+      } else {
+        const xo = code === 'x+' ? X1 : X0, xi = code === 'x+' ? X1 - T : X0 + T;
+        const ya = Y0, yb = Y1, yai = has('y-') ? Y0 + T : Y0, ybi = has('y+') ? Y1 - T : Y1;
+        poly = [[xo, ya], [xo, yb], [xi, ybi], [xi, yai]];
+        inner = code === 'x+' ? 'x-' : 'x+';
+      }
+      const xs = poly.map(p => p[0]), ys = poly.map(p => p[1]);
+      boxes.push({
+        id: `${frentero ? 'frentero' : 'reengruese'}-${counterId}-${code}`,
+        name: `${frentero ? 'Frentero' : 'Reengruese'} ${counterId.replace('counter-', 'mesón ')} ${code}`,
+        kind: 'counter',
+        wall,
+        islandId,
+        x: Math.min(...xs), y: Math.min(...ys),
+        sx: Math.max(...xs) - Math.min(...xs), sy: Math.max(...ys) - Math.min(...ys),
+        z: frentero ? slab.z + slab.sz - H : slab.z - H,
+        sz: H,
+        facing: null,
+        polygon: poly,
+        mitreTop: frentero ? inner : undefined,
+      });
+    });
+  };
+
   // --- Mesón: una losa por tramo continuo de módulos bajos de cada muro, con aberturas para poceta y estufa ---
   if (hasCounter && counterThickness > 0) {
     (['A', 'B', 'C'] as WallName[]).forEach(wall => {
@@ -414,8 +495,16 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         // Cascada: el mesón baja del tope al piso por el costado, con inglete a 45° contra la losa. Ocupa un espesor
         // contra el extremo del tramo (el módulo de ese extremo se acorta ese espesor, así el conjunto no cambia de medida)
         // y la losa llega hasta el borde exterior de la cascada.
-        const slabStart = start - (wf.start ? ct : 0);
-        const slabEnd = end + (wf.end ? ct : 0);
+        // Frentero a la izquierda o derecha: igual que la cascada, ocupa un espesor contra el extremo (el módulo de ese extremo se acorta
+        // ese espesor) y la losa llega hasta el borde exterior del frentero, así el conjunto no cambia de medida
+        const fe = extras.edge;
+        const frOn = (left: boolean) => fe?.kind === 'frentero' && (left ? fe.sides.left : fe.sides.right);
+        // Si en ese extremo ya hay visto o dilatada, el módulo ya viene restado: el frentero queda encima de ellas y no se resta de nuevo
+        const latStart = lateral.some(f => range(f).start < range(run[0]).start - 0.5);
+        const latEnd = lateral.some(f => range(f).end > range(run[run.length - 1]).end + 0.5);
+        const frStart = !wf.start && !latStart && !!frOn(leftIsStart), frEnd = !wf.end && !latEnd && !!frOn(!leftIsStart);
+        const slabStart = start - (wf.start ? ct : 0) - (frStart ? ct : 0);
+        const slabEnd = end + (wf.end ? ct : 0) + (frEnd ? ct : 0);
         const length = slabEnd - slabStart;
 
         const slab = wall === 'A'
@@ -443,6 +532,14 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         const mitreBottom: Array<'x-' | 'x+' | 'y-' | 'y+'> = [];
         if (wf.start) mitreBottom.push(startSide);
         if (wf.end) mitreBottom.push(endSide);
+        const edgePlan = planEdge(counterId, wall, false, mitreBottom);
+        if (edgePlan.edge?.kind === 'frentero') mitreBottom.push(...edgePlan.codes);
+
+        // Columnas o muros atravesados dentro del tramo: la losa lleva una muesca contra el muro por cada una
+        const notches = (input.columns ?? []).filter(col => col.wall === wall)
+          .map(col => ({ a0: Math.max(slabStart, col.distance), a1: Math.min(slabEnd, col.distance + col.width), c: Math.min(col.depth, slabDepth) }))
+          .filter(nn => nn.a1 - nn.a0 > 1 && nn.c > 0)
+          .sort((p, q) => p.a0 - q.a0);
 
         boxes.push({
           id: counterId,
@@ -454,7 +551,22 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
           facing: wall === 'A' ? '+Y' : wall === 'B' ? '+X' : '-X',
           cutouts,
           mitreBottom: mitreBottom.length ? mitreBottom : undefined,
+          notches: notches.length ? notches : undefined,
         });
+        addEdgePieces(counterId, wall, { x: slab.x, y: slab.y, sx: slab.sx, sy: slab.sy, z: topOfModules, sz: ct }, edgePlan);
+        // Visto o dilatada en un extremo con frentero o reengruese: pierde la altura de esa pieza (lo que baja del mesón) y queda al ras
+        if (edgePlan.edge) {
+          const drop = edgePlan.edge.kind === 'frentero' ? Math.max(0, edgePlan.edge.height - ct) : edgePlan.edge.height;
+          if (drop > 0 && lateral.length > 0) {
+            (['start', 'end'] as const).forEach(sideName => {
+              if (!edgePlan.codes.includes(sideName === 'start' ? startSide : endSide)) return;
+              // Solo las piezas laterales de ese extremo (las que quedan fuera del primer o del último módulo del tramo)
+              const firstStart = range(run[0]).start, lastEnd = range(run[run.length - 1]).end;
+              lateral.filter(f => (sideName === 'start' ? range(f).end <= firstStart + 0.5 : range(f).start >= lastEnd - 0.5))
+                .forEach(f => { f.sz = Math.max(10, f.sz - drop); });
+            });
+          }
+        }
 
         // (a lo largo del muro, hacia el frente) -> caja
         const piece = (a0: number, a1: number, c0: number, c1: number) => (wall === 'A'
@@ -481,11 +593,30 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
           // Donde hay cascada no hace falta salpicadero lateral: la losa termina en la cascada
           const wantStart = !wf.start && (sp.start ?? (hasSplash && touches(slabStart - SPLASH_REACH, slabStart)));
           const wantEnd = !wf.end && (sp.end ?? (hasSplash && touches(slabEnd, slabEnd + SPLASH_REACH)));
-          const pieces: Array<[string, { x: number; y: number; sx: number; sy: number }]> = [];
-          if (hasSplash) pieces.push(['atrás', piece(slabStart, slabEnd, 0, st)]);
+          const pieces: Array<[string, { x: number; y: number; sx: number; sy: number }, Array<[number, number]>?]> = [];
+          // (a lo largo del muro, hacia el frente) -> (x, y) de la planta
+          const toXY = (a: number, c: number): [number, number] => (wall === 'A' ? [a, c] : wall === 'B' ? [c, a] : [wallA - c, a]);
+          if (hasSplash) {
+            // Atrás, contra el muro; donde hay una columna el salpicadero la rodea: por su frente y por sus dos costados
+            let at = slabStart, seg = 0;
+            notches.forEach(nn => {
+              if (nn.a0 - at > 0.5) pieces.push([seg++ ? `atrás-${seg}` : 'atrás', piece(at, nn.a0, 0, st)]);
+              at = Math.max(at, nn.a1);
+            });
+            if (slabEnd - at > 0.5) pieces.push([seg++ ? `atrás-${seg}` : 'atrás', piece(at, slabEnd, 0, st)]);
+            // En las esquinas de la columna, las piezas se unen a 45° (inglete)
+            notches.forEach((nn, i) => {
+              const cf = nn.c;
+              const leftOk = nn.a0 > slabStart + 0.5, rightOk = nn.a1 < slabEnd - 0.5;
+              const f0 = leftOk ? nn.a0 - st : nn.a0, f1 = rightOk ? nn.a1 + st : nn.a1;
+              pieces.push([`columna-${i + 1}-frente`, piece(f0, f1, cf, cf + st), [[f0, cf + st], [f1, cf + st], [nn.a1, cf], [nn.a0, cf]].map(([a, c]) => toXY(a, c))]);
+              if (leftOk) pieces.push([`columna-${i + 1}-inicio`, piece(nn.a0 - st, nn.a0, st, cf + st), [[nn.a0 - st, st], [nn.a0, st], [nn.a0, cf], [nn.a0 - st, cf + st]].map(([a, c]) => toXY(a, c))]);
+              if (rightOk) pieces.push([`columna-${i + 1}-final`, piece(nn.a1, nn.a1 + st, st, cf + st), [[nn.a1, st], [nn.a1 + st, st], [nn.a1 + st, cf + st], [nn.a1, cf]].map(([a, c]) => toXY(a, c))]);
+            });
+          }
           if (wantStart) pieces.push(['inicio', piece(slabStart, slabStart + st, hasSplash ? st : 0, slabDepth)]);
           if (wantEnd) pieces.push(['final', piece(slabEnd - st, slabEnd, hasSplash ? st : 0, slabDepth)]);
-          pieces.forEach(([label, p]) => boxes.push({
+          pieces.forEach(([label, p, poly]) => boxes.push({
             id: `salpicadero-${wall}-${index}-${label}`,
             name: `Salpicadero ${wall}${runs.length > 1 ? ` (${index + 1})` : ''} ${label}`,
             kind: 'counter',
@@ -493,6 +624,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
             x: p.x, y: p.y, z: counterTop,
             sx: p.sx, sy: p.sy, sz: splashHeight,
             facing: null,
+            polygon: poly,
           }));
         }
 
@@ -537,6 +669,9 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         islandCutouts.push({ label: isSink ? 'Poceta' : 'Estufa', x: lb.x + lb.sx / 2 - cw / 2, y: lb.y + lb.sy / 2 - cd / 2, sx: cw, sy: cd });
       });
       const wfL = !!islExtras.waterfallLeft, wfR = !!islExtras.waterfallRight;
+      const islMitre: EdgeCode[] = [...(wfL ? ['x-' as const] : []), ...(wfR ? ['x+' as const] : [])];
+      const islEdgePlan = planEdge(islId, 'A', true, islMitre);
+      if (islEdgePlan.edge?.kind === 'frentero') islMitre.push(...islEdgePlan.codes);
       boxes.push({
         id: islId,
         name: `Mesón ${isl.kind === 'peninsula' ? 'península' : 'isla'}`,
@@ -548,8 +683,22 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         sx: isl.length, sy: isl.width, sz: counterThickness,
         facing: '+Y',
         cutouts: islandCutouts,
-        mitreBottom: wfL || wfR ? [...(wfL ? ['x-' as const] : []), ...(wfR ? ['x+' as const] : [])] : undefined,
+        mitreBottom: islMitre.length ? islMitre : undefined,
       });
+      addEdgePieces(islId, 'A', { x: isl.dx, y: isl.dy, sx: isl.length, sy: isl.width, z: islTop, sz: counterThickness }, islEdgePlan, isl.id);
+      // Visto o dilatada en un extremo de la isla con frentero o reengruese: pierde la altura de esa pieza y queda al ras
+      if (islEdgePlan.edge) {
+        const drop = islEdgePlan.edge.kind === 'frentero' ? Math.max(0, islEdgePlan.edge.height - counterThickness) : islEdgePlan.edge.height;
+        const fills = boxes.filter(f => f.kind === 'filler' && f.islandId === isl.id && (f.id.startsWith('dilatacion-lower-') || f.id.startsWith('visto-lower-')));
+        if (drop > 0 && fills.length > 0) {
+          const rowMods = boxes.filter(f => f.kind === 'lower' && f.islandId === isl.id);
+          if (rowMods.length > 0) {
+            const firstX = Math.min(...rowMods.map(f => f.x)), lastX = Math.max(...rowMods.map(f => f.x + f.sx));
+            if (islEdgePlan.codes.includes('x-')) fills.filter(f => f.x + f.sx <= firstX + 0.5).forEach(f => { f.sz = Math.max(10, f.sz - drop); });
+            if (islEdgePlan.codes.includes('x+')) fills.filter(f => f.x >= lastX - 0.5).forEach(f => { f.sz = Math.max(10, f.sz - drop); });
+          }
+        }
+      }
 
       // --- Cascada de la isla o península: dentro de la medida general (el módulo del extremo se acorta un espesor, como en la cocina),
       // del piso al mesón, con inglete a 45°. Vista de frente, la cascada mide arriba el ancho de la isla; la medida inferior es el largo

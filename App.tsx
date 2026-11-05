@@ -6,7 +6,7 @@ import {
   Square, Frame, BoxSelect, Globe, Eye, ChevronLeft, ChevronRight, Menu,
   Flame, Droplets, Refrigerator, Wind, Component, X, List, Layers, Info,
   ZoomIn, ZoomOut, Zap, Maximize, Ruler, ArrowRight, MoveHorizontal, Move,
-  TowerControl as Tower, AlertCircle, CheckCircle2, ChevronDown, ToggleLeft as Toggle,
+  TowerControl as Tower, AlertCircle, CheckCircle2, ChevronDown, Puzzle, Shirt, DoorOpen, Bath, Tv, Warehouse, ToggleLeft as Toggle,
   Construction, Minus, Utensils, Target, ZapIcon, Layers2, Archive, Download, Table, Undo2, Redo2
 } from 'lucide-react';
 import {
@@ -21,12 +21,11 @@ import { getAgentAdvice, type KitchenAgentContext } from './agentService';
 import { generateBOM, exportBOMToExcel } from './bomService';
 import { resizeSymmetric, snapToNeighbors } from './moduleResize';
 import type { CounterExtras, Box as BoxData } from './boxes';
-import type { IslandItem } from './types';
+import type { IslandItem, ColumnItem } from './types';
+import { SECTIONS, SECTION_ORDER, SectionId } from './sections';
 import { buildBoxes, boxesToJSON, armUpperOrigin, findCollisions, LOWER_DEPTH, UPPER_DEPTH, CORNER_BLIND_OFFSET, TOP_MARGIN, MAX_MODULE_WIDTH, SPLASH_HEIGHT_DEFAULT, COUNTER_THICKNESS_DEFAULT, COUNTER_OVERHANG_DEFAULT, FRIDGE_CLEARANCE, OVER_FRIDGE_DEPTH, DILATATION_GAP_DEFAULT, DILATATION_DEPTH_DEFAULT } from './boxes';
 
 // Constantes de diseño técnico
-const BASE_MODULE_HEIGHT = 800; // Alto del módulo base (MB). El mesón queda a zócalo + módulo base
-const BACKSPLASH_GAP = 600; // Espacio estándar entre mueble bajo y aéreo
 const HOOD_GAP = 650;       // Espacio específico para la campana (65cm)
 const HOOD_SHORTEN = 85;    // El mueble sobre campana es 8.5cm más corto (regla validada)
 // LOWER_DEPTH, UPPER_DEPTH, CORNER_BLIND_OFFSET y TOP_MARGIN viven en boxes.ts (fuente única de la geometría)
@@ -59,6 +58,10 @@ const KitchenShapeIcon: React.FC<{ shape: LayoutType; size?: number }> = ({ shap
 );
 
 /** Isla y península vistas desde arriba: la cocina en L (muros y mueble) con una península pegada al brazo y una isla suelta */
+const SECTION_ICONS: Record<SectionId, React.ReactNode> = {
+  cocinas: <Utensils size={16} />, closets: <Shirt size={16} />, walking: <Warehouse size={16} />, puertas: <DoorOpen size={16} />, bano: <Bath size={16} />, tv: <Tv size={16} />,
+};
+
 const IslandIcon: React.FC<{ size?: number }> = ({ size = 28 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M2 21.5V3H22" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" opacity="0.45" />
@@ -520,9 +523,13 @@ export default function App() {
   // El zócalo lo define el usuario (generalmente 100mm). El mesón se apoya sobre los módulos base
   // y el aéreo arranca 600mm sobre la cara superior del mesón.
   // Los 600mm hasta el aéreo se miden desde la cara superior del mesón: zócalo + módulo base + espesor del mesón
-  const counterHeight = useMemo(() => (hasZocalo ? zocaloHeight : 0) + BASE_MODULE_HEIGHT + (hasCounter ? counterThickness : 0), [hasZocalo, zocaloHeight, hasCounter, counterThickness]);
-  const currentBaseModuleHeight = BASE_MODULE_HEIGHT;
-  const currentUpperModuleHeight = useMemo(() => spaceHeight - counterHeight - BACKSPLASH_GAP - TOP_MARGIN, [spaceHeight, counterHeight]);
+  // Sección activa (cocinas, closets...): cambia el alto de los módulos, el espacio entre niveles y lo que se ofrece
+  const [section, setSection] = useState<SectionId>('cocinas');
+  const [isSectionMenuOpen, setIsSectionMenuOpen] = useState(false);
+  const cfg = SECTIONS[section];
+  const counterHeight = useMemo(() => (hasZocalo ? zocaloHeight : 0) + cfg.baseModuleHeight + (hasCounter ? counterThickness : 0), [hasZocalo, zocaloHeight, hasCounter, counterThickness, cfg.baseModuleHeight]);
+  const currentBaseModuleHeight = cfg.baseModuleHeight;
+  const currentUpperModuleHeight = useMemo(() => spaceHeight - counterHeight - cfg.upperGap - TOP_MARGIN, [spaceHeight, counterHeight, cfg.upperGap]);
 
   useEffect(() => {
     setModules(prev => prev.map(m => {
@@ -539,6 +546,7 @@ export default function App() {
   const [island] = useState({ length: 1800, width: 900, height: 900, dx: 1500, dy: 1000 });
   // Islas y penínsulas (Módulos especiales): medida general y dos cotas editables desde el punto 0
   const [islands, setIslands] = useState<IslandItem[]>([]);
+  const [columns, setColumns] = useState<ColumnItem[]>([]); // columnas o muros atravesados del espacio
   // Cocina en L: el brazo va a la izquierda (muro B) o a la derecha (muro C); se pregunta al elegir la forma
   const [lArm, setLArm] = useState<'left' | 'right'>('left');
   // Borrado con confirmación dentro de la app (isla o tarjeta especial pendiente de confirmar)
@@ -553,11 +561,11 @@ export default function App() {
   // largo o varias teclas seguidas cuentan como un solo paso.
   const designSnapshot = useMemo(() => ({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, lArm, hasLeftClosure, hasRightClosure,
+    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
     modules, specialModules, appliances, hasIsland, lineType, faceColor,
   }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, lArm, hasLeftClosure, hasRightClosure,
+    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
     modules, specialModules, appliances, hasIsland, lineType, faceColor]);
   type DesignSnapshot = typeof designSnapshot;
@@ -624,10 +632,37 @@ export default function App() {
     setLayout(snap.layout); setWallA(snap.wallA); setWallB(snap.wallB); setWallC(snap.wallC);
     setSpaceHeight(snap.spaceHeight); setHasZocalo(snap.hasZocalo); setZocaloHeight(snap.zocaloHeight);
     setZocaloDepth(snap.zocaloDepth); setHasCounter(snap.hasCounter); setCounterThickness(snap.counterThickness);
-    setCounterOverhang(snap.counterOverhang); setHasSplash(snap.hasSplash); setSplashHeight(snap.splashHeight); setCounterExtras(snap.counterExtras); setIslands(snap.islands); setLArm(snap.lArm); setHasLeftClosure(snap.hasLeftClosure); setHasRightClosure(snap.hasRightClosure);
+    setCounterOverhang(snap.counterOverhang); setHasSplash(snap.hasSplash); setSplashHeight(snap.splashHeight); setCounterExtras(snap.counterExtras); setIslands(snap.islands); setColumns(snap.columns ?? []); setLArm(snap.lArm); setHasLeftClosure(snap.hasLeftClosure); setHasRightClosure(snap.hasRightClosure);
     setHasDilatation(snap.hasDilatation); setDilatationGap(snap.dilatationGap); setDilatationDepth(snap.dilatationDepth);
     setModules(snap.modules); setSpecialModules(snap.specialModules); setAppliances(snap.appliances);
     setHasIsland(snap.hasIsland); setLineType(snap.lineType); setFaceColor(snap.faceColor);
+  };
+
+  // Cada sección guarda su propio diseño: al cambiar de sección se guarda el actual y se carga el de la otra (o uno nuevo con sus valores)
+  const initialDesign = useRef<DesignSnapshot | null>(null);
+  if (!initialDesign.current) initialDesign.current = designSnapshot;
+  const sectionStore = useRef<Partial<Record<SectionId, DesignSnapshot>>>({});
+  const makeSectionDefaults = (id: SectionId): DesignSnapshot => {
+    const c = SECTIONS[id];
+    const first = initialDesign.current!;
+    return {
+      ...first, ...c.defaults,
+      modules: [], islands: [], columns: [], counterExtras: {}, hasLeftClosure: false, hasRightClosure: false, hasIsland: false, lArm: 'left',
+      specialModules: first.specialModules.map((sm, i) => ({ ...sm, active: false, name: c.specials[i] ?? sm.name })),
+      appliances: first.appliances.map(ap => ({ ...ap, active: false })),
+    } as DesignSnapshot;
+  };
+  const switchSection = (next: SectionId) => {
+    setIsSectionMenuOpen(false);
+    if (next === section) return;
+    sectionStore.current[section] = latestSnapshot.current.snapshot;
+    const h = history.current;
+    if (h.timer) { clearTimeout(h.timer); h.timer = null; }
+    h.past = []; h.future = []; h.committed = null; h.committedKey = '';
+    setSection(next);
+    applySnapshot(sectionStore.current[next] ?? makeSectionDefaults(next));
+    setIsElementsPanelOpen(false); setIsAccessoriesPanelOpen(false); setIsViewsPanelOpen(false); setIsSpecialModulesPanelOpen(false); setIsWorkspaceModalOpen(false);
+    bumpHistory();
   };
 
   const hasPendingChange = () => latestSnapshot.current.key !== history.current.committedKey;
@@ -807,9 +842,9 @@ export default function App() {
   // Lista única de cajas: la escena 3D, el BOM y la exportación a Fusion leen la geometría de aquí
   const boxes = useMemo(() => buildBoxes({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    modules: labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, lArm, hasLeftClosure, hasRightClosure,
+    modules: labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
-  }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
+  }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
 
   // Regla: ningún módulo puede ocupar el mismo espacio que un electrodoméstico (ni otro módulo)
   const collisions = useMemo(() => findCollisions(boxes), [boxes]);
@@ -1160,6 +1195,14 @@ export default function App() {
         });
       }
       
+      // Columnas o muros atravesados de este muro: no van módulos ahí (en los brazos se miden desde la esquina ciega)
+      const columnObstacles = columns.filter(c => c.wall === currentWall).flatMap(c => {
+        const armStart = currentWall === 'A' ? 0 : CORNER_BLIND_OFFSET;
+        const cs = Math.max(0, c.distance - armStart);
+        const ce = Math.min(targetWidth, c.distance + c.width - armStart);
+        return ce > cs ? [{ distance: cs, width: ce - cs }] : [];
+      });
+
       const fillTier = (tier: 'upper' | 'lower') => {
         const specialModulesActiveForWall = specialModulesActive.filter(m => m.wall === currentWall);
         const tierObstacles = tier === 'lower'
@@ -1171,6 +1214,7 @@ export default function App() {
                 width: fridge.distance + fridge.width + FRIDGE_CLEARANCE - Math.max(0, fridge.distance - FRIDGE_CLEARANCE),
               }] : []),
               ...(stove ? [{ distance: stove.distance, width: stove.width }] : []),
+              ...columnObstacles,
               ...(sink ? [{ distance: sink.distance, width: Math.max(600, sink.width) }] : []),
               ...specialModulesActiveForWall.map(m => ({ distance: m.positionX, width: m.width })),
               // La península pegada a este muro ocupa su espacio: ahí no van módulos del brazo (los pone la península)
@@ -1182,6 +1226,7 @@ export default function App() {
           : [
               ...(fridge ? [{ distance: overFridgeX, width: overFridgeWidth }] : []),
               ...(hood ? [{ distance: hood.distance, width: hood.width }] : []),
+              ...columnObstacles,
               ...(sink ? [{ distance: sink.distance, width: Math.max(600, sink.width) }] : []),
               ...currentAppliances.filter(a => a.active && a.wall === currentWall && (a.type === 'pantry')),
               ...specialModulesActiveForWall.map(m => ({ distance: m.positionX, width: m.width }))
@@ -1280,7 +1325,7 @@ export default function App() {
           }
           
           // Avanzar después del obstáculo
-          lastX = obsDist + obsWidth;
+          lastX = Math.max(lastX, obsDist + obsWidth);
           
         }); 
         
@@ -1292,7 +1337,34 @@ export default function App() {
       };
 
       fillTier('lower'); 
-      fillTier('upper');
+      if (cfg.hasUpper) fillTier('upper');
+
+      // Cubre-columna: el espacio de enfrente de la columna (entre ella y el frente de los módulos) se cubre con un módulo del ancho de la
+      // columna y del fondo que sobra (fondo del módulo - profundidad de la columna), en bajos y en aéreos
+      columnObstacles.forEach(co => {
+        (['LOWER', 'UPPER'] as const).filter(t => t === 'LOWER' || cfg.hasUpper).forEach(type => {
+          const template = MODULE_TEMPLATES.find(t => t.type === type)!;
+          const colDepth = columns.find(c => c.wall === currentWall && Math.abs(Math.max(0, c.distance - (currentWall === 'A' ? 0 : CORNER_BLIND_OFFSET)) - co.distance) < 1)?.depth ?? 0;
+          const depth = template.depth - colDepth;
+          if (depth < 20) return; // la columna llega al frente de los módulos: no queda espacio que cubrir
+          newModules.push({
+            ...template,
+            uniqueId: Math.random().toString(36).substr(2, 9),
+            name: type === 'LOWER' ? 'Bajo cubre-columna' : 'Aéreo cubre-columna',
+            wall: currentWall,
+            positionX: co.distance,
+            width: co.width,
+            depth,
+            depthOffset: colDepth,
+            height: type === 'LOWER' ? currentBaseModuleHeight : currentUpperModuleHeight,
+            quantity: 1,
+            doorType: 'vertical',
+            configType: 'doors',
+            hasPlateRack: false,
+            drawerCount: 0,
+          });
+        });
+      });
 
       // Esquina unida: en los brazos B y C el primer aéreo (el perpendicular al mueble de A) se alarga hacia la esquina
       // hasta tocar el aéreo de A. No cambia la profundidad de nadie y los cortes siguen alineados con los de los bajos.
@@ -1314,6 +1386,8 @@ export default function App() {
 
     // Ningún módulo pasa del ancho máximo (900 mm): si alguno lo supera (un resto sumado al último, el aéreo alargado hacia la
     // esquina...) se parte en partes iguales, de 5 en 5 mm
+    // Los módulos toman los nombres de la sección (Bajo / Aéreo en cocinas; Cuerpo / Maletero en closets...)
+    newModules.forEach(m => { m.name = m.name.replace(/^Bajo/, cfg.lowerName).replace(/^Aéreo/, cfg.upperName); });
     const capped: KitchenModule[] = [];
     newModules.forEach(m => {
       if (m.width <= MAX_MODULE_WIDTH || m.type === 'TALL') { capped.push(m); return; }
@@ -1331,7 +1405,7 @@ export default function App() {
 
     setModules([...newModules, ...specialModulesActive]);
     setCounterExtras({}); // al optimizar se recalcula todo: los ajustes manuales del mesón (cascadas, salpicaderos laterales) se reinician
-  }, [wallA, wallB, wallC, layout, lArm, activeIslands, currentBaseModuleHeight, currentUpperModuleHeight, spaceHeight, modules, activeWall, hasDilatation, dilatationGap, hasLeftClosure, hasRightClosure]);
+  }, [wallA, wallB, wallC, layout, lArm, activeIslands, columns, cfg, currentBaseModuleHeight, currentUpperModuleHeight, spaceHeight, modules, activeWall, hasDilatation, dilatationGap, hasLeftClosure, hasRightClosure]);
 
   // Antes de optimizar se revisa que las islas y penínsulas no choquen entre sí ni con los muros de la cocina:
   // si hay choques, la optimización no se hace y se dice cuáles son
@@ -1341,6 +1415,11 @@ export default function App() {
     const rooms: R[] = [{ name: 'los módulos del muro A', x0: 0, x1: wallA, y0: 0, y1: CORNER_BLIND_OFFSET }];
     if (armB) rooms.push({ name: 'los módulos del muro B', x0: 0, x1: CORNER_BLIND_OFFSET, y0: 0, y1: wallB });
     if (armC) rooms.push({ name: 'los módulos del muro C', x0: wallA - CORNER_BLIND_OFFSET, x1: wallA, y0: 0, y1: wallC });
+    columns.forEach(c => {
+      if (c.wall === 'A') rooms.push({ name: 'una columna del muro A', x0: c.distance, x1: c.distance + c.width, y0: 0, y1: c.depth });
+      else if (c.wall === 'B' && armB) rooms.push({ name: 'una columna del muro B', x0: 0, x1: c.depth, y0: c.distance, y1: c.distance + c.width });
+      else if (c.wall === 'C' && armC) rooms.push({ name: 'una columna del muro C', x0: wallA - c.depth, x1: wallA, y0: c.distance, y1: c.distance + c.width });
+    });
     const label = (i: IslandItem) => (i.kind === 'peninsula' ? 'la península' : 'la isla');
     const out: string[] = [];
     const rects = activeIslands.map(i => ({ i, r: { name: label(i), x0: i.dx, x1: i.dx + i.length, y0: i.dy, y1: i.dy + i.width } as R }));
@@ -1568,6 +1647,26 @@ export default function App() {
       const changes: Array<{ atStart: boolean; on: boolean }> = [];
       if (extras.waterfallLeft !== undefined) changes.push({ atStart: leftIsStart, on: extras.waterfallLeft });
       if (extras.waterfallRight !== undefined) changes.push({ atStart: !leftIsStart, on: extras.waterfallRight });
+      // Frentero a la izquierda o derecha: el módulo del extremo se acorta un espesor (y se devuelve al quitarlo)
+      if (extras.edge !== undefined) {
+        const prev = counterExtras[counterId]?.edge;
+        const was = (side: 'left' | 'right') => prev?.kind === 'frentero' && prev.sides[side];
+        const now = (side: 'left' | 'right') => extras.edge!.kind === 'frentero' && extras.edge!.sides[side];
+        (['left', 'right'] as const).forEach(side => {
+          if (was(side) === now(side)) return;
+          const atStart = side === 'left' ? leftIsStart : !leftIsStart;
+          if (changes.some(c => c.atStart === atStart)) return; // ya hay un cambio de cascada en ese extremo
+          // Si el módulo de ese extremo ya tiene visto o dilatada, ya viene restado: el frentero queda encima y no se resta de nuevo
+          const endModuleId = (atStart ? lowersInRun.reduce((p, q) => (along(q).a0 < along(p).a0 ? q : p)) : lowersInRun.reduce((p, q) => (along(q).a1 > along(p).a1 ? q : p)))?.moduleId;
+          const endModule = modules.find(mm => mm.uniqueId === endModuleId);
+          if (endModule) {
+            const startIsLeft = endModule.wall !== 'B';
+            const hasLateral = (atStart === startIsLeft) ? (endModule.vistoLeft || endModule.dilatLeft) : (endModule.vistoRight || endModule.dilatRight);
+            if (hasLateral) return;
+          }
+          changes.push({ atStart, on: now(side) });
+        });
+      }
       if (changes.length && lowersInRun.length) {
         const first = lowersInRun.reduce((p, q) => (along(q).a0 < along(p).a0 ? q : p));
         const last = lowersInRun.reduce((p, q) => (along(q).a1 > along(p).a1 ? q : p));
@@ -1595,7 +1694,7 @@ export default function App() {
   // o con un electrodoméstico. Los choques que ya existían no bloquean.
   const collisionKeys = (mods: KitchenModule[]) => new Set(findCollisions(buildBoxes({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    modules: mods, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, lArm, hasLeftClosure, hasRightClosure,
+    modules: mods, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
   })).map(([p, q]) => `${p.id}|${q.id}`));
   const setModulesNoCollision = (update: (prev: KitchenModule[]) => KitchenModule[]) => {
@@ -1614,6 +1713,28 @@ export default function App() {
   };
 
   // Vistos y dilatadas de un módulo (se piden al hacer doble clic sobre él)
+  // Extremos del módulo (inicio y final del muro) donde el mesón que lo cubre lleva frentero: el módulo de ese extremo ya viene restado
+  const frenteroEnds = (m: KitchenModule): { start: boolean; end: boolean } => {
+    const none = { start: false, end: false };
+    const mb = boxes.find(bx => bx.moduleId === m.uniqueId);
+    if (!mb) return none;
+    const alongOf = (bx: BoxData) => (bx.wall === 'A' ? { a0: bx.x, a1: bx.x + bx.sx } : { a0: bx.y, a1: bx.y + bx.sy });
+    const mAlong = alongOf(mb);
+    const slab = boxes.find(bx => bx.kind === 'counter' && bx.id.startsWith('counter-') && bx.wall === mb.wall && (mb.islandId ? bx.islandId === mb.islandId : !bx.islandId)
+      && alongOf(bx).a0 <= mAlong.a0 + 1 && alongOf(bx).a1 >= mAlong.a1 - 1);
+    const edge = slab ? counterExtras[slab.id]?.edge : undefined;
+    if (!slab || edge?.kind !== 'frentero') return none;
+    const runLowers = boxes.filter(bx => bx.kind === 'lower' && bx.wall === slab.wall && (slab.islandId ? bx.islandId === slab.islandId : !bx.islandId) && alongOf(bx).a0 >= alongOf(slab).a0 - 1 && alongOf(bx).a1 <= alongOf(slab).a1 + 1);
+    if (runLowers.length === 0) return none;
+    const first = runLowers.reduce((p, q) => (alongOf(q).a0 < alongOf(p).a0 ? q : p));
+    const last = runLowers.reduce((p, q) => (alongOf(q).a1 > alongOf(p).a1 ? q : p));
+    const leftIsStart = slab.wall !== 'B';
+    return {
+      start: first.moduleId === m.uniqueId && !!(leftIsStart ? edge.sides.left : edge.sides.right),
+      end: last.moduleId === m.uniqueId && !!(leftIsStart ? edge.sides.right : edge.sides.left),
+    };
+  };
+
   const setModuleVistos = (id: string, v: {
     visto: { left: boolean; right: boolean; thickness: number };
     dilat: { left: boolean; right: boolean; thickness: number; depth: number; height?: number };
@@ -1631,11 +1752,22 @@ export default function App() {
       const after = side(v.visto.left, v.visto.right, v.visto.thickness, v.dilat.left, v.dilat.right, v.dilat.thickness);
       const delta = (after.start + after.end) - (before.start + before.end);
       if (m.width - delta < 100) return m;
+      // Si el mesón tiene frentero en ese extremo, el frentero ya le había restado un espesor al módulo; al aparecer el visto o la
+      // dilatada, el frentero queda encima de ellos y ese espesor se devuelve (y se vuelve a restar si se quitan)
+      const fr = frenteroEnds(m);
+      let widthAdj = 0, posAdj = 0;
+      (['start', 'end'] as const).forEach(e => {
+        if (!fr[e]) return;
+        const appears = before[e] === 0 && after[e] > 0, disappears = before[e] > 0 && after[e] === 0;
+        const sign = appears ? 1 : disappears ? -1 : 0;
+        widthAdj += sign * counterThickness;
+        if (e === 'start') posAdj -= sign * counterThickness;
+      });
       return {
         ...m,
         vistoLeft: v.visto.left, vistoRight: v.visto.right, vistoThickness: v.visto.thickness,
         dilatLeft: v.dilat.left, dilatRight: v.dilat.right, dilatThickness: v.dilat.thickness, dilatDepth: v.dilat.depth, dilatHeight: v.dilat.height,
-        width: m.width - delta, positionX: m.positionX + (after.start - before.start),
+        width: m.width - delta + widthAdj, positionX: m.positionX + (after.start - before.start) + posAdj,
       };
     }));
   };
@@ -3504,7 +3636,7 @@ export default function App() {
       const fillers: Array<{ height: number; depth: number; thickness: number; name: string; color?: string }> = boxes.filter(bx => bx.kind === 'filler').map(bx => ({ height: bx.sz, depth: Math.max(bx.sx, bx.sy), thickness: Math.min(bx.sx, bx.sy), name: bx.id.startsWith('visto-') ? 'Visto' : 'Pieza de dilatación' }));
       // Mesón y salpicaderos: largo x ancho x espesor (el salpicadero: largo x alto x espesor)
       boxes.filter(bx => bx.kind === 'counter').forEach(bx => {
-        const splash = bx.id.startsWith('salpicadero-');
+        const splash = bx.id.startsWith('salpicadero-') || bx.id.startsWith('frentero-') || bx.id.startsWith('reengruese-');
         const waterfall = bx.id.startsWith('cascada-');
         fillers.push(waterfall
           ? { height: bx.sz, depth: Math.max(bx.sx, bx.sy), thickness: Math.min(bx.sx, bx.sy), name: bx.name, color: 'Material del mesón' }
@@ -3524,6 +3656,23 @@ export default function App() {
       {isSuggesting && <LoadingOverlay message={suggestMessage} />}
       <header className="px-6 py-4 flex items-center justify-between bg-white/70 backdrop-blur-lg border-b border-slate-200 z-[60]">
         <div className="flex items-center gap-3"><div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg"><Box size={20} /></div><div><h1 className="text-base font-black text-slate-800 tracking-tighter uppercase">MODULLY</h1><span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none block">Cierre Exacto</span></div></div>
+        <div className="relative">
+          <button onClick={() => setIsSectionMenuOpen(!isSectionMenuOpen)} className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-700 text-[11px] font-black uppercase tracking-wide hover:bg-indigo-100 transition-colors">
+            {SECTION_ICONS[section]}
+            <span>{cfg.name}</span>
+            <ChevronDown size={14} className={`transition-transform ${isSectionMenuOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {isSectionMenuOpen && (
+            <div className="absolute right-0 mt-2 w-64 bg-white rounded-3xl shadow-2xl border border-slate-100 p-2 z-[90] flex flex-col gap-1">
+              {SECTION_ORDER.map(id => (
+                <button key={id} onClick={() => switchSection(id)} className={`flex items-center gap-3 p-3 rounded-2xl text-left transition-all ${id === section ? 'bg-indigo-600 text-white' : 'hover:bg-indigo-50 text-slate-700'}`}>
+                  <span className={id === section ? 'text-white' : 'text-indigo-600'}>{SECTION_ICONS[id]}</span>
+                  <span className="text-[11px] font-black uppercase tracking-tight">{SECTIONS[id].name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </header>
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {activeTab === 'design' && (
@@ -3533,7 +3682,7 @@ export default function App() {
               <div className="flex flex-col gap-4 w-full px-3 mt-4">
                 <SidebarToolButton active={isViewsPanelOpen} onClick={() => togglePanel('views')} icon={<Eye size={24} />} label="Vistas" collapsed={isSidebarCollapsed} />
                 <SidebarToolButton active={isElementsPanelOpen} onClick={() => togglePanel('elements')} icon={<Settings2 size={24} />} label="Elementos" collapsed={isSidebarCollapsed} badge={modules.length > 0 ? modules.length.toString() : undefined} />
-                <SidebarToolButton active={isAccessoriesPanelOpen} onClick={() => togglePanel('accessories')} icon={<Utensils size={24} />} label="Accesorios" collapsed={isSidebarCollapsed} badge={appliances.filter(a => a.active).length > 0 ? appliances.filter(a => a.active).length.toString() : undefined} />
+                <SidebarToolButton active={isAccessoriesPanelOpen} onClick={() => togglePanel('accessories')} icon={<Puzzle size={24} />} label="Accesorios" collapsed={isSidebarCollapsed} badge={appliances.filter(a => a.active).length > 0 ? appliances.filter(a => a.active).length.toString() : undefined} />
                 <SidebarToolButton active={isSpecialModulesPanelOpen} onClick={() => togglePanel('special')} icon={<Archive size={24} />} label="Especiales" collapsed={isSidebarCollapsed} badge={specialModules.filter(sm => sm.active).length > 0 ? specialModules.filter(sm => sm.active).length.toString() : undefined} />
                 <SidebarToolButton active={isWorkspaceModalOpen} onClick={() => togglePanel('workspace')} icon={<Maximize size={24} />} label="Espacio" collapsed={isSidebarCollapsed} />
                 <SidebarToolButton 
@@ -3589,7 +3738,8 @@ export default function App() {
                     <button onClick={() => setIsAccessoriesPanelOpen(false)} className="p-2 bg-slate-100 rounded-xl text-slate-500 hover:text-red-500"><X size={20} /></button>
                   </div>
                   <div className="space-y-4">
-                    {appliances.map((app) => (
+                    {cfg.accessories.length === 0 && (<div className="p-4 rounded-3xl bg-slate-50 border border-slate-100 text-[11px] font-bold text-slate-500">Aún no hay accesorios definidos para {cfg.name.toLowerCase()}. Cuando se definan sus reglas aparecen aquí.</div>)}
+                    {appliances.filter(ap => cfg.accessories.includes(ap.type)).map((app) => (
                       <div key={app.type} className={`p-4 rounded-3xl border-2 transition-all space-y-4 ${app.active ? 'bg-indigo-50 border-indigo-600' : 'bg-white border-slate-100'}`}>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
@@ -3728,9 +3878,9 @@ export default function App() {
               <Modal isOpen={isWorkspaceModalOpen} onClose={() => setIsWorkspaceModalOpen(false)} onApply={addIsland} title="Configuración de Espacio">
                 <div className="space-y-8">
                   <div className="space-y-4">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Tipo de Cocina</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Tipo de {cfg.singular}</label>
                     <div className="grid grid-cols-3 gap-3">
-                      {(['STRAIGHT', 'L_SHAPE', 'U_SHAPE'] as LayoutType[]).map((l) => (
+                      {(['STRAIGHT', 'L_SHAPE', 'U_SHAPE'] as LayoutType[]).filter(l => cfg.layouts.includes(l)).map((l) => (
                         <button key={l} onClick={() => setLayout(l)} className={`flex flex-col items-center justify-center p-4 rounded-3xl border-2 transition-all gap-2 ${layout === l ? 'bg-indigo-50 border-indigo-600 text-indigo-600 shadow-md' : 'bg-white border-slate-100 text-slate-400 hover:bg-slate-50'}`}>
                           <KitchenShapeIcon shape={l} size={30} />
                           <span className="text-[10px] font-black uppercase tracking-tighter">{l === 'STRAIGHT' ? 'Recta' : l === 'L_SHAPE' ? 'En L' : 'En U'}</span>
@@ -3806,6 +3956,7 @@ export default function App() {
                     )}
                   </div>
 
+                  {cfg.features.islands && (
                   <div className="space-y-4">
                     <div className="p-4 rounded-3xl border-2 border-slate-100 bg-white space-y-3">
                       <div className="flex items-center gap-3">
@@ -3890,7 +4041,9 @@ export default function App() {
                       </>}
                     </div>
                   </div>
+                  )}
 
+                  {cfg.features.counter && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
                       <div>
@@ -3959,6 +4112,7 @@ export default function App() {
                       </>
                     )}
                   </div>
+                  )}
 
                   <div className="space-y-4">
                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
@@ -3989,6 +4143,42 @@ export default function App() {
                         </button>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Columnas o muros atravesados</label>
+                        <p className="text-[9px] font-bold text-slate-500 mt-1">Pegados a un muro, de la altura del techo. La modulación los respeta: ahí no van módulos</p>
+                      </div>
+                      <button
+                        onClick={() => setColumns(prev => [...prev, { id: Math.random().toString(36).substr(2, 6), wall: 'A', distance: 0, width: 300, depth: 300 }])}
+                        className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wide shrink-0"
+                      >+ Agregar</button>
+                    </div>
+                    {columns.map((c, idx) => (
+                      <div key={c.id} className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] font-black text-slate-700 uppercase">Columna {idx + 1}</p>
+                          <div className="flex items-center gap-2">
+                            <select value={c.wall} onChange={(e) => setColumns(prev => prev.map(x => (x.id === c.id ? { ...x, wall: e.target.value as 'A' | 'B' | 'C' } : x)))} className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-[11px] font-black text-slate-700 outline-none">
+                              <option value="A">Muro A</option>
+                              {(layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')) && <option value="B">Muro B</option>}
+                              {(layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')) && <option value="C">Muro C</option>}
+                            </select>
+                            <button onClick={() => setColumns(prev => prev.filter(x => x.id !== c.id))} className="p-1 rounded-lg bg-white text-slate-400 hover:text-red-500" title="Eliminar"><X size={14} /></button>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {([['distance', 'Desde la esquina'], ['width', 'Ancho'], ['depth', 'Profundidad']] as const).map(([key, label]) => (
+                            <div key={key} className="space-y-1">
+                              <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label} (mm)</label>
+                              <DeferredNumber value={c[key]} onCommit={n => setColumns(prev => prev.map(x => (x.id === c.id ? { ...x, [key]: Math.max(key === 'distance' ? 0 : 50, Math.round(n)) } : x)))} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
 
                   <div className="p-4 bg-slate-50 rounded-2xl">
@@ -4030,6 +4220,7 @@ export default function App() {
                   onSetModuleTopEdge={setModuleTopEdge}
                   counterSettings={{ thickness: counterThickness, overhang: counterOverhang, hasSplash, splashHeight }}
                   onEditCounter={(s, counterId, extras) => { applyCounterEdit(s, counterId, extras); }}
+                  counterExtras={counterExtras}
                   onSetModuleVistos={setModuleVistos}
                   onSplitHorizontal={splitModuleHorizontal}
                   onSplitDepth={splitModuleDepthwise}
@@ -4100,7 +4291,7 @@ export default function App() {
                   )}
                   <div className="w-px h-6 bg-slate-200" />
                   <div className="flex gap-1">
-                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos']] as const).map(([key, label, full]) => (
+                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos']] as const).filter(([key]) => (key !== 'upper' || cfg.hasUpper) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
                       <button
                         key={key}
                         onClick={() => setVisibility(v => ({ ...v, [key]: !v[key] }))}

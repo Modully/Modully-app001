@@ -4,6 +4,7 @@ import { Canvas, useFrame, useThree, ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, Grid, Environment, Text, Edges, PerspectiveCamera, OrthographicCamera, Html as DreiHtml, Line } from '@react-three/drei';
 import * as THREE from 'three';
 import { IslandItem, KitchenModule, Appliance, ApplianceType, LayoutType, WallName } from './types';
+import type { CounterEdge, CounterExtras } from './boxes';
 import { Box, findModuleBox, boxesBounds, applianceCenter, counterTopZ, CORNER_BLIND_OFFSET, WALL_THICKNESS } from './boxes';
 import { COLORS } from './constants';
 import { X, Plus, Ruler } from 'lucide-react';
@@ -926,7 +927,7 @@ const Appliance3D: React.FC<{ appliance: Appliance, position: [number, number, n
 /** Doble clic en el mesón: sus tres medidas (largo, fondo y espesor) y el salpicadero */
 type CounterSettings = { thickness: number; overhang: number; hasSplash: boolean; splashHeight: number };
 /** Estado izquierda/derecha (visto desde el frente) del salpicadero lateral y de la cascada de un tramo de mesón */
-type CounterSides = { splashLeft: boolean; splashRight: boolean; waterfallLeft: boolean; waterfallRight: boolean; bottomLeft?: number; bottomRight?: number };
+type CounterSides = { splashLeft: boolean; splashRight: boolean; waterfallLeft: boolean; waterfallRight: boolean; bottomLeft?: number; bottomRight?: number; edge?: CounterEdge };
 
 const CounterEditor: React.FC<{
   box: Box;
@@ -945,6 +946,7 @@ const CounterEditor: React.FC<{
   const [vals, setVals] = useState({ depth: String(baseDepth + settings.overhang * overhangs), thickness: String(settings.thickness), splashHeight: String(settings.splashHeight) });
   const [hasSplash, setHasSplash] = useState(settings.hasSplash);
   const [side, setSide] = useState(sides);
+  const [edge, setEdge] = useState<CounterEdge>(sides.edge ?? { kind: 'none', sides: { front: true, back: false, left: false, right: false }, height: 30, width: 20 }); // nariz o frentero sugerido: 30 mm
   const apply = () => {
     const n = (s: string, f: number) => { const x = parseFloat(s); return isNaN(x) ? f : x; };
     onApply({
@@ -952,7 +954,7 @@ const CounterEditor: React.FC<{
       overhang: isIsland ? settings.overhang : Math.max(0, Math.min(100, (n(vals.depth, baseDepth + settings.overhang * overhangs) - baseDepth) / overhangs)),
       hasSplash,
       splashHeight: Math.max(20, Math.min(600, n(vals.splashHeight, settings.splashHeight))),
-    }, side);
+    }, { ...side, edge });
     onClose();
   };
   const field = (key: 'depth' | 'thickness' | 'splashHeight', label: string) => (
@@ -1016,6 +1018,45 @@ const CounterEditor: React.FC<{
             />
           </label>
         ))}
+      </div>
+"      <div className="pt-1 border-t border-slate-200 space-y-1">
+        <div className="text-[10px] font-black uppercase tracking-wide text-slate-500" title="Frentero: pieza unida a 45° con el mesón. Reengruese: una pieza pegada por debajo del mesón">Canto</div>
+        <div className="grid grid-cols-3 gap-1">
+          {([['none', 'Ninguno'], ['frentero', 'Frentero'], ['reengruese', 'Reengruese']] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setEdge({ ...edge, kind: k })} className={`py-1 rounded-lg text-[10px] font-black border ${edge.kind === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+          ))}
+        </div>
+        {edge.kind !== 'none' && (
+          <>
+            <div className="text-[11px] font-bold text-slate-600">Lados</div>
+            <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] font-bold text-slate-600">
+              {([['front', 'Frente'], ['left', 'Izquierdo'], ['right', 'Derecho'], ...(isIsland ? [['back', 'Posterior']] : [])] as Array<[keyof CounterEdge['sides'], string]>).map(([k, label]) => (
+                <label key={k} className="flex items-center gap-1"><input type="checkbox" checked={edge.sides[k]} onChange={(e) => setEdge({ ...edge, sides: { ...edge.sides, [k]: e.target.checked } })} />{label}</label>
+              ))}
+            </div>
+            {edge.kind === 'frentero' ? (
+              <label className="flex items-center justify-between gap-2 text-[11px] font-bold text-slate-600" title="Alto del frentero, medido desde la cara de arriba del mesón">
+                Alto del frentero
+                <input type="number" value={edge.height} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setEdge({ ...edge, height: parseFloat(e.target.value) || 0 })} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') apply(); if (e.key === 'Escape') onClose(); }} className="w-20 px-1.5 py-1 rounded border border-slate-300 bg-white text-[12px] font-black text-slate-800 outline-none focus:border-indigo-500" />
+              </label>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-1">
+                  <button onClick={() => setEdge({ ...edge, width: 20, height: 20 })} className="py-1 rounded-lg text-[10px] font-black border bg-white text-slate-600 border-slate-200 hover:bg-slate-50" title="Pieza de 2 x 2 cm">2 × 2 cm</button>
+                  <button onClick={() => setEdge({ ...edge, width: 2 * settings.thickness, height: settings.thickness })} className="py-1 rounded-lg text-[10px] font-black border bg-white text-slate-600 border-slate-200 hover:bg-slate-50" title="Pieza de 2 veces el espesor del mesón de ancho, y el espesor de alto">2 × espesor</button>
+                </div>
+                <label className="flex items-center justify-between gap-2 text-[11px] font-bold text-slate-600">
+                  Ancho
+                  <input type="number" value={edge.width} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setEdge({ ...edge, width: parseFloat(e.target.value) || 0 })} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') apply(); if (e.key === 'Escape') onClose(); }} className="w-20 px-1.5 py-1 rounded border border-slate-300 bg-white text-[12px] font-black text-slate-800 outline-none focus:border-indigo-500" />
+                </label>
+                <label className="flex items-center justify-between gap-2 text-[11px] font-bold text-slate-600">
+                  Alto
+                  <input type="number" value={edge.height} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setEdge({ ...edge, height: parseFloat(e.target.value) || 0 })} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') apply(); if (e.key === 'Escape') onClose(); }} className="w-20 px-1.5 py-1 rounded border border-slate-300 bg-white text-[12px] font-black text-slate-800 outline-none focus:border-indigo-500" />
+                </label>
+              </>
+            )}
+          </>
+        )}
       </div>
       <div className="flex gap-1.5 pt-1">
         <button className="flex-1 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black" onClick={apply}>Aplicar</button>
@@ -1219,7 +1260,25 @@ const Counter3D: React.FC<{
     // La forma se dibuja en el plano (X, -Y) y se extruye hacia arriba; al girarla, -Y pasa a ser la profundidad de la escena
     const shape = new THREE.Shape();
     const x0 = box.x / 1000, x1 = (box.x + box.sx) / 1000, v0 = -box.y / 1000, v1 = -(box.y + box.sy) / 1000;
-    shape.moveTo(x0, v0); shape.lineTo(x1, v0); shape.lineTo(x1, v1); shape.lineTo(x0, v1); shape.lineTo(x0, v0);
+    if (box.polygon && box.polygon.length >= 3) {
+      // Pieza con cortes a 45° (salpicadero que rodea una columna): se dibuja con su contorno en planta
+      box.polygon.forEach(([px, py], i) => (i === 0 ? shape.moveTo(px / 1000, -py / 1000) : shape.lineTo(px / 1000, -py / 1000)));
+      shape.closePath();
+    } else if (box.notches && box.notches.length > 0) {
+      // Mesón con muescas contra el muro (columnas): el contorno se recorre a lo largo del muro (a) y hacia el frente (c)
+      const wl = box.wall;
+      const aMin = wl === 'A' ? box.x : box.y, aMax = wl === 'A' ? box.x + box.sx : box.y + box.sy;
+      const cMax = wl === 'A' ? box.sy : box.sx;
+      const toXY = (a: number, c: number): [number, number] => (wl === 'A' ? [a, box.y + c] : wl === 'B' ? [box.x + c, a] : [box.x + box.sx - c, a]);
+      const outline: Array<[number, number]> = [[aMin, 0]];
+      box.notches.forEach(nn => { outline.push([nn.a0, 0], [nn.a0, nn.c], [nn.a1, nn.c], [nn.a1, 0]); });
+      outline.push([aMax, 0], [aMax, cMax], [aMin, cMax]);
+      const pts = outline.filter((p, i) => i === 0 || Math.abs(p[0] - outline[i - 1][0]) > 1e-6 || Math.abs(p[1] - outline[i - 1][1]) > 1e-6).map(([a, c]) => toXY(a, c));
+      pts.forEach(([px, py], i) => (i === 0 ? shape.moveTo(px / 1000, -py / 1000) : shape.lineTo(px / 1000, -py / 1000)));
+      shape.closePath();
+    } else {
+      shape.moveTo(x0, v0); shape.lineTo(x1, v0); shape.lineTo(x1, v1); shape.lineTo(x0, v1); shape.lineTo(x0, v0);
+    }
     (box.cutouts || []).forEach(c => {
       const hole = new THREE.Path();
       const a0 = c.x / 1000, a1 = (c.x + c.sx) / 1000, b0 = -c.y / 1000, b1 = -(c.y + c.sy) / 1000;
@@ -1264,7 +1323,7 @@ const Counter3D: React.FC<{
       g.computeVertexNormals();
     }
     return g;
-  }, [box.x, box.y, box.sx, box.sy, box.sz, cutoutsKey, JSON.stringify(box.mitreBottom), box.mitreTop, box.chamferY]);
+  }, [box.x, box.y, box.sx, box.sy, box.sz, cutoutsKey, JSON.stringify(box.mitreBottom), box.mitreTop, box.chamferY, JSON.stringify(box.notches), JSON.stringify(box.polygon)]);
 
   const interactive = !!onSelect && box.id.startsWith('counter-'); // los salpicaderos se editan desde su mesón
   return (
@@ -1849,7 +1908,8 @@ interface KitchenViewer3DProps {
   onEditModuleMeasure?: (id: string, field: 'height' | 'depth', value: number) => void;
   onSetModuleTopEdge?: (id: string, height: number, topGap: number) => void;
   counterSettings?: CounterSettings;
-  onEditCounter?: (s: CounterSettings, counterId: string, extras: { splashLeft?: boolean; splashRight?: boolean; waterfallLeft?: boolean; waterfallRight?: boolean }) => void;
+  onEditCounter?: (s: CounterSettings, counterId: string, extras: CounterExtras) => void;
+  counterExtras?: Record<string, CounterExtras>;
   onSetModuleVistos?: (id: string, v: SideConfig) => void;
   onSplitHorizontal?: (id: string) => void;
   onSplitDepth?: (id: string) => void;
@@ -1868,7 +1928,7 @@ interface KitchenViewer3DProps {
 
 export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   layout, lArm, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules, boxes, appliances, hasIsland, island, islands = [], onEditIsland, onEditWall, onDeleteIsland, viewMode, hasZocalo, zocaloHeight = 100,
-  hasLeftClosure, hasRightClosure, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSplitHorizontal, onSplitDepth, onExtendFace, onJoinCorner, onSplitCorner, onEditCornerArm, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
+  hasLeftClosure, hasRightClosure, counterExtras, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSplitHorizontal, onSplitDepth, onExtendFace, onJoinCorner, onSplitCorner, onEditCornerArm, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
 }) => {
   const controlsRef = useRef<any>(null);
   // Módulo seleccionado (clic) y módulo cuyo editor de medidas está abierto (doble clic)
@@ -2073,12 +2133,12 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
                 const hasI = (label: string) => boxes.some(x => x.id === `salpicadero-isla-${b.islandId}-${label}`);
                 const wf = (label: string) => boxes.find(x => x.id === `cascada-isla-${b.islandId}-${label}`);
                 const bottom = (label: string) => b.sy - (wf(label)?.chamferY ?? 0);
-                return { splashLeft: hasI('izquierda'), splashRight: hasI('derecha'), waterfallLeft: !!wf('izquierda'), waterfallRight: !!wf('derecha'), bottomLeft: bottom('izquierda'), bottomRight: bottom('derecha') };
+                return { splashLeft: hasI('izquierda'), splashRight: hasI('derecha'), waterfallLeft: !!wf('izquierda'), waterfallRight: !!wf('derecha'), bottomLeft: bottom('izquierda'), bottomRight: bottom('derecha'), edge: counterExtras?.[b.id]?.edge };
               }
               const has = (kind: string, label: string) => boxes.some(x => x.id === `${kind}-${b.wall}-${b.id.split('-')[2]}-${label}`);
               const l = b.wall === 'B' ? 'final' : 'inicio';
               const r = b.wall === 'B' ? 'inicio' : 'final';
-              return { splashLeft: has('salpicadero', l), splashRight: has('salpicadero', r), waterfallLeft: has('cascada', l), waterfallRight: has('cascada', r) };
+              return { splashLeft: has('salpicadero', l), splashRight: has('salpicadero', r), waterfallLeft: has('cascada', l), waterfallRight: has('cascada', r), edge: counterExtras?.[b.id]?.edge };
             })()}
             onSelect={measureMode || !onEditCounter ? undefined : (id) => { setSelectedCounter(id); setSelectedId(null); setEditingId(null); }}
             onOpenEditor={setEditingCounter}
@@ -2088,7 +2148,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               const before = b.islandId
                 ? { splashLeft: boxes.some(x => x.id === `salpicadero-isla-${b.islandId}-izquierda`), splashRight: boxes.some(x => x.id === `salpicadero-isla-${b.islandId}-derecha`), waterfallLeft: boxes.some(x => x.id === `cascada-isla-${b.islandId}-izquierda`), waterfallRight: boxes.some(x => x.id === `cascada-isla-${b.islandId}-derecha`), bottomLeft: b.sy - (boxes.find(x => x.id === `cascada-isla-${b.islandId}-izquierda`)?.chamferY ?? 0), bottomRight: b.sy - (boxes.find(x => x.id === `cascada-isla-${b.islandId}-derecha`)?.chamferY ?? 0) }
                 : { splashLeft: boxes.some(x => x.id === `salpicadero-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'final' : 'inicio'}`), splashRight: boxes.some(x => x.id === `salpicadero-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'inicio' : 'final'}`), waterfallLeft: boxes.some(x => x.id === `cascada-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'final' : 'inicio'}`), waterfallRight: boxes.some(x => x.id === `cascada-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'inicio' : 'final'}`) };
-              const extras: { splashLeft?: boolean; splashRight?: boolean; waterfallLeft?: boolean; waterfallRight?: boolean; waterfallBottomLeft?: number; waterfallBottomRight?: number } = {};
+              const extras: CounterExtras = {};
+              if (JSON.stringify(now.edge ?? null) !== JSON.stringify(counterExtras?.[b.id]?.edge ?? null) && !(now.edge?.kind === 'none' && !counterExtras?.[b.id]?.edge)) extras.edge = now.edge;
               (['splashLeft', 'splashRight', 'waterfallLeft', 'waterfallRight'] as const).forEach(k => { if (now[k] !== before[k]) extras[k] = now[k]; });
               if (b.islandId) {
                 if (now.bottomLeft !== undefined && Math.round(now.bottomLeft) !== Math.round(before.bottomLeft ?? 0)) extras.waterfallBottomLeft = Math.round(now.bottomLeft);

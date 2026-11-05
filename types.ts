@@ -63,6 +63,15 @@ export interface KitchenModule extends ModuleTemplate {
   rotation3d?: number; // 0° para muro A, 90° para muro B, -90° para muro C
 }
 
+/** Columna o muro atravesado del espacio: pegado a un muro, de la misma altura del techo. La modulación lo respeta */
+export interface ColumnItem {
+  id: string;
+  wall: 'A' | 'B' | 'C';
+  distance: number;  // mm desde la esquina interior (punto 0 del muro) hasta el inicio de la columna, a lo largo del muro
+  width: number;     // mm a lo largo del muro
+  depth: number;     // mm hacia adentro del cuarto
+}
+
 export interface Appliance {
   type: ApplianceType;
   wall: WallName | 'Island';
