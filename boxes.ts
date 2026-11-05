@@ -1,4 +1,4 @@
-import { KitchenModule, Appliance, LayoutType, WallName, IslandItem, ColumnItem } from './types';
+import { KitchenModule, Appliance, LayoutType, WallName, IslandItem, ColumnItem, ClosetConfig } from './types';
 
 /**
  * LISTA ÚNICA DE CAJAS: fuente de verdad de la geometría de la cocina.
@@ -84,6 +84,13 @@ export const TIE_LOWER = 80;          // alto de los amarres traseros del bajo
 export const TIE_UPPER = 60;          // alto de los amarres (cuchillas) del aéreo
 export const GOLA_WIDTH = 65;         // ancho de la gola (el puente de arriba del bajo)
 export const SHELF_Z = 400;           // altura del entrepaño sobre la base del módulo
+/** Closet (planos del usuario): fondo del marco base, marcos de 80 x 15, tapa de riel y maletero */
+export const CLOSET_DEPTH = 550;        // fondo del closet (marco base)
+export const CLOSET_FRAME_WIDTH = 80;   // ancho de los marcos laterales y horizontal
+export const CLOSET_RAIL_COVER = 110;   // alto de la tapa de riel
+export const CLOSET_MALETERO_DEPTH = 455; // fondo del tablero del maletero
+export const CLOSET_MALETERO_MAX = 1900;  // el tablero del maletero no pasa de esta altura...
+export const CLOSET_MALETERO_CLEAR = 350; // ...y deja al menos esta medida libre hasta el techo
 export const LOWER_DEPTH = 570;          // fondo módulo base (mm)
 export const ISLAND_PLINTH_INSET = 50;   // el zócalo de una isla o península queda 5 cm hacia adentro de su medida general, por cada lado
 export const MAX_MODULE_WIDTH = 900;     // ancho máximo de un módulo (mm)
@@ -155,6 +162,7 @@ export interface BuildBoxesInput {
   counterExtras?: Record<string, CounterExtras>;
   islands?: IslandItem[];
   columns?: ColumnItem[]; // columnas o muros atravesados, pegados a un muro y de la altura del techo
+  closet?: ClosetConfig & { leftWall: boolean; rightWall: boolean }; // sección Closets: base/zócalo y lados (muro o costado) deducidos del Espacio
   lArm?: 'left' | 'right'; // cocina en L: de qué lado está el brazo (izquierda = muro B, derecha = muro C)
 }
 
@@ -166,7 +174,9 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   const hasSplash = input.hasSplash ?? false;
   const splashHeight = input.splashHeight ?? SPLASH_HEIGHT_DEFAULT;
   const T = WALL_THICKNESS;
-  const zh = hasZocalo ? zocaloHeight : 0;
+  const closet = input.closet;
+  // En el closet la base la define su configuración: zócalo (tipo T o base completa), marco inferior acostado (15) o nada
+  const zh = closet ? (hasZocalo ? zocaloHeight : closet.bottomFrame ? PANEL_THICKNESS : 0) : (hasZocalo ? zocaloHeight : 0);
   const boxes: Box[] = [];
   // En L el brazo es el muro B (izquierda) o el muro C (derecha); en U están los dos
   const hasB = layout === 'U_SHAPE' || (layout === 'L_SHAPE' && input.lArm !== 'right');
@@ -216,7 +226,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   // --- Zócalo ---
   // Va solo bajo los módulos: se abre un hueco donde está la nevera (su ancho más FRIDGE_CLEARANCE por lado,
   // igual que la separación de los módulos base), porque la nevera se apoya directamente en el piso.
-  if (hasZocalo && zh > 0) {
+  if (hasZocalo && zh > 0 && !closet) {
     // Recorta de [start, end] (a lo largo del muro) los huecos de las neveras activas de ese muro
     const plinthSegments = (wall: WallName, start: number, end: number): Array<[number, number]> => {
       const armStart = wall === 'A' ? 0 : CORNER_BLIND_OFFSET;
@@ -875,6 +885,40 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         }));
       }
     });
+  }
+
+  // --- Estructura del closet sobre el muro A: lados (costado propio o marco lateral + dilatada contra el muro), marco horizontal, tapa de riel,
+  // base (zócalo o marco inferior) y tablero del maletero. Las medidas salen de los planos (marcos de 80 x 15, dilatada de 15, fondo de 550) ---
+  if (closet) {
+    const E = PANEL_THICKNESS, D = CLOSET_DEPTH, FW = CLOSET_FRAME_WIDTH;
+    const Hc = spaceHeight - TOP_MARGIN;       // alto del closet: hasta 2 cm bajo el techo
+    const bb = zh;                              // alto de la base (zócalo o marco inferior)
+    let n = 0;
+    const add = (name: string, x: number, y: number, z: number, sx: number, sy: number, sz: number) => {
+      if (sx > 0 && sy > 0 && sz > 0) boxes.push({ id: `closet-${n++}`, name, kind: 'panel', wall: 'A', x, y, z, sx, sy, sz, facing: null });
+    };
+    const side = (isLeft: boolean) => {
+      const hasWall = isLeft ? closet.leftWall : closet.rightWall;
+      if (!hasWall) { add('Costado closet', isLeft ? 0 : wallA - E, 0, 0, E, D, Hc); return; } // costado propio: del piso al tope
+      add('Dilatada marco lateral', isLeft ? 0 : wallA - E, D - E, bb, E, E, Hc - bb);          // 15 x 15 contra el muro
+      add('Marco lateral closet', isLeft ? E : wallA - 2 * E, D - FW, bb, E, FW, Hc - bb);       // 80 x 15
+    };
+    side(true); side(false);
+    const x0 = closet.leftWall ? 2 * E : E, x1 = wallA - (closet.rightWall ? 2 * E : E);          // entre lados: 30 por el lado del muro, 15 por el del costado
+    add('Marco hor closet', x0, D - E - FW, Hc - E, x1 - x0, FW, E);
+    add('Tapa riel closet', 0, D - E, Hc - CLOSET_RAIL_COVER, wallA, E, CLOSET_RAIL_COVER);
+    // Base: entre el muro y el costado (sin pasar por el costado)
+    const bx0 = closet.leftWall ? 0 : E, bx1 = closet.rightWall ? wallA : wallA - E;
+    if (hasZocalo && bb > E) {
+      if (closet.zocaloType === 'base') add('Base closet', bx0, 0, bb - E, bx1 - bx0, D, E);
+      add('Zócalo closet', bx0, D - 62, 0, bx1 - bx0, E, bb - E);
+      if (closet.zocaloType === 'T') add('Zócalo closet (horizontal)', bx0, D - 95, bb - E, bx1 - bx0, FW, E); // la T: pieza acostada sobre la parada
+    } else if (!hasZocalo && closet.bottomFrame) {
+      add('Base marco hor closet', bx0, 0, 0, bx1 - bx0, D, E);
+    }
+    // Maletero: tablero de 455 de fondo; queda a la menor de 1.90 m o (techo - 350 mm)
+    const topM = Math.min(CLOSET_MALETERO_MAX, spaceHeight - CLOSET_MALETERO_CLEAR);
+    add('Maletero closet', closet.leftWall ? 0 : E, 0, topM - E, bx1 - bx0, CLOSET_MALETERO_DEPTH, E);
   }
 
   return boxes;

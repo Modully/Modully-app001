@@ -75,6 +75,12 @@ export interface ColumnItem {
   depth: number;     // mm hacia adentro del cuarto
 }
 
+/** Closet: base y zócalo. Los lados (muro o costado) se deducen del Espacio */
+export interface ClosetConfig {
+  zocaloType: 'T' | 'base';   // con zócalo: tipo T (una pieza horizontal y otra vertical) o base completa con el zócalo al frente
+  bottomFrame: boolean;       // sin zócalo: marco inferior acostado sobre el piso (true) o sin ese marco (false)
+}
+
 export interface Appliance {
   type: ApplianceType;
   wall: WallName | 'Island';

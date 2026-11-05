@@ -21,7 +21,7 @@ import { getAgentAdvice, type KitchenAgentContext } from './agentService';
 import { generateBOM, exportBOMToExcel } from './bomService';
 import { resizeSymmetric, snapToNeighbors } from './moduleResize';
 import type { CounterExtras, Box as BoxData } from './boxes';
-import type { IslandItem, ColumnItem } from './types';
+import type { IslandItem, ColumnItem, ClosetConfig } from './types';
 import { SECTIONS, SECTION_ORDER, SectionId } from './sections';
 import { buildBoxes, boxesToJSON, armUpperOrigin, findCollisions, LOWER_DEPTH, UPPER_DEPTH, CORNER_BLIND_OFFSET, TOP_MARGIN, MAX_MODULE_WIDTH, SPLASH_HEIGHT_DEFAULT, COUNTER_THICKNESS_DEFAULT, COUNTER_OVERHANG_DEFAULT, FRIDGE_CLEARANCE, OVER_FRIDGE_DEPTH, DILATATION_GAP_DEFAULT, DILATATION_DEPTH_DEFAULT } from './boxes';
 
@@ -547,6 +547,7 @@ export default function App() {
   // Islas y penínsulas (Módulos especiales): medida general y dos cotas editables desde el punto 0
   const [islands, setIslands] = useState<IslandItem[]>([]);
   const [columns, setColumns] = useState<ColumnItem[]>([]); // columnas o muros atravesados del espacio
+  const [closet, setCloset] = useState<ClosetConfig>({ zocaloType: 'T', bottomFrame: true }); // base y zócalo del closet
   // Cocina en L: el brazo va a la izquierda (muro B) o a la derecha (muro C); se pregunta al elegir la forma
   const [lArm, setLArm] = useState<'left' | 'right'>('left');
   // Borrado con confirmación dentro de la app (isla o tarjeta especial pendiente de confirmar)
@@ -561,11 +562,11 @@ export default function App() {
   // largo o varias teclas seguidas cuentan como un solo paso.
   const designSnapshot = useMemo(() => ({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, lArm, hasLeftClosure, hasRightClosure,
+    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, closet, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
     modules, specialModules, appliances, hasIsland, lineType, faceColor,
   }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, lArm, hasLeftClosure, hasRightClosure,
+    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, closet, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
     modules, specialModules, appliances, hasIsland, lineType, faceColor]);
   type DesignSnapshot = typeof designSnapshot;
@@ -632,7 +633,7 @@ export default function App() {
     setLayout(snap.layout); setWallA(snap.wallA); setWallB(snap.wallB); setWallC(snap.wallC);
     setSpaceHeight(snap.spaceHeight); setHasZocalo(snap.hasZocalo); setZocaloHeight(snap.zocaloHeight);
     setZocaloDepth(snap.zocaloDepth); setHasCounter(snap.hasCounter); setCounterThickness(snap.counterThickness);
-    setCounterOverhang(snap.counterOverhang); setHasSplash(snap.hasSplash); setSplashHeight(snap.splashHeight); setCounterExtras(snap.counterExtras); setIslands(snap.islands); setColumns(snap.columns ?? []); setLArm(snap.lArm); setHasLeftClosure(snap.hasLeftClosure); setHasRightClosure(snap.hasRightClosure);
+    setCounterOverhang(snap.counterOverhang); setHasSplash(snap.hasSplash); setSplashHeight(snap.splashHeight); setCounterExtras(snap.counterExtras); setIslands(snap.islands); setColumns(snap.columns ?? []); setCloset(snap.closet ?? { zocaloType: 'T', bottomFrame: true }); setLArm(snap.lArm); setHasLeftClosure(snap.hasLeftClosure); setHasRightClosure(snap.hasRightClosure);
     setHasDilatation(snap.hasDilatation); setDilatationGap(snap.dilatationGap); setDilatationDepth(snap.dilatationDepth);
     setModules(snap.modules); setSpecialModules(snap.specialModules); setAppliances(snap.appliances);
     setHasIsland(snap.hasIsland); setLineType(snap.lineType); setFaceColor(snap.faceColor);
@@ -647,7 +648,7 @@ export default function App() {
     const first = initialDesign.current!;
     return {
       ...first, ...c.defaults,
-      modules: [], islands: [], columns: [], counterExtras: {}, hasLeftClosure: false, hasRightClosure: false, hasIsland: false, lArm: 'left',
+      modules: [], islands: [], columns: [], closet: { zocaloType: 'T' as const, bottomFrame: true }, counterExtras: {}, hasLeftClosure: false, hasRightClosure: false, hasIsland: false, lArm: 'left',
       specialModules: first.specialModules.map((sm, i) => ({ ...sm, active: false, name: c.specials[i] ?? sm.name })),
       appliances: first.appliances.map(ap => ({ ...ap, active: false })),
     } as DesignSnapshot;
@@ -869,6 +870,14 @@ export default function App() {
 
   // La península solo existe en cocinas en L (va pegada al muro perpendicular: B a la izquierda o C a la derecha); si cambia
   // la forma queda guardada pero no se dibuja
+  // Closet: los lados con muro o con costado salen del Espacio (muros auxiliares, L o U); el lado sin muro lleva costado propio
+  const isClosetSection = cfg.id === 'closets' || cfg.id === 'walking';
+  const closetInput = useMemo(() => (isClosetSection ? {
+    ...closet,
+    leftWall: layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left') || hasLeftClosure,
+    rightWall: layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right') || hasRightClosure,
+  } : undefined), [isClosetSection, closet, layout, lArm, hasLeftClosure, hasRightClosure]);
+
   const activeIslands = useMemo(() => islands
     .filter(i => i.kind === 'isla' || layout === 'L_SHAPE')
     .map(i => (i.kind === 'peninsula' ? { ...i, dx: lArm === 'right' ? Math.max(0, wallA - i.length) : 0 } : i)), [islands, layout, lArm, wallA]);
@@ -876,9 +885,9 @@ export default function App() {
   // Lista única de cajas: la escena 3D, el BOM y la exportación a Fusion leen la geometría de aquí
   const boxes = useMemo(() => buildBoxes({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    modules: labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, lArm, hasLeftClosure, hasRightClosure,
+    modules: labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, closet: closetInput, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
-  }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
+  }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, closetInput, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
 
   // Regla: ningún módulo puede ocupar el mismo espacio que un electrodoméstico (ni otro módulo)
   const collisions = useMemo(() => findCollisions(boxes), [boxes]);
@@ -1471,6 +1480,10 @@ export default function App() {
 
   const handleMathematicalSuggestion = async (strategy: OptimizationStrategy) => {
     setIsOptMenuOpen(false);
+    if (isClosetSection) {
+      window.alert('Por ahora el closet muestra su estructura: marcos, costado o dilatadas, base o zócalo, tapa de riel y maletero. El interior (cajonero, entrepaños, tubos y puertas corredizas) se agrega en el siguiente paso.');
+      return;
+    }
     const conflicts = islandConflicts();
     if (conflicts.length > 0) {
       window.alert('No se puede optimizar la modulación mientras haya choques:\n\n• ' + conflicts.join('\n• ') + '\n\nMueve o cambia la medida de la isla o península y vuelve a intentarlo.');
@@ -1728,7 +1741,7 @@ export default function App() {
   // o con un electrodoméstico. Los choques que ya existían no bloquean.
   const collisionKeys = (mods: KitchenModule[]) => new Set(findCollisions(buildBoxes({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    modules: mods, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, lArm, hasLeftClosure, hasRightClosure,
+    modules: mods, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, closet: closetInput, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
   })).map(([p, q]) => `${p.id}|${q.id}`));
   const setModulesNoCollision = (update: (prev: KitchenModule[]) => KitchenModule[]) => {
@@ -3989,6 +4002,34 @@ export default function App() {
                       </div>
                     )}
                   </div>
+
+                  {isClosetSection && (
+                    <div className="p-4 rounded-3xl border-2 border-slate-100 bg-white space-y-3">
+                      <div>
+                        <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">Estructura del closet</p>
+                        <p className="text-[9px] font-bold text-slate-400 mt-0.5">Los lados salen del Espacio: el lado con muro lleva marco lateral y dilatada de 15 mm; el lado sin muro lleva costado propio.</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-[10px] font-black uppercase tracking-wide">
+                        {([['Izquierdo', closetInput?.leftWall], ['Derecho', closetInput?.rightWall]] as const).map(([lado, hasWall]) => (
+                          <div key={lado} className="px-3 py-2 rounded-xl bg-slate-50 text-slate-600">{lado}: <span className="text-indigo-600">{hasWall ? 'con muro' : 'con costado'}</span></div>
+                        ))}
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{hasZocalo ? 'Zócalo' : 'Marco inferior'}</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {(hasZocalo
+                            ? [['T', 'Tipo T (una horizontal y una vertical)'], ['base', 'Base completa y zócalo al frente']] as const
+                            : [[true, 'Marco inferior acostado sobre el piso'], [false, 'Sin marco inferior']] as const
+                          ).map(([val, label]) => {
+                            const active = hasZocalo ? closet.zocaloType === val : closet.bottomFrame === val;
+                            return (
+                              <button key={String(val)} onClick={() => setCloset(c => (hasZocalo ? { ...c, zocaloType: val as 'T' | 'base' } : { ...c, bottomFrame: val as boolean }))} className={`py-2 px-2 rounded-xl text-[10px] font-black border-2 text-center leading-tight ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {cfg.features.islands && (
                   <div className="space-y-4">
