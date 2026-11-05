@@ -11,7 +11,7 @@ import { KitchenModule, Appliance, LayoutType, WallName, IslandItem, ColumnItem 
  * Cada caja se define por su esquina mínima (x, y, z) y su tamaño (sx, sy, sz), todo alineado a los ejes.
  */
 
-export type BoxKind = 'wall' | 'zocalo' | 'lower' | 'upper' | 'tall' | 'appliance' | 'counter' | 'filler';
+export type BoxKind = 'wall' | 'zocalo' | 'lower' | 'upper' | 'tall' | 'appliance' | 'counter' | 'filler' | 'front' | 'panel';
 /** Ajustes manuales de un tramo de mesón (clave: id de la losa, p. ej. "counter-A-0"). Izquierda/derecha se ven desde el frente.
  *  Sin valor = automático (el salpicadero lateral va donde hay muro o un módulo más alto; la cascada no va). */
 /** Canto del mesón: frentero (pieza a 45° con el mesón, con su alto) o reengruese (una pieza pegada por debajo, de ancho x alto) */
@@ -69,6 +69,21 @@ export interface Box {
 
 // Constantes de geometría compartidas por la app, la escena y la exportación
 export const WALL_THICKNESS = 150;       // espesor de los muros (mm)
+/** Frentes de los módulos convertidos (reglas del generador de Fusion): espesor, luces y alturas */
+export const FRONT_THICKNESS = 18;    // espesor de las puertas y frentes de cajón (mm)
+export const FRONT_SIDE_GAP = 2;      // luz por lado y entre puertas (mm)
+export const FRONT_LOWER_BOTTOM_CUT = 50; // la puerta del bajo es 50 mm más corta que el módulo (deja luz arriba, bajo la gola)
+export const FRONT_DRAWER_GAP = 30;   // espacio entre los dos frentes de un cajonero (mm)
+export const UPPER_DOOR_TAB = 10;     // pestaña que cuelga bajo el aéreo (agarre sin jaladera)
+export const HOOD_DOOR_GAP = 4;       // luz de seguridad de las puertas de la campana sobre su base
+export const HOOD_CUT = 85;           // el módulo campana es 85 mm más corto que los aéreos vecinos
+/** Piezas del módulo convertido (reglas del generador de Fusion) */
+export const PANEL_THICKNESS = 15;    // laterales, base, techo, amarres, golas, entrepaños (mm)
+export const PANEL_BACK = 6;          // espaldar y fondo de cajón (mm)
+export const TIE_LOWER = 80;          // alto de los amarres traseros del bajo
+export const TIE_UPPER = 60;          // alto de los amarres (cuchillas) del aéreo
+export const GOLA_WIDTH = 65;         // ancho de la gola (el puente de arriba del bajo)
+export const SHELF_Z = 400;           // altura del entrepaño sobre la base del módulo
 export const LOWER_DEPTH = 570;          // fondo módulo base (mm)
 export const ISLAND_PLINTH_INSET = 50;   // el zócalo de una isla o península queda 5 cm hacia adentro de su medida general, por cada lado
 export const MAX_MODULE_WIDTH = 900;     // ancho máximo de un módulo (mm)
@@ -324,6 +339,105 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       facing: p.facing,
       moduleId: mod.uniqueId,
     });
+    // Módulo convertido: sus piezas (laterales, base, techo, puentes, amarres, espaldar y entrepaños), con las reglas del generador de Fusion.
+    // Local al módulo: u a lo largo del ancho (izquierda a derecha), v hacia atrás desde el frente, w hacia arriba desde su base
+    if (mod.detailed && mod.frontsLayout && !mod.cornerArm && mod.depth >= 60) {
+      const E = PANEL_THICKNESS, W = mod.width, D = mod.depth, H = mod.height;
+      let n = 0;
+      const tier = mod.type === 'UPPER' ? 'upper' : 'lower';
+      const piece = (name: string, du: number, dv: number, dw: number, ou: number, ov: number, ow: number) => {
+        if (du <= 0 || dv <= 0 || dw <= 0) return;
+        let x0: number, y0: number, sx: number, sy: number;
+        if (boxWall === 'A') { sx = du; sy = dv; x0 = p.x + ou; y0 = p.y + p.sy - ov - dv; }
+        else if (boxWall === 'B') { sx = dv; sy = du; x0 = p.x + p.sx - ov - dv; y0 = p.y + ou; }
+        else { sx = dv; sy = du; x0 = p.x + ov; y0 = p.y + ou; }
+        boxes.push({
+          id: `panel-${tier}-${mod.uniqueId}-${n++}`, name: `${name} ${mod.label ?? ''}`.trim(), kind: 'panel', wall: boxWall, islandId: isl?.id,
+          x: x0, y: y0, z: z + ow, sx, sy, sz: dw, facing: null, moduleId: mod.uniqueId,
+        });
+      };
+      const inner = W - 2 * E;
+      piece('Lateral izquierdo', E, D, H, 0, 0, 0);
+      piece('Lateral derecho', E, D, H, W - E, 0, 0);
+      if (mod.type === 'LOWER') {
+        // Bajo: sin techo ni espaldar (el mesón hace de tapa); base, 2 amarres traseros y gola arriba (puente en L)
+        piece('Base', inner, D, E, E, 0, 0);
+        piece('Amarre superior trasero', inner, E, TIE_LOWER, E, D - E, H - TIE_LOWER);
+        piece('Amarre inferior trasero', inner, E, TIE_LOWER, E, D - E, E);
+        piece('Gola superior horizontal', inner, GOLA_WIDTH, E, E, 0, H - GOLA_WIDTH - E);
+        piece('Gola superior vertical', inner, E, GOLA_WIDTH, E, E, H - GOLA_WIDTH);
+        if (mod.frontsLayout === 'drawers') {
+          // Cajonero: gola media y tres cajones reales (inferior, medio y cubiertero oculto)
+          piece('Gola media horizontal', inner, GOLA_WIDTH, E, E, 0, 330);
+          piece('Gola media vertical', inner, E, GOLA_WIDTH, E, E, 330 + E);
+          const luz = 13, prof = Math.min(500, D - 20), ext = inner - 2 * luz, xl = E + luz;
+          ([['Inferior', 35, 180, 0], ['Medio', 445, 100, 0], ['Cubiertero', 605, 80, 18]] as const).forEach(([nm, zb, hh, ov]) => {
+            piece(`Cajón ${nm} lateral izquierdo`, E, prof, hh, xl, ov, zb);
+            piece(`Cajón ${nm} lateral derecho`, E, prof, hh, xl + ext - E, ov, zb);
+            piece(`Cajón ${nm} testero frontal`, ext - 2 * E, E, hh, xl + E, ov, zb);
+            piece(`Cajón ${nm} testero trasero`, ext - 2 * E, E, hh, xl + E, ov + prof - E, zb);
+            piece(`Cajón ${nm} fondo`, ext - 20, prof - 20, PANEL_BACK, xl + E - 5, ov + 10, zb + 15);
+          });
+        } else if (W >= 450) {
+          piece('Entrepaño', inner, D - 20, E, E, 0, SHELF_Z);
+        }
+      } else {
+        // Aéreo (y torres): piso, techo, espaldar retranqueado y dos amarres arriba (cuchillas)
+        piece('Piso', inner, D, E, E, 0, 0);
+        piece('Techo', inner, D, E, E, 0, H - E);
+        piece('Espaldar', inner, PANEL_BACK, H - 2 * E + 5, E, D - E - PANEL_BACK, E);
+        piece('Amarre superior 1', inner, E, TIE_UPPER, E, D - E, H - E - TIE_UPPER);
+        piece('Amarre superior 2', inner, E, TIE_UPPER, E, D - E, H - E - 2 * TIE_UPPER);
+        if (W >= 450) piece('Entrepaño', inner, D - 20, E, E, 0, SHELF_Z);
+      }
+    }
+    // Módulo convertido: sus puertas o frentes de cajón (afuera de la cara frontal, con las luces del generador de Fusion)
+    if (mod.detailed && mod.frontsLayout) {
+      const T = FRONT_THICKNESS, G = FRONT_SIDE_GAP;
+      type Fr = { name: string; a0: number; a1: number; z0: number; h: number };
+      const fronts: Fr[] = [];
+      const W = mod.width, H = mod.height;
+      const full = mod.type === 'UPPER' ? H : H - FRONT_LOWER_BOTTOM_CUT;
+      if (mod.frontsLayout === 'door1') {
+        fronts.push({ name: 'Puerta', a0: G, a1: W - G, z0: 0, h: mod.type === 'TALL' ? H - 20 : full });
+      } else if (mod.frontsLayout === 'door2') {
+        const w = (W - 3 * G) / 2, h = mod.type === 'TALL' ? H - 20 : full;
+        fronts.push({ name: 'Puerta izquierda', a0: G, a1: G + w, z0: 0, h }, { name: 'Puerta derecha', a0: 2 * G + w, a1: 2 * G + 2 * w, z0: 0, h });
+      } else if (mod.frontsLayout === 'drawers') {
+        const h = (full - FRONT_DRAWER_GAP) / 2;
+        fronts.push({ name: 'Frente inferior', a0: G, a1: W - G, z0: 0, h }, { name: 'Frente superior', a0: G, a1: W - G, z0: h + FRONT_DRAWER_GAP, h });
+      } else if (mod.frontsLayout === 'upper-door1') {
+        fronts.push({ name: 'Puerta', a0: G, a1: W - G, z0: -UPPER_DOOR_TAB, h: H + UPPER_DOOR_TAB });
+      } else if (mod.frontsLayout === 'upper-door2-v') {
+        const w = (W - 3 * G) / 2;
+        fronts.push({ name: 'Puerta izquierda', a0: G, a1: G + w, z0: -UPPER_DOOR_TAB, h: H + UPPER_DOOR_TAB }, { name: 'Puerta derecha', a0: 2 * G + w, a1: 2 * G + 2 * w, z0: -UPPER_DOOR_TAB, h: H + UPPER_DOOR_TAB });
+      } else if (mod.frontsLayout === 'upper-door2-h') {
+        const h = (H + UPPER_DOOR_TAB - G) / 2;
+        fronts.push({ name: 'Puerta inferior', a0: G, a1: W - G, z0: -UPPER_DOOR_TAB, h }, { name: 'Puerta superior', a0: G, a1: W - G, z0: -UPPER_DOOR_TAB + h + G, h });
+      } else if (mod.frontsLayout === 'hood-h') {
+        // Campana con puertas horizontales: la de arriba copia la altura de la del aéreo vecino (HOOD_CUT más alto); la de abajo absorbe el resto
+        const hSup = (H + HOOD_CUT + UPPER_DOOR_TAB - G) / 2;
+        const hInf = (H - HOOD_DOOR_GAP) - hSup - G;
+        fronts.push({ name: 'Puerta inferior', a0: G, a1: W - G, z0: HOOD_DOOR_GAP, h: hInf }, { name: 'Puerta superior', a0: G, a1: W - G, z0: HOOD_DOOR_GAP + hInf + G, h: hSup });
+      } else if (mod.frontsLayout === 'hood') {
+        // Campana con puertas verticales: arrancan HOOD_DOOR_GAP sobre la base (sin pestaña) y llegan al techo del módulo
+        const h = H - HOOD_DOOR_GAP;
+        if (W < 450) fronts.push({ name: 'Puerta', a0: G, a1: W - G, z0: HOOD_DOOR_GAP, h });
+        else { const w = (W - 3 * G) / 2; fronts.push({ name: 'Puerta izquierda', a0: G, a1: G + w, z0: HOOD_DOOR_GAP, h }, { name: 'Puerta derecha', a0: 2 * G + w, a1: 2 * G + 2 * w, z0: HOOD_DOOR_GAP, h }); }
+      }
+      fronts.forEach((f, i) => {
+        const along = boxWall === 'A' ? 'x' : 'y';
+        const alongStart = along === 'x' ? p.x : p.y;
+        const outward = p.facing === '+Y' ? { y: p.y + p.sy } : p.facing === '+X' ? { x: p.x + p.sx } : { x: p.x - T };
+        const pos = boxWall === 'A'
+          ? { x: alongStart + f.a0, y: outward.y as number, sx: f.a1 - f.a0, sy: T }
+          : { x: outward.x as number, y: alongStart + f.a0, sx: T, sy: f.a1 - f.a0 };
+        boxes.push({
+          id: `front-${mod.type === 'UPPER' ? 'upper' : 'lower'}-${mod.uniqueId}-${i}`, name: `${f.name} ${mod.label ?? ''}`.trim(), kind: 'front', wall: boxWall, islandId: isl?.id,
+          ...pos, z: z + f.z0, sz: f.h, facing: null, moduleId: mod.uniqueId,
+        });
+      });
+    }
     // Esquinero en L: el brazo sigue por el muro B o C, tras la esquina ciega, con la misma altura
     if (mod.cornerArm && !isl) {
       const ar = mod.cornerArm;

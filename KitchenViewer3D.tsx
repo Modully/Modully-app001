@@ -198,6 +198,10 @@ interface Module3DProps {
   pocket?: { dx: number; dz: number; w: number; d: number; depth: number }; // mueble de la poceta: hueco de la cubeta en su cara superior (m, respecto al centro del módulo)
   onOpenEditor?: (id: string) => void;
   onCloseEditor?: () => void;
+  contextOpen?: boolean; // clic derecho: formulario del módulo (por ahora, si lleva puertas o cajones)
+  onContext?: (id: string) => void;
+  onCloseContext?: () => void;
+  onChooseFronts?: (id: string, kind: 'doors' | 'drawers' | 'vertical' | 'horizontal') => void;
   onApplyMeasures?: (id: string, m: { width: number; depth: number; height: number }) => void;
   onSetTop?: (id: string, height: number, topGap: number) => void;
   onSetVistos?: (id: string, v: SideConfig) => void;
@@ -211,7 +215,7 @@ interface Module3DProps {
   source?: KitchenModule; // módulo completo (la copia `module` puede venir con el cuerpo acortado por los vistos)
 }
 
-const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0, 0], onDelete, onSplit, onEditDimension, onDragPosition, onResizeEdge, controlsRef, hideLeftArrow, hideRightArrow, viewMode, selected, marked, lShape, pocket, costado = 'right', editing, onSelect, onOpenEditor, onCloseEditor, onApplyMeasures, onSetTop, onSetVistos, onSplitHorizontal, onSplitDepth, faces, onExtendFace, hoverRef, resolveReference, showLabel = true, source }) => {
+const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0, 0], onDelete, onSplit, onEditDimension, onDragPosition, onResizeEdge, controlsRef, hideLeftArrow, hideRightArrow, viewMode, selected, marked, lShape, pocket, costado = 'right', editing, onSelect, onOpenEditor, onCloseEditor, contextOpen, onContext, onCloseContext, onChooseFronts, onApplyMeasures, onSetTop, onSetVistos, onSplitHorizontal, onSplitDepth, faces, onExtendFace, hoverRef, resolveReference, showLabel = true, source }) => {
   const isPlan = viewMode === 'plan';
   const [hovered, setHover] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -242,6 +246,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
     return g;
   }, [lShape?.x0, lShape?.x1, lShape?.z0, lShape?.z1, module.width, module.depth, module.height]);
   const isL = !!lGeometry;
+  const isD = !!module.detailed && !!module.frontsLayout && !module.cornerArm && module.depth >= 60; // módulo convertido: se ve por sus piezas
 
   // Mueble de la poceta: el cuerpo lleva un hueco en la cara superior, del tamaño de la cubeta, para que se vea su profundidad
   const pocketGeos = useMemo(() => {
@@ -268,6 +273,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
     if (isOverlay(e)) return;
+    if (e.nativeEvent.button === 2) return; // el clic derecho abre el formulario del módulo: no arrastra
     if (onDragPosition && controlsRef?.current && !isResizing) {
       setIsDragging(true);
       controlsRef.current.enabled = false; // Desactivar OrbitControls durante arrastre
@@ -407,22 +413,24 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
       onPointerUp={handlePointerUp}
       onClick={(e) => { e.stopPropagation(); if (isDragging) endDrag(); if (!isOverlay(e)) onSelect?.(module.uniqueId, !!(e.nativeEvent as MouseEvent).shiftKey); }}
       onDoubleClick={(e) => { e.stopPropagation(); if (isOverlay(e)) return; onSelect?.(module.uniqueId); onOpenEditor?.(module.uniqueId); }}
-      castShadow
-      receiveShadow
+      onContextMenu={(e) => { e.stopPropagation(); e.nativeEvent.preventDefault(); if (isOverlay(e) || !onContext) return; onSelect?.(module.uniqueId); onContext(module.uniqueId); }}
+      castShadow={!isD}
+      receiveShadow={!isD}
     >
       <boxGeometry args={[module.width / 1000, module.height / 1000, module.depth / 1000]} />
       {/* Solo es transparente mientras se arrastra: un material transparente siempre se dibuja después de las
           aristas y las tapa. polygonOffset empuja las caras hacia atrás para que las aristas queden a la vista. */}
       <meshStandardMaterial
         color={color}
-        opacity={isL || isP ? 0 : (isDragging || isResizing ? 0.7 : 1)}
-        transparent={isL || isP || isDragging || isResizing !== null}
-        depthWrite={!isL && !isP}
+        visible={!isD}
+        opacity={isL || isP || isD ? 0 : (isDragging || isResizing ? 0.7 : 1)}
+        transparent={isL || isP || isD || isDragging || isResizing !== null}
+        depthWrite={!isL && !isP && !isD}
         polygonOffset
         polygonOffsetFactor={1}
         polygonOffsetUnits={1}
       />
-      {!isL && <Edges color={isResizing ? "#10b981" : (isDragging ? "#6366f1" : (marked ? "#f59e0b" : (selected ? "#ef4444" : "#3b2a1a")))} linewidth={isDragging || isResizing || selected || marked ? 3 : 1} />}
+      {!isL && !isD && <Edges color={isResizing ? "#10b981" : (isDragging ? "#6366f1" : (marked ? "#f59e0b" : (selected ? "#ef4444" : "#3b2a1a")))} linewidth={isDragging || isResizing || selected || marked ? 3 : 1} />}
       {isP && pocketGeos && (
         <>
           <mesh position={[0, pocketGeos.shift, 0]} castShadow receiveShadow>
@@ -629,9 +637,29 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
         </HtmlScaled>
       ))}
 
+      {/* Clic derecho: formulario del módulo. Por ahora pregunta si lleva puertas o cajones (solo módulos base) */}
+      {contextOpen && onChooseFronts && onCloseContext && (module.type === 'LOWER' || module.type === 'UPPER') && !module.cornerArm && (
+        <Html position={[0, module.height / 2000 + 0.01, 0]} center zIndexRange={[210, 0]} occlude={false} style={{ pointerEvents: 'none' }}>
+          <div data-overlay data-module-editor className="pointer-events-auto w-52 p-3 space-y-2 rounded-xl bg-white border border-slate-300 shadow-xl" onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
+            <div className="text-[10px] font-black uppercase tracking-wide text-slate-500 truncate">{module.label ? `${module.label} · ` : ''}{Math.round(module.width)} mm</div>
+            <div className="text-[12px] font-black text-slate-800">{module.type === 'UPPER' ? '¿Puertas verticales u horizontales?' : '¿Lleva puertas o cajones?'}</div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {(module.type === 'UPPER' ? [['vertical', 'Verticales'], ['horizontal', 'Horizontales']] as const : [['doors', 'Puertas'], ['drawers', 'Cajones']] as const).map(([k, label]) => {
+                const horizontal = module.frontsLayout === 'upper-door2-h' || module.frontsLayout === 'hood-h';
+                const current = !module.detailed ? null : module.type === 'UPPER' ? (horizontal ? 'horizontal' : 'vertical') : (module.frontsLayout === 'drawers' ? 'drawers' : 'doors');
+                return (
+                  <button key={k} onClick={() => { onChooseFronts(module.uniqueId, k); onCloseContext(); }} className={`py-2 rounded-lg text-[11px] font-black border-2 transition-colors ${current === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400'}`}>{label}</button>
+                );
+              })}
+            </div>
+            <button className="w-full py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-black" onClick={onCloseContext}>Cerrar</button>
+          </div>
+        </Html>
+      )}
+
       {/* Doble clic: editor de largo, ancho (fondo) y alto */}
       {editing && onApplyMeasures && onCloseEditor && (
-        <Html position={[0, module.height / 2000 + 0.01, 0]} center zIndexRange={[200, 0]} style={{ pointerEvents: 'none' }}>
+        <Html position={[0, module.height / 2000 + 0.01, 0]} center zIndexRange={[200, 0]} occlude={false} style={{ pointerEvents: 'none' }}>
           <ModuleEditor module={source ?? module} onApply={(m) => { onApplyMeasures(module.uniqueId, { width: m.width, depth: m.depth, height: m.height }); onSetVistos?.(module.uniqueId, m.sides); }} onClose={onCloseEditor} />
         </Html>
       )}
@@ -1340,7 +1368,7 @@ const Counter3D: React.FC<{
         <Edges color={selected ? '#ef4444' : '#8b8579'} linewidth={selected ? 2 : 1} />
       </mesh>
       {editing && settings && sides && onApply && onCloseEditor && (
-        <Html position={[(box.x + box.sx / 2 - wallA / 2) / 1000, (box.z + box.sz) / 1000 + 0.02, offsetZ + (box.y + box.sy / 2) / 1000]} center zIndexRange={[200, 0]} style={{ pointerEvents: 'none' }}>
+        <Html position={[(box.x + box.sx / 2 - wallA / 2) / 1000, (box.z + box.sz) / 1000 + 0.02, offsetZ + (box.y + box.sy / 2) / 1000]} center zIndexRange={[200, 0]} occlude={false} style={{ pointerEvents: 'none' }}>
           <CounterEditor box={box} wall={box.wall} settings={settings} sides={sides} onApply={onApply} onClose={onCloseEditor} />
         </Html>
       )}
@@ -1911,6 +1939,7 @@ interface KitchenViewer3DProps {
   onEditCounter?: (s: CounterSettings, counterId: string, extras: CounterExtras) => void;
   counterExtras?: Record<string, CounterExtras>;
   onSetModuleVistos?: (id: string, v: SideConfig) => void;
+  onSetModuleFronts?: (id: string, kind: 'doors' | 'drawers' | 'vertical' | 'horizontal') => void;
   onSplitHorizontal?: (id: string) => void;
   onSplitDepth?: (id: string) => void;
   onExtendFace?: (id: string, face: FaceKey) => void;
@@ -1928,7 +1957,7 @@ interface KitchenViewer3DProps {
 
 export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   layout, lArm, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules, boxes, appliances, hasIsland, island, islands = [], onEditIsland, onEditWall, onDeleteIsland, viewMode, hasZocalo, zocaloHeight = 100,
-  hasLeftClosure, hasRightClosure, counterExtras, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSplitHorizontal, onSplitDepth, onExtendFace, onJoinCorner, onSplitCorner, onEditCornerArm, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
+  hasLeftClosure, hasRightClosure, counterExtras, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSetModuleFronts, onSplitHorizontal, onSplitDepth, onExtendFace, onJoinCorner, onSplitCorner, onEditCornerArm, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
 }) => {
   const controlsRef = useRef<any>(null);
   // Módulo seleccionado (clic) y módulo cuyo editor de medidas está abierto (doble clic)
@@ -1939,8 +1968,10 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
     setSelectedCounter(null); setEditingCounter(null);
     if (additive && selectedId && selectedId !== id) { setPair([selectedId, id]); setSelectedId(null); setEditingId(null); return; }
     setPair([]); setSelectedId(id);
+    setContextId(prev => (prev === id ? prev : null));
   };
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [contextId, setContextId] = useState<string | null>(null); // módulo con el formulario del clic derecho abierto
   const [selectedCounter, setSelectedCounter] = useState<string | null>(null);
   const [editingCounter, setEditingCounter] = useState<string | null>(null);
   const [measures, setMeasures] = useState<Measure[]>([]);
@@ -2052,6 +2083,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           if ((e.target as HTMLElement | null)?.closest?.('[data-overlay]')) return;
           setSelectedId(null);
           setEditingId(null);
+          setContextId(null);
           setSelectedCounter(null);
           setEditingCounter(null);
           setPair([]);
@@ -2096,6 +2128,24 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               transparent={viewMode === 'plan'}
             />
             <Edges color={viewMode === 'plan' ? '#1e293b' : '#94a3b8'} linewidth={viewMode === 'plan' ? 2 : 1} />
+          </mesh>
+        ))}
+
+        {/* Piezas de los módulos convertidos: laterales, base, techo, puentes, amarres, espaldar y entrepaños */}
+        {boxes.filter(b => b.kind === 'panel' && (b.id.startsWith('panel-upper-') ? vis.upper : vis.lower)).map(b => (
+          <mesh key={b.id} position={boxCenter(b)} castShadow raycast={() => null}>
+            <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
+            <meshStandardMaterial color={b.name.startsWith('Espaldar') || b.name.includes('fondo') ? '#e5e7eb' : b.name.startsWith('Entrepaño') ? '#f3e8d2' : (b.id.startsWith('panel-upper-') ? '#e8d3b0' : '#dcc5a0')} roughness={0.7} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+            <Edges color={b.moduleId && b.moduleId === selectedId ? '#ef4444' : (b.moduleId && pair.includes(b.moduleId) ? '#f59e0b' : '#5b4630')} linewidth={b.moduleId && (b.moduleId === selectedId || pair.includes(b.moduleId)) ? 3 : 1} />
+          </mesh>
+        ))}
+
+        {/* Puertas y frentes de cajón de los módulos convertidos */}
+        {boxes.filter(b => b.kind === 'front' && (b.id.startsWith('front-upper-') ? vis.upper : vis.lower)).map(b => (
+          <mesh key={b.id} position={boxCenter(b)} castShadow receiveShadow raycast={() => null}>
+            <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
+            <meshStandardMaterial color={b.id.startsWith('front-upper-') ? '#d6b48a' : '#c19a6b'} roughness={0.55} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
+            <Edges color={b.moduleId && b.moduleId === selectedId ? '#ef4444' : (b.moduleId && pair.includes(b.moduleId) ? '#f59e0b' : '#3b2a1a')} linewidth={b.moduleId && (b.moduleId === selectedId || pair.includes(b.moduleId)) ? 3 : 1} />
           </mesh>
         ))}
 
@@ -2279,6 +2329,10 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             onSelect={measureMode ? undefined : selectModule}
             onOpenEditor={measureMode ? undefined : setEditingId}
             onCloseEditor={() => setEditingId(null)}
+            contextOpen={contextId === mod.uniqueId}
+            onContext={measureMode || !onSetModuleFronts ? undefined : (id) => { setEditingId(null); setContextId(id); }}
+            onCloseContext={() => setContextId(null)}
+            onChooseFronts={onSetModuleFronts}
             onSetTop={onSetModuleTopEdge}
             onApplyMeasures={(id, m) => {
               if (Math.round(m.depth) !== Math.round(mod.depth)) onEditModuleMeasure?.(id, 'depth', m.depth);

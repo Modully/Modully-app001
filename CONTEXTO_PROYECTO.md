@@ -250,3 +250,20 @@ Se revisó el documento "cocina prueba 2" de Fusion contra `generador_cocina_fus
 - Base del MB y piso/techo del MA con el canto de sus laterales (canto de su propio color), como `structureEdge` en la app. El documento de Fusion tenía esas piezas sin canto: se siguió la regla de la app.
 - "Test Frontal/Trasero" → "Testero Frontal/Trasero".
 Pendiente: las posiciones del cajonero (35, 445, 605), la gola media (330) y el entrepaño (400) están fijas para un bajo de 800; no se adaptan si cambia el alto.
+
+## Isla y península con estufa y poceta, cascada, salpicadero (2026-11-03/04)
+- Formulario de isla/península (en Espacio, con cápsula para activarla): tipo, largo, ancho, barra, cotas X e Y desde el punto 0, y si lleva estufa y/o poceta con su distancia desde el punto 0 de la isla. Se crea con "Aplicar cambios". Dibujitos de cada medida (`MeasureSketch`).
+- Estufa/poceta de la isla: `buildIslandRow` pone Mueble Estufa y Mueble Poceta en esa distancia (los huecos menores de 120 mm se pegan al vecino); el mesón lleva las aberturas. La cubeta de la poceta mide 20 cm (el mueble lleva un hueco arriba); en la isla la grifería va al frente apuntando al muro A.
+- Botón "Modular isla / península" dentro del optimizador: modula solo la isla sin tocar la cocina.
+- Mesón de la isla: salpicadero con las reglas de la cocina; cascada izq/der con "medida inferior" = chaflán por el frente.
+- Columnas o muros atravesados (Espacio): muro, distancia desde la esquina, ancho y profundidad, a la altura del techo; la modulación los respeta, se cubre el espacio de enfrente con un módulo "cubre-columna" (fondo del módulo − profundidad de la columna), el mesón lleva una muesca y el salpicadero rodea la columna a 45°.
+- Canto del mesón: frentero (a 45° con el mesón; alto sugerido 30) o reengruese (pieza pegada por debajo, 2×2 cm o 2×espesor), por lados (frente, izq., der.; la isla también posterior). Frentero a izq./der. resta un espesor al módulo del extremo (salvo que ya haya visto/dilatada); el visto/dilatada de ese lado pierde (alto del frentero − espesor del mesón) o el alto del reengruese.
+- Medidas de los muros editables en planta, cota completa de la isla y etiquetas que se ocultan cuando algo las tapa en isométrica/3D (las ventanas de edición no se ocultan).
+
+## Secciones (2026-11-04)
+- `sections.ts`: Cocinas integrales, Closets, Walking closets, Puertas, Muebles de baño y Centros de TV. Selector en la cabecera; cada sección guarda su propio diseño (snapshot). Cambian formas de espacio, alto del módulo de abajo, espacio entre niveles, nombres (Cuerpo/Maletero...) y qué se ofrece (mesón, isla, accesorios). Las reglas propias de cada sección están pendientes de definir (arrancan con las de la cocina adaptadas).
+
+## Convertir a módulos (2026-11-04/05)
+- Botón "Convertir a módulos" debajo de "Optimizar modulación" (vuelve a cubos con el mismo botón). Cada cubo se cambia por un módulo con sus piezas (reglas del generador de Fusion): bajo = laterales, base, 2 amarres traseros de 80, gola (puente en L) de 65, entrepaño si ≥450 y sin techo ni espaldar; aéreo = laterales, piso, techo, espaldar de 6 retranqueado, 2 amarres de 60, entrepaño si ≥450; más puertas (18 mm, luz de 2). Sugerencia inicial: puertas verticales en todos.
+- Clic derecho en un módulo: bajo → ¿puertas o cajones? (cajonero con 2 frentes de 360, gola media y 3 cajones); aéreo → ¿verticales u horizontales? (campana con su regla de luz de 4 mm). El cubo de un módulo convertido no se dibuja.
+- Pendiente: el listado de corte aún no usa estas piezas; el esquinero en L y el cubre-columna aéreo no se convierten.

@@ -652,6 +652,40 @@ export default function App() {
       appliances: first.appliances.map(ap => ({ ...ap, active: false })),
     } as DesignSnapshot;
   };
+  // Convertir a módulos: cada cubo se cambia por un módulo con sus piezas (laterales, base, techo, puentes, amarres, espaldar, entrepaños)
+  // y sus puertas. Sugerencia inicial: todos con puertas verticales (una si el módulo es angosto, dos si es ancho); después se indica
+  // cómo acomodarlos (cajones, otras puertas)
+  const convertToModules = () => {
+    setModules(prev => {
+      const allDone = prev.length > 0 && prev.every(m => m.detailed || m.cornerArm);
+      if (allDone) return prev.map(m => ({ ...m, detailed: false })); // vuelve a cubos
+      return prev.map(m => {
+        if (m.cornerArm) return { ...m, detailed: false }; // el esquinero en L aún no se convierte
+        let layout: KitchenModule['frontsLayout'];
+        if (m.depth < 60) layout = undefined; // un cubre-columna casi sin fondo no lleva módulo
+        else if (m.type === 'UPPER') layout = m.isHood ? 'hood' : (m.width < 450 ? 'upper-door1' : 'upper-door2-v');
+        else layout = m.width <= 450 ? 'door1' : 'door2';
+        if (!layout) return { ...m, detailed: false };
+        return { ...m, detailed: true, frontsLayout: layout, configType: 'doors', drawerCount: 0 };
+      });
+    });
+  };
+
+  // Clic derecho en un módulo base: con puertas (una o dos, según el ancho) o con cajones (3 cajones reales); convierte ese módulo
+  const setModuleFronts = (id: string, kind: 'doors' | 'drawers' | 'vertical' | 'horizontal') => {
+    setModules(prev => prev.map(m => {
+      if (m.uniqueId !== id || m.cornerArm) return m;
+      if (m.type === 'UPPER') {
+        // Aéreo: puertas verticales (una si es angosto, dos si es ancho) u horizontales (una sobre otra); la campana mantiene su regla
+        const layout = kind === 'horizontal' ? (m.isHood ? 'hood-h' : 'upper-door2-h') : (m.isHood ? 'hood' : (m.width < 450 ? 'upper-door1' : 'upper-door2-v'));
+        return { ...m, detailed: true, frontsLayout: layout as 'hood' | 'hood-h' | 'upper-door1' | 'upper-door2-v' | 'upper-door2-h', configType: 'doors' as const, drawerCount: 0 };
+      }
+      if (m.type !== 'LOWER') return m;
+      if (kind === 'drawers') return { ...m, detailed: true, frontsLayout: 'drawers' as const, configType: 'drawers' as const, drawerCount: 3 };
+      return { ...m, detailed: true, frontsLayout: (m.width <= 450 ? 'door1' : 'door2') as 'door1' | 'door2', configType: 'doors' as const, drawerCount: 0 };
+    }));
+  };
+
   const switchSection = (next: SectionId) => {
     setIsSectionMenuOpen(false);
     if (next === section) return;
@@ -4222,6 +4256,7 @@ export default function App() {
                   onEditCounter={(s, counterId, extras) => { applyCounterEdit(s, counterId, extras); }}
                   counterExtras={counterExtras}
                   onSetModuleVistos={setModuleVistos}
+                  onSetModuleFronts={setModuleFronts}
                   onSplitHorizontal={splitModuleHorizontal}
                   onSplitDepth={splitModuleDepthwise}
                   onExtendFace={extendModuleFace}
@@ -4314,6 +4349,16 @@ export default function App() {
                     <Sparkles size={20} className={isSuggesting ? 'animate-spin' : 'group-hover:rotate-12 transition-transform'} />
                     <span className="text-xs font-black uppercase tracking-tight">Optimizar Modulación</span>
                     <ChevronDown size={16} className={`transition-transform duration-300 ${isOptMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  <button
+                    onClick={convertToModules}
+                    disabled={isSuggesting || modules.length === 0}
+                    className="bg-white text-indigo-700 px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2 active:scale-95 transition-all border-b-4 border-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Convierte los cubos en módulos con sus puertas y frentes de cajón"
+                  >
+                    <Box size={18} />
+                    <span className="text-xs font-black uppercase tracking-tight">{modules.length > 0 && modules.every(m => m.detailed) ? 'Volver a cubos' : 'Convertir a módulos'}</span>
                   </button>
 
                   {isOptMenuOpen && (
