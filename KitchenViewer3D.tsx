@@ -1372,7 +1372,7 @@ const ClosetToggle: React.FC<{ label: string; on: boolean; onClick: () => void }
   </button>
 );
 
-const CLOSET_SECTION_TITLES: Record<string, string> = { puertas: 'Puertas corredizas', muro: 'Muros del closet', taparriel: 'Tapa de riel', costado: 'Costado piso a techo', zocalo: 'Zócalo', base: 'Base (marco inferior)', cajonero: 'Cajonero', entrepanos: 'Entrepaños', maletero: 'Maletero' };
+const CLOSET_SECTION_TITLES: Record<string, string> = { torre: 'Torre de entrepaños', puertas: 'Puertas corredizas', muro: 'Muros del closet', taparriel: 'Tapa de riel', costado: 'Costado piso a techo', zocalo: 'Zócalo', base: 'Base (marco inferior)', cajonero: 'Cajonero', entrepanos: 'Entrepaños', maletero: 'Maletero' };
 
 /** Formulario de una sección del closet (doble clic sobre sus piezas): zócalo, base, cajonero, entrepaños o maletero */
 const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose: () => void }> = ({ section, api, onClose }) => {
@@ -1380,6 +1380,22 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
   return (
     <div data-overlay data-module-editor className="pointer-events-auto w-60 p-3 space-y-2 rounded-xl bg-white border border-slate-300 shadow-xl" onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
       <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">{CLOSET_SECTION_TITLES[section]}</div>
+      {section === 'torre' && (
+        <>
+          <div className="grid grid-cols-3 gap-1">
+            {([['left', 'Izquierda'], ['center', 'Centro'], ['right', 'Derecha']] as const).map(([val, label]) => (
+              <button key={val} onClick={() => onChange({ torrePos: val })} className={`py-1 rounded-lg text-[10px] font-black border-2 ${(c.torrePos ?? 'left') === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+            ))}
+          </div>
+          <ClosetToggle label="Hasta el techo" on={c.torreToCeiling === true} onClick={() => onChange({ torreToCeiling: c.torreToCeiling !== true, torreShelves: undefined })} />
+          <ClosetNumber label="Ancho (mm)" value={d.torreWidth} hint={d.suggestedCajonero} onCommit={(n) => onChange({ torreWidth: Math.max(300, Math.min(1200, Math.round(n))) })} />
+          <ClosetNumber label="Entrepaños por columna" value={d.torreShelves} hint={d.suggestedTorreShelves} onCommit={(n) => onChange({ torreShelves: Math.max(0, Math.min(20, Math.round(n))) })} />
+          <ClosetNumber label="Divisiones" value={d.torreDivisions} hint={0} onCommit={(n) => onChange({ torreDivisions: Math.max(0, Math.min(5, Math.round(n))) })} />
+          <ClosetNumber label="Fondo (mm)" value={c.torreDepth ?? 450} hint={450} onCommit={(n) => onChange({ torreDepth: Math.max(300, Math.min(500, Math.round(n))) })} />
+          <button className="w-full py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-[11px] font-black" onClick={() => { onChange({ torreOn: false }); onClose(); }}>Quitar la torre</button>
+          <p className="text-[9px] font-bold text-slate-400">Las divisiones tienen la altura de los laterales y la profundidad de los entrepaños (20 mm menos que los laterales).</p>
+        </>
+      )}
       {section === 'puertas' && (
         <>
           <ClosetNumber label="Alto de las puertas (mm)" value={d.doorHeight} hint={d.suggestedDoorHeight} onCommit={(n) => onChange({ doorHeight: Math.max(500, Math.round(n)) })} />
@@ -2352,13 +2368,13 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         ))}
 
         {/* Piezas de los módulos convertidos: laterales, base, techo, puentes, amarres, espaldar y entrepaños */}
-        {boxes.filter(b => b.kind === 'panel' && !((vis.shelves === false && closetSectionOf(b.name) === 'entrepanos') || (vis.cajonero === false && closetSectionOf(b.name) === 'cajonero') || (vis.costado === false && closetSectionOf(b.name) === 'costado')) && (b.name.startsWith('Puerta corrediza') ? vis.doors !== false : (b.id.startsWith('panel-upper-') ? vis.upper : vis.lower))).map(b => (
+        {boxes.filter(b => b.kind === 'panel' && !((vis.shelves === false && (closetSectionOf(b.name) === 'entrepanos' || closetSectionOf(b.name) === 'torre')) || (vis.cajonero === false && closetSectionOf(b.name) === 'cajonero') || (vis.costado === false && closetSectionOf(b.name) === 'costado')) && (b.name.startsWith('Puerta corrediza') ? vis.doors !== false : (b.id.startsWith('panel-upper-') ? vis.upper : vis.lower))).map(b => (
           <mesh
             key={b.id}
             position={boxCenter(b)}
             castShadow
             {...(closetForm && closetSectionOf(b.name) ? {
-              onDoubleClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setClosetSection({ section: closetSectionOf(b.name)!, idx: closetCajoneroIndex(b.name), pos: [boxCenter(b)[0], (closetSectionOf(b.name) === 'costado' || closetSectionOf(b.name) === 'puertas') ? (b.z + b.sz * 0.5) / 1000 : (b.z + b.sz) / 1000 + 0.05, boxCenter(b)[2]] }); },
+              onDoubleClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setClosetSection({ section: closetSectionOf(b.name)!, idx: closetCajoneroIndex(b.name), pos: [boxCenter(b)[0], (closetSectionOf(b.name) === 'costado' || closetSectionOf(b.name) === 'puertas' || closetSectionOf(b.name) === 'torre') ? (b.z + b.sz * 0.5) / 1000 : (b.z + b.sz) / 1000 + 0.05, boxCenter(b)[2]] }); },
               onClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setCajoneroSel(closetSectionOf(b.name) === 'cajonero' ? closetCajoneroIndex(b.name) : 0); },
               onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; },
               onPointerOut: () => { document.body.style.cursor = 'auto'; },

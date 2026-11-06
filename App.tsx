@@ -4091,6 +4091,18 @@ export default function App() {
                       </div>
                       )}
 
+                      {closet.twoCajoneros !== true && (
+                        <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
+                          <div>
+                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Torre de entrepaños</label>
+                            <p className="text-[9px] font-bold text-slate-400 mt-0.5">Columna con laterales, entrepaños y divisiones; se ajusta con doble clic sobre ella</p>
+                          </div>
+                          <button onClick={() => setCloset(c => ({ ...c, torreOn: c.torreOn !== true }))} className={`w-10 h-5 rounded-full transition-all relative shrink-0 ${closet.torreOn === true ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+                            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${closet.torreOn === true ? 'left-5.5' : 'left-0.5'}`} />
+                          </button>
+                        </div>
+                      )}
+
                       <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
                         <div>
                           <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Entrepaños sobre el cajonero</label>

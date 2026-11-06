@@ -88,6 +88,13 @@ export interface ClosetConfig {
   twoCajoneros?: boolean;     // dos cajoneros
   twoPlacement?: 'centro' | 'extremos'; // dos cajoneros: juntos al centro (con dilatada central de 60 mm para el traslape de las puertas) o uno en cada extremo
   cajonero2?: Partial<ClosetConfig>; // medidas propias del segundo cajonero (cajones, ancho, altura, fondo, frentes, entrepaños...); el primero usa los campos de arriba
+  torreOn?: boolean;          // torre de entrepaños (columna con laterales, entrepaños y divisiones); solo con un cajonero
+  torrePos?: 'left' | 'center' | 'right'; // dónde va la torre (como el cajonero); por defecto a la izquierda
+  torreWidth?: number;        // ancho de la torre; sin valor = el sugerido del cajonero
+  torreToCeiling?: boolean;   // hasta el techo (atraviesa el maletero) en vez de hasta el maletero
+  torreShelves?: number;      // entrepaños por columna; sin valor = los que dejen huecos de ~330 mm
+  torreDivisions?: number;    // divisiones verticales (columnas iguales); 0 por defecto
+  torreDepth?: number;        // fondo de la torre (laterales 20 mm menos; entrepaños y divisiones 20 mm menos que los laterales)
   shelvesOn?: boolean;        // sección de entrepaños (costados y entrepaños sobre el cajonero): activa por defecto
   costadoDepth?: number;      // fondo del costado piso-techo; la base toma el mismo fondo (sin valor = 550)
   costadoLeft?: boolean;      // costado izquierdo de los entrepaños: lleva (por defecto) o no; sin costado los entrepaños se alargan
