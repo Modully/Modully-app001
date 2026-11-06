@@ -75,6 +75,19 @@ const IslandIcon: React.FC<{ size?: number }> = ({ size = 28 }) => (
 
 /** Campo de medida: se escribe libremente y se aplica con Enter o al salir del campo; Escape cancela */
 /** Campo numérico que deja escribir libremente y aplica (con sus límites) al salir del campo o con Enter; así un mínimo no impide teclear */
+/** Arrastre de una tarjeta flotante: se agarra por su título y se mueve libremente */
+function useDragOffset() {
+  const [off, setOff] = useState({ x: 0, y: 0 });
+  const start = (e: React.PointerEvent) => {
+    const x0 = e.clientX - off.x, y0 = e.clientY - off.y;
+    const move = (ev: PointerEvent) => setOff({ x: ev.clientX - x0, y: ev.clientY - y0 });
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  };
+  return { style: { transform: `translate(${off.x}px, ${off.y}px)` } as React.CSSProperties, handle: { onPointerDown: start, style: { cursor: 'move', touchAction: 'none' } as React.CSSProperties } };
+}
+
 const DeferredNumber: React.FC<{ value: number; onCommit: (n: number) => void; className?: string }> = ({ value, onCommit, className }) => {
   const [draft, setDraft] = useState<string | null>(null);
   const finish = (apply: boolean) => {
@@ -474,6 +487,8 @@ export default function App() {
   const [floorWidth, setFloorWidth] = useState(4000);
   const [floorLength, setFloorLength] = useState(4000);
   
+  const wallsDrag = useDragOffset();
+  const [wallsCardOpen, setWallsCardOpen] = useState(true); // formulario básico de muros del closet (recto, L o U con sus medidas y la altura)
   const [wallA, setWallA] = useState(3600);
   const [wallB, setWallB] = useState(2400);
   const [wallC, setWallC] = useState(2400);
@@ -697,6 +712,7 @@ export default function App() {
     if (h.timer) { clearTimeout(h.timer); h.timer = null; }
     h.past = []; h.future = []; h.committed = null; h.committedKey = '';
     setSection(next);
+    if (next === 'closets' || next === 'walking') { setActiveView('frontal'); setWallsCardOpen(true); } // al entrar a closets: vista frontal con las puertas translúcidas y el formulario de muros
     applySnapshot(sectionStore.current[next] ?? makeSectionDefaults(next));
     setIsElementsPanelOpen(false); setIsAccessoriesPanelOpen(false); setIsViewsPanelOpen(false); setIsSpecialModulesPanelOpen(false); setIsWorkspaceModalOpen(false);
     bumpHistory();
@@ -4576,6 +4592,44 @@ export default function App() {
                 </div>
               )}
               
+              {isClosetSection && (
+                <div className="absolute left-4 bottom-4 z-30 pointer-events-auto w-64 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200" style={wallsDrag.style}>
+                  <div className="w-full flex items-center justify-between px-4 py-2.5">
+                    <span {...wallsDrag.handle} className="flex-1 text-[11px] font-black text-slate-800 uppercase tracking-tight select-none" title="Arrastra para mover la tarjeta">⠿ Muros del {cfg.singular}</span>
+                    <button onClick={() => setWallsCardOpen(o => !o)} className="p-1"><ChevronDown size={16} className={`text-slate-400 transition-transform ${wallsCardOpen ? '' : 'rotate-180'}`} /></button>
+                  </div>
+                  {wallsCardOpen && (
+                    <div className="px-4 pb-4 space-y-3">
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {(['STRAIGHT', 'L_SHAPE', 'U_SHAPE'] as LayoutType[]).filter(l => cfg.layouts.includes(l)).map(l => (
+                          <button key={l} onClick={() => setLayout(l)} className={`py-1.5 rounded-lg text-[10px] font-black border-2 ${layout === l ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{l === 'STRAIGHT' ? 'Recto' : l === 'L_SHAPE' ? 'En L' : 'En U'}</button>
+                        ))}
+                      </div>
+                      {layout === 'L_SHAPE' && (
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {(['left', 'right'] as const).map(side => (
+                            <button key={side} onClick={() => setLArm(side)} className={`py-1.5 rounded-lg text-[10px] font-black border-2 ${lArm === side ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>Brazo {side === 'left' ? 'izquierdo' : 'derecho'}</button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-2">
+                        {([
+                          ['Muro A (mm)', wallA, (n: number) => setWallA(Math.max(500, Math.round(n))), true],
+                          ['Muro B (mm)', wallB, (n: number) => setWallB(Math.max(500, Math.round(n))), layout !== 'STRAIGHT'],
+                          ['Muro C (mm)', wallC, (n: number) => setWallC(Math.max(500, Math.round(n))), layout === 'U_SHAPE'],
+                          ['Altura (mm)', spaceHeight, (n: number) => setSpaceHeight(Math.max(1000, Math.round(n))), true],
+                        ] as Array<[string, number, (n: number) => void, boolean]>).filter(r => r[3]).map(([label, value, onCommit]) => (
+                          <div key={label} className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
+                            <DeferredNumber value={Math.round(value)} onCommit={onCommit} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="absolute top-4 left-4 right-4 flex justify-between items-start z-30 pointer-events-none">
                 <div className="pointer-events-auto bg-white/90 backdrop-blur-md px-4 py-2 rounded-2xl shadow-xl border border-white/50 flex flex-wrap items-center gap-x-3 gap-y-2 max-w-[calc(100%-12rem)]">
                   <div className="flex gap-1">

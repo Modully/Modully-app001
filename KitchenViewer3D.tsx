@@ -1380,12 +1380,27 @@ const ClosetToggle: React.FC<{ label: string; on: boolean; onClick: () => void }
 
 const CLOSET_SECTION_TITLES: Record<string, string> = { torre: 'Torre de entrepaños', puertas: 'Puertas corredizas', muro: 'Muros del closet', taparriel: 'Tapa de riel', costado: 'Costado piso a techo', zocalo: 'Zócalo', base: 'Base (marco inferior)', cajonero: 'Cajonero', entrepanos: 'Entrepaños', maletero: 'Maletero' };
 
+/** Arrastre de un formulario flotante: se agarra por su título y se mueve libremente (desplazamiento en píxeles) */
+function useDragOffset() {
+  const [off, setOff] = useState({ x: 0, y: 0 });
+  const start = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    const x0 = e.clientX - off.x, y0 = e.clientY - off.y;
+    const move = (ev: PointerEvent) => setOff({ x: ev.clientX - x0, y: ev.clientY - y0 });
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  };
+  return { style: { transform: `translate(${off.x}px, ${off.y}px)` } as React.CSSProperties, handle: { onPointerDown: start, style: { cursor: 'move', touchAction: 'none' } as React.CSSProperties } };
+}
+
 /** Formulario de una sección del closet (doble clic sobre sus piezas): zócalo, base, cajonero, entrepaños o maletero */
 const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose: () => void }> = ({ section, api, onClose }) => {
   const { config: c, derived: d, onChange } = api;
+  const drag = useDragOffset();
   return (
-    <div data-overlay data-module-editor className="pointer-events-auto w-60 p-3 space-y-2 rounded-xl bg-white border border-slate-300 shadow-xl" onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
-      <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">{CLOSET_SECTION_TITLES[section]}</div>
+    <div data-overlay data-module-editor className="pointer-events-auto w-60 p-3 space-y-2 rounded-xl bg-white border border-slate-300 shadow-xl" style={drag.style} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
+      <div {...drag.handle} className="text-[10px] font-black uppercase tracking-wide text-slate-500 flex items-center justify-between select-none" title="Arrastra para mover el formulario">{CLOSET_SECTION_TITLES[section]}<span className="text-slate-300">⠿</span></div>
       {section === 'torre' && (
         <>
           <div className="grid grid-cols-3 gap-1">
@@ -2228,7 +2243,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
     setContextId(prev => (prev === id ? prev : null));
   };
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [doorsGhost, setDoorsGhost] = useState(false); // puertas del closet translúcidas
+  const [doorsGhost, setDoorsGhost] = useState(true); // puertas del closet translúcidas
   const [cajoneroSel, setCajoneroSel] = useState<0 | 1 | 2>(0); // cajonero seleccionado con un clic: muestra la flecha para estirar su fondo
   const [closetSection, setClosetSection] = useState<{ section: string; idx?: 1 | 2; pos: [number, number, number] } | null>(null); // sección del closet con su formulario abierto
   const [contextId, setContextId] = useState<string | null>(null); // módulo con el formulario del clic derecho abierto
@@ -2433,7 +2448,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
 
         {closetForm && !measureMode && closetSection && (
           <Html position={closetSection.pos} center zIndexRange={[220, 0]} occlude={false} style={{ pointerEvents: 'none' }}>
-            <ClosetSectionForm section={closetSection.section} api={{ ...(closetSection.section === 'torre' && closetSection.idx === 2 && closetForm.torre2Config && closetForm.torre2Derived && closetForm.onTorre2 ? { ...closetForm, config: closetForm.torre2Config, derived: closetForm.torre2Derived, onChange: closetForm.onTorre2, onRemove: closetForm.onRemoveTorre2, torreIdx: 2 as const } : closetSection.idx === 2 && closetForm.config2 && closetForm.derived2 && closetForm.onChange2 ? { ...closetForm, config: closetForm.config2, derived: closetForm.derived2, onChange: closetForm.onChange2 } : closetForm), onRoot: closetForm.onChange, doorsGhost, onDoorsGhost: setDoorsGhost }} onClose={() => setClosetSection(null)} />
+            <ClosetSectionForm key={`${closetSection.section}-${closetSection.idx ?? 0}`} section={closetSection.section} api={{ ...(closetSection.section === 'torre' && closetSection.idx === 2 && closetForm.torre2Config && closetForm.torre2Derived && closetForm.onTorre2 ? { ...closetForm, config: closetForm.torre2Config, derived: closetForm.torre2Derived, onChange: closetForm.onTorre2, onRemove: closetForm.onRemoveTorre2, torreIdx: 2 as const } : closetSection.idx === 2 && closetForm.config2 && closetForm.derived2 && closetForm.onChange2 ? { ...closetForm, config: closetForm.config2, derived: closetForm.derived2, onChange: closetForm.onChange2 } : closetForm), onRoot: closetForm.onChange, doorsGhost, onDoorsGhost: setDoorsGhost }} onClose={() => setClosetSection(null)} />
           </Html>
         )}
 
