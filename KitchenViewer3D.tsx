@@ -1337,6 +1337,7 @@ export interface ClosetFormApi {
   // dos cajoneros: el segundo tiene sus propias medidas y su propio formulario
   doorsGhost?: boolean;                 // puertas translúcidas
   onDoorsGhost?: (on: boolean) => void;
+  onRoot?: (patch: Partial<ClosetConfig>) => void; // cambios de la configuración general (cantidad y ubicación de los cajoneros) aunque el formulario sea del segundo
   config2?: ClosetConfig;
   derived2?: ReturnType<typeof closetDerived>;
   onChange2?: (patch: Partial<ClosetConfig>) => void;
@@ -1434,11 +1435,24 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
       )}
       {section === 'cajonero' && (
         <>
-          {c.twoCajoneros !== true && <div className="grid grid-cols-3 gap-1">
-            {([['left', 'Izquierda'], ['center', 'Centro'], ['right', 'Derecha']] as const).map(([val, label]) => (
-              <button key={val} onClick={() => onChange({ cajoneroPos: val })} className={`py-1 rounded-lg text-[10px] font-black border-2 ${c.cajoneroPos === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+          <div className="grid grid-cols-2 gap-1">
+            {([[false, '1 cajonero'], [true, '2 cajoneros']] as const).map(([val, label]) => (
+              <button key={label} onClick={() => (api.onRoot ?? onChange)({ twoCajoneros: val, doorCount: undefined })} className={`py-1 rounded-lg text-[10px] font-black border-2 ${(c.twoCajoneros === true) === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
             ))}
-          </div>}
+          </div>
+          {c.twoCajoneros === true ? (
+            <div className="grid grid-cols-2 gap-1">
+              {([['centro', 'Al centro'], ['extremos', 'A los extremos']] as const).map(([val, label]) => (
+                <button key={val} onClick={() => (api.onRoot ?? onChange)({ twoPlacement: val, doorCount: undefined })} className={`py-1 rounded-lg text-[10px] font-black border-2 ${(c.twoPlacement ?? 'centro') === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-1">
+              {([['left', 'Izquierda'], ['center', 'Centro'], ['right', 'Derecha']] as const).map(([val, label]) => (
+                <button key={val} onClick={() => onChange({ cajoneroPos: val })} className={`py-1 rounded-lg text-[10px] font-black border-2 ${c.cajoneroPos === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+              ))}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-1">
             {([['parche', 'De parche'], ['embebido', 'Embebido']] as const).map(([val, label]) => (
               <button key={val} onClick={() => onChange({ cajonFront: val })} className={`py-1 rounded-lg text-[10px] font-black border-2 ${(c.cajonFront ?? 'parche') === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
@@ -2368,7 +2382,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
 
         {closetForm && closetSection && (
           <Html position={closetSection.pos} center zIndexRange={[220, 0]} occlude={false} style={{ pointerEvents: 'none' }}>
-            <ClosetSectionForm section={closetSection.section} api={{ ...(closetSection.idx === 2 && closetForm.config2 && closetForm.derived2 && closetForm.onChange2 ? { ...closetForm, config: closetForm.config2, derived: closetForm.derived2, onChange: closetForm.onChange2 } : closetForm), doorsGhost, onDoorsGhost: setDoorsGhost }} onClose={() => setClosetSection(null)} />
+            <ClosetSectionForm section={closetSection.section} api={{ ...(closetSection.idx === 2 && closetForm.config2 && closetForm.derived2 && closetForm.onChange2 ? { ...closetForm, config: closetForm.config2, derived: closetForm.derived2, onChange: closetForm.onChange2 } : closetForm), onRoot: closetForm.onChange, doorsGhost, onDoorsGhost: setDoorsGhost }} onClose={() => setClosetSection(null)} />
           </Html>
         )}
 
