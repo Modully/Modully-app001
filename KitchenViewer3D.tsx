@@ -1367,6 +1367,7 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
         <>
           <ClosetToggle label="Lleva zócalo" on={api.hasZocalo} onClick={() => api.onZocalo({ hasZocalo: !api.hasZocalo })} />
           {api.hasZocalo && <ClosetNumber label="Altura del zócalo" value={api.zocaloHeight} hint={80} onCommit={(n) => api.onZocalo({ zocaloHeight: Math.max(30, Math.min(200, Math.round(n))) })} />}
+          <ClosetToggle label="Marco inferior / base" on={c.bottomFrame} onClick={() => onChange({ bottomFrame: !c.bottomFrame })} />
           <p className="text-[9px] font-bold text-slate-400">La base va encima del zócalo. Sin marco inferior queda el tipo T.</p>
         </>
       )}
