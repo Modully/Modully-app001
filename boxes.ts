@@ -952,7 +952,9 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     const wallL = closet.leftWall ? x0 - 2 * E : x0, wallR = closet.rightWall ? x1 + 2 * E : x1;
     const xc = closet.cajoneroPos === 'left' ? (dilW ? wallL + dilW : x0) : closet.cajoneroPos === 'right' ? (dilW ? wallR - dilW - Wc : x1 - Wc) : x0 + (inner - Wc) / 2;
     const Dc = CLOSET_INTERIOR_DEPTH;                             // la tapa y los costados de arriba: 450 de fondo (adelante quedan los rieles de las puertas)
-    const Dl = CLOSET_INTERIOR_DEPTH - 20;                        // laterales y entrepaños del cajonero: 430
+    const Dl0 = CLOSET_INTERIOR_DEPTH - 20;                        // entrepaños y laterales del cajonero: 430
+    const embebido = closet.cajonFront === 'embebido';           // frente embebido: el lateral se alarga 15 mm y su canto queda al ras del frente
+    const Dl = Dl0 + (embebido ? E : 0);                          // laterales del cajonero
     const nDrawers = dv.drawerCount;
     const gapF = CLOSET_DRAWER_GAP;
     const z0 = dv.cajBase;                                        // tipo T: el cajonero baja al piso; con base se apoya en ella
@@ -961,13 +963,24 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     // 30 mm entre frentes para meter la mano; el frente de arriba llega hasta la cara de abajo de la tapa y su frente queda a ras con el de la tapa
     const Hf = dv.drawerFront, Hcj = dv.cajoneroHeight;
     const colTop = topM - E;                                      // cara de abajo del tablero del maletero
-    add('Lateral cajonero izquierdo', xc, 0, z0, E, Dl, Hcj - E);
-    add('Lateral cajonero derecho', xc + Wc - E, 0, z0, E, Dl, Hcj - E);
-    // Puente amarre de 70 mm al frente, sobre la base: tapa el hueco que queda bajo el cajón de abajo (a ras del frente de los laterales)
+    // Cajonero a un extremo: el costado de los entrepaños de ese lado (junto al muro con marco y dilatada, o junto al costado del closet) se puede quitar y los entrepaños se alargan hasta allá
+    const dropL = closet.cajoneroPos === 'left' && (closet.costadoLeft === false || closet.sideCostado === false);
+    const dropR = closet.cajoneroPos === 'right' && (closet.costadoRight === false || closet.sideCostado === false);
+    // Costumbre colombiana: con frentes embebidos y el cajonero junto a un costado del closet (lado sin muro) se puede quitar el lateral de ese lado
+    // y amarrar las correderas al costado: 13 mm del cajón al costado (medida técnica de la corredera) y 3 mm entre el costado y el frente
+    const sinLat = embebido && closet.sinLateral === true && ((closet.cajoneroPos === 'left' && !closet.leftWall) || (closet.cajoneroPos === 'right' && !closet.rightWall));
+    const latL = !(sinLat && closet.cajoneroPos === 'left'), latR = !(sinLat && closet.cajoneroPos === 'right');
+    // Laterales hasta el maletero (solo embebido y con entrepaños): hacen de costados de los entrepaños y la tapa queda entre ellos
+    const raised = embebido && closet.lateralesAlMaletero === true && closet.shelvesOn !== false && colTop - (z0 + Hcj) > 100;
+    const raiseL = raised && latL && !dropL, raiseR = raised && latR && !dropR;
+    if (latL) add('Lateral cajonero izquierdo', xc, 0, z0, E, Dl, raiseL ? colTop - z0 : Hcj - E);
+    if (latR) add('Lateral cajonero derecho', xc + Wc - E, 0, z0, E, Dl, raiseR ? colTop - z0 : Hcj - E);
+    const eL = latL ? E : 0, eR = latR ? E : 0;
+    // Puente amarre de 70 mm al frente, sobre la base: tapa el hueco que queda bajo el cajón de abajo (retrocedido 15 mm del frente de los laterales para que no choque)
     // Puentes internos del cajonero (principio del oficio: 2 laterales y 5 puentes), entre los dos laterales y de 70 mm:
     // 2 arriba (acostados bajo la tapa, uno adelante y otro atrás, juntan la tapa), 2 atrás (parados contra el muro, uno arriba y otro abajo, para instalar) y 1 inferior frontal
-    const PW = CLOSET_CAJONERO_PUENTE, bx = xc + E, bwid = Wc - 2 * E, zTopC = z0 + Hcj - E;
-    add('Puente superior frontal cajonero', bx, Dl - PW, zTopC - E, bwid, PW, E);
+    const PW = CLOSET_CAJONERO_PUENTE, bx = xc + eL, bwid = Wc - eL - eR, zTopC = z0 + Hcj - E;
+    add('Puente superior frontal cajonero', bx, Dl - PW - E, zTopC - E, bwid, PW, E);
     add('Puente superior trasero cajonero', bx, E, zTopC - E, bwid, PW, E);
     add('Puente trasero superior cajonero', bx, 0, zTopC - E - PW, bwid, E, PW);
     add('Puente trasero inferior cajonero', bx, 0, z0, bwid, E, PW);
@@ -975,17 +988,27 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     // (con el cajonero flotado este puente pasa a ser la base: pendiente)
     // Solo se pone cuando el cajón de abajo deja menos de 70 mm entre su frente y la base; si el hueco es mayor, no lleva
     const gapBajo = Hcj - E - nDrawers * Hf - (nDrawers - 1) * gapF;
-    if (nDrawers > 0 && gapBajo <= CLOSET_CAJONERO_PUENTE) add('Puente amarre cajonero', xc + E, Dl - E, z0, Wc - 2 * E, E, CLOSET_CAJONERO_PUENTE);
-    else if (nDrawers > 0) add('Puente inferior frontal cajonero', bx, Dl - PW, z0 + gapBajo - E, bwid, PW, E);
+    if (nDrawers > 0 && gapBajo <= CLOSET_CAJONERO_PUENTE) add('Puente amarre cajonero', bx, Dl - 2 * E, z0, bwid, E, CLOSET_CAJONERO_PUENTE);
+    else if (nDrawers > 0) add('Puente inferior frontal cajonero', bx, Dl - PW - E, z0 + gapBajo - E, bwid, PW, E);
     // Zócalo tipo T: un puente vertical al frente del cajonero, del piso hasta el puente acostado (tapa el espacio de abajo)
-    if (hasZocalo && !closet.bottomFrame && nDrawers > 0 && gapBajo > CLOSET_CAJONERO_PUENTE) add('Puente vertical cajonero', bx, Dl - E, z0, bwid, E, gapBajo - E);
-    add('Tapa cajonero', closet.cajoneroPos === 'left' ? xc - dilW : xc, 0, z0 + Hcj - E, Wc + dilW, Dc, E); // la tapa va por encima de los laterales, del ancho completo (y los 45 mm de la dilatación)
+    if (hasZocalo && !closet.bottomFrame && nDrawers > 0 && gapBajo > CLOSET_CAJONERO_PUENTE) add('Puente vertical cajonero', bx, Dl - 2 * E, z0, bwid, E, gapBajo - E);
+    {
+      // La tapa va por encima de los laterales; si un lateral sube hasta el maletero, la tapa se reduce ese espesor y queda entre los laterales
+      const tL = closet.cajoneroPos === 'left' ? xc - dilW : xc, tR = tL + Wc + dilW;
+      const t0 = raiseL ? xc + E : tL, t1 = raiseR ? xc + Wc - E : tR;
+      add('Tapa cajonero', t0, 0, z0 + Hcj - E, t1 - t0, Dc, E);
+      if (raiseL && dilW > 0 && closet.cajoneroPos === 'left') add('Tapa cajonero', tL, 0, z0 + Hcj - E, dilW, Dc, E); // la franja de la dilatación sigue cubierta
+      if (raiseR && dilW > 0 && closet.cajoneroPos === 'right') add('Tapa cajonero', xc + Wc, 0, z0 + Hcj - E, dilW, Dc, E);
+    }
+    // (la tapa ya está puesta arriba) // la tapa va por encima de los laterales, del ancho completo (y los 45 mm de la dilatación)
     if (dilW > 0) add('Dilatación lateral cajonero', closet.cajoneroPos === 'left' ? xc - dilW : xc + Wc, Dl - E, z0, dilW, E, Hcj - E); // a ras del costado (lateral) del cajonero: su frente queda en el mismo plano
     for (let i = 0; i < nDrawers; i++) {
       // Los cajones van pegados a la tapa (el de arriba al ras de la tapa); si sobra altura, el hueco queda abajo, sobre la base
       const zf = z0 + Hcj - E - (nDrawers - i) * Hf - (nDrawers - 1 - i) * gapF;
-      add(`Frente cajón ${i + 1}`, xc + 4, Dc - E, zf, Wc - 8, E, Hf);
-      const bw = Wc - 2 * E - 26, bxl = xc + E + 13, yb = Dc - E - 400, zb = zf + 20, hb = Math.max(80, Hf - 60); // caja del cajón: luz de 13 por lado, 400 de fondo; 60 mm más baja que el frente
+      const frontY = embebido ? Dl - E : Dc - E;
+      if (embebido) add(`Frente cajón ${i + 1}`, xc + eL + 3, frontY, zf, Wc - eL - eR - 6, E, Hf); // embebido: ancho interno - 6 mm
+      else add(`Frente cajón ${i + 1}`, xc + 4, frontY, zf, Wc - 8, E, Hf);                      // de parche: adelante de los laterales
+      const bw = Wc - eL - eR - 26, bxl = xc + eL + 13, yb = frontY - 400, zb = zf + 20, hb = Math.max(80, Hf - 60); // caja del cajón: luz de 13 por lado, 400 de fondo; 60 mm más baja que el frente
       add(`Cajón ${i + 1} lateral izquierdo`, bxl, yb, zb, E, 400, hb);
       add(`Cajón ${i + 1} lateral derecho`, bxl + bw - E, yb, zb, E, 400, hb);
       add(`Cajón ${i + 1} testero frontal`, bxl + E, yb + 400 - E, zb, bw - 2 * E, E, hb);
@@ -994,20 +1017,18 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     }
     const leftZone = xc - x0 > 1, rightZone = x1 - (xc + Wc) > 1;
     const zt = z0 + Hcj;                                          // cara de arriba de la tapa del cajonero
-    if (colTop - zt > 100) {
+    if (closet.shelvesOn !== false && colTop - zt > 100) {
       // Sobre la tapa: dos costados (siempre, también contra el lado del closet) y los entrepaños dentro de ellos, cada ~315 mm hasta cerca del maletero
       // Cajonero a un extremo: el costado junto al lado del closet se puede quitar (se pregunta); entonces los entrepaños se alargan hasta el largo de la tapa
-      // El costado solo se puede quitar del lado del cajonero que da a un muro (frente a un marco con dilatada)
-      const dropL = closet.cajoneroPos === 'left' && closet.leftWall && (closet.costadoLeft === false || closet.sideCostado === false);
-      const dropR = closet.cajoneroPos === 'right' && closet.rightWall && (closet.costadoRight === false || closet.sideCostado === false);
-      if (!dropL) add('Costado entrepaños izquierdo', xc, 0, zt, E, Dc, colTop - zt);
-      if (!dropR) add('Costado entrepaños derecho', xc + Wc - E, 0, zt, E, Dc, colTop - zt);
+      if (!dropL && !raiseL && latL) add('Costado entrepaños izquierdo', xc, 0, zt, E, Dc, colTop - zt);
+      if (!dropR && !raiseR && latR) add('Costado entrepaños derecho', xc + Wc - E, 0, zt, E, Dc, colTop - zt);
       const tapaX0 = closet.cajoneroPos === 'left' ? xc - dilW : xc, tapaX1 = tapaX0 + Wc + dilW;
-      const shX0 = dropL ? tapaX0 : xc + E;
-      const shX1 = dropR ? tapaX1 : xc + Wc - E;
+      // sin lateral o sin costado de entrepaños en ese lado: los entrepaños llegan al ras (del costado del closet o del muro)
+      const shX0 = dropL || !latL ? tapaX0 : xc + E;
+      const shX1 = dropR || !latR ? tapaX1 : xc + Wc - E;
       // Los entrepaños (cantidad que se pregunta) se reparten el espacio entre la tapa del cajonero y el maletero: los huecos quedan iguales
       const nSh = dv.shelfCount, gapS = (colTop - zt - nSh * E) / (nSh + 1);
-      for (let i = 0; i < nSh; i++) add('Entrepaño closet', shX0, 0, zt + gapS * (i + 1) + E * i, shX1 - shX0, Dl, E);
+      for (let i = 0; i < nSh; i++) add('Entrepaño closet', shX0, 0, zt + gapS * (i + 1) + E * i, shX1 - shX0, Dl0, E);
     }
     // Tubos para colgar en las zonas libres: el primero 40 mm bajo el maletero y el segundo a 900 mm del piso
     // --- Puertas corredizas: ancho = (marco horizontal + (n - 1) x traslape) / n, alto = espacio libre - 20; van en dos rieles (adelante y atrás) y se alternan ---

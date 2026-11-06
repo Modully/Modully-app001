@@ -497,7 +497,7 @@ export default function App() {
   const [dilatationGap, setDilatationGap] = useState(DILATATION_GAP_DEFAULT);
   const [dilatationDepth, setDilatationDepth] = useState(DILATATION_DEPTH_DEFAULT);
   // Qué se ve en la escena (solo visual: no cambia el diseño, el despiece ni la exportación)
-  const [visibility, setVisibility] = useState({ upper: true, lower: true, counter: true, appliances: true, doors: true });
+  const [visibility, setVisibility] = useState({ upper: true, lower: true, counter: true, appliances: true, doors: true, shelves: true, cajonero: true, costado: true });
   const [hasLeftClosure, setHasLeftClosure] = useState(false);
   const [hasRightClosure, setHasRightClosure] = useState(false);
 
@@ -4071,22 +4071,31 @@ export default function App() {
                         </div>
                       </div>
 
-                      {closet.cajoneroPos === 'left' && closetInput?.leftWall && (
+                      <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
+                        <div>
+                          <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Entrepaños sobre el cajonero</label>
+                          <p className="text-[9px] font-bold text-slate-400 mt-0.5">Activa o desactiva la sección (costados y entrepaños)</p>
+                        </div>
+                        <button onClick={() => setCloset(c => ({ ...c, shelvesOn: c.shelvesOn === false }))} className={`w-10 h-5 rounded-full transition-all relative shrink-0 ${closet.shelvesOn !== false ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+                          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${closet.shelvesOn !== false ? 'left-5.5' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                      {closet.cajoneroPos === 'left' && (
                         <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
                           <div>
-                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Costado de los entrepaños junto al muro izquierdo</label>
-                            <p className="text-[9px] font-bold text-slate-400 mt-0.5">Frente al marco con dilatada; si no lleva, los entrepaños se alargan hasta el muro</p>
+                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Costado de los entrepaños (izquierdo)</label>
+                            <p className="text-[9px] font-bold text-slate-400 mt-0.5">Si no lleva, los entrepaños se alargan hasta el muro o el costado de ese lado</p>
                           </div>
                           <button onClick={() => setCloset(c => ({ ...c, costadoLeft: !(c.costadoLeft !== false && c.sideCostado !== false), sideCostado: undefined }))} className={`w-10 h-5 rounded-full transition-all relative shrink-0 ${(closet.costadoLeft !== false && closet.sideCostado !== false) ? 'bg-indigo-600' : 'bg-slate-200'}`}>
                             <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${(closet.costadoLeft !== false && closet.sideCostado !== false) ? 'left-5.5' : 'left-0.5'}`} />
                           </button>
                         </div>
                       )}
-                      {closet.cajoneroPos === 'right' && closetInput?.rightWall && (
+                      {closet.cajoneroPos === 'right' && (
                         <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
                           <div>
-                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Costado de los entrepaños junto al muro derecho</label>
-                            <p className="text-[9px] font-bold text-slate-400 mt-0.5">Frente al marco con dilatada; si no lleva, los entrepaños se alargan hasta el muro</p>
+                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Costado de los entrepaños (derecho)</label>
+                            <p className="text-[9px] font-bold text-slate-400 mt-0.5">Si no lleva, los entrepaños se alargan hasta el muro o el costado de ese lado</p>
                           </div>
                           <button onClick={() => setCloset(c => ({ ...c, costadoRight: !(c.costadoRight !== false && c.sideCostado !== false), sideCostado: undefined }))} className={`w-10 h-5 rounded-full transition-all relative shrink-0 ${(closet.costadoRight !== false && closet.sideCostado !== false) ? 'bg-indigo-600' : 'bg-slate-200'}`}>
                             <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${(closet.costadoRight !== false && closet.sideCostado !== false) ? 'left-5.5' : 'left-0.5'}`} />
@@ -4472,7 +4481,7 @@ export default function App() {
                   )}
                   <div className="w-px h-6 bg-slate-200" />
                   <div className="flex gap-1">
-                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos'], ['doors', 'Puertas', 'las puertas corredizas']] as const).filter(([key]) => (key !== 'doors' || isClosetSection) && (key !== 'upper' || (cfg.hasUpper && !isClosetSection)) && (key !== 'lower' || !isClosetSection) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
+                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos'], ['doors', 'Puertas', 'las puertas corredizas'], ['shelves', 'Entrepaños', 'los entrepaños'], ['cajonero', 'Cajonero', 'el cajonero'], ['costado', 'Costado', 'el costado piso a techo']] as const).filter(([key]) => ((key !== 'doors' && key !== 'shelves' && key !== 'cajonero' && key !== 'costado') || isClosetSection) && (key !== 'upper' || (cfg.hasUpper && !isClosetSection)) && (key !== 'lower' || !isClosetSection) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
                       <button
                         key={key}
                         onClick={() => setVisibility(v => ({ ...v, [key]: !v[key] }))}

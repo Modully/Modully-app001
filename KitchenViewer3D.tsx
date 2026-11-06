@@ -1386,6 +1386,21 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
               <button key={val} onClick={() => onChange({ cajoneroPos: val })} className={`py-1 rounded-lg text-[10px] font-black border-2 ${c.cajoneroPos === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
             ))}
           </div>
+          <div className="grid grid-cols-2 gap-1">
+            {([['parche', 'De parche'], ['embebido', 'Embebido']] as const).map(([val, label]) => (
+              <button key={val} onClick={() => onChange({ cajonFront: val })} className={`py-1 rounded-lg text-[10px] font-black border-2 ${(c.cajonFront ?? 'parche') === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+            ))}
+          </div>
+          {c.cajonFront === 'embebido' && ((c.cajoneroPos === 'left' && !api.leftWall) || (c.cajoneroPos === 'right' && !api.rightWall)) && (
+            <ClosetToggle label="Sin lateral (correderas al costado)" on={c.sinLateral === true} onClick={() => onChange({ sinLateral: c.sinLateral !== true })} />
+          )}
+          {c.cajonFront === 'embebido' && (
+            <>
+              <ClosetToggle label="Laterales hasta el maletero" on={c.lateralesAlMaletero === true} onClick={() => onChange({ lateralesAlMaletero: c.lateralesAlMaletero !== true, shelvesOn: true })} />
+              {c.lateralesAlMaletero === true && <ClosetNumber label="Entrepaños" value={d.shelfCount} hint={d.suggestedShelves} onCommit={(n) => onChange({ shelfCount: Math.max(0, Math.min(12, Math.round(n))) })} />}
+            </>
+          )}
+          <p className="text-[9px] font-bold text-slate-400">Parche: el frente va adelante del lateral. Embebido: va dentro (ancho interno − 6 mm) y el lateral se alarga 15 mm.</p>
           <ClosetNumber label="Cajones" value={d.drawerCount} hint={d.suggestedDrawers} onCommit={(n) => onChange({ cajonCount: Math.max(1, Math.min(8, Math.round(n))) })} />
           <ClosetNumber label="Altura (mm del piso)" value={d.cajoneroTop} hint={d.suggestedCajoneroTop} onCommit={(n) => onChange({ cajoneroTop: Math.max(300, Math.min(1800, Math.round(n))) })} />
           <ClosetNumber label="Ancho" value={d.cajoneroWidth} hint={d.suggestedCajonero} onCommit={(n) => onChange({ cajoneroWidth: Math.max(300, Math.round(n)) })} />
@@ -1393,10 +1408,11 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
       )}
       {section === 'entrepanos' && (
         <>
+          <ClosetToggle label="Lleva entrepaños" on={c.shelvesOn !== false} onClick={() => onChange({ shelvesOn: c.shelvesOn === false })} />
           <ClosetNumber label="Entrepaños" value={d.shelfCount} hint={d.suggestedShelves} onCommit={(n) => onChange({ shelfCount: Math.max(0, Math.min(12, Math.round(n))) })} />
           <p className="text-[9px] font-bold text-slate-400">Se reparten el espacio entre la tapa del cajonero y el maletero.</p>
-          {c.cajoneroPos === 'left' && api.leftWall && <ClosetToggle label="Costado junto al muro (izquierdo)" on={c.costadoLeft !== false && c.sideCostado !== false} onClick={() => onChange({ costadoLeft: !(c.costadoLeft !== false && c.sideCostado !== false), sideCostado: undefined })} />}
-          {c.cajoneroPos === 'right' && api.rightWall && <ClosetToggle label="Costado junto al muro (derecho)" on={c.costadoRight !== false && c.sideCostado !== false} onClick={() => onChange({ costadoRight: !(c.costadoRight !== false && c.sideCostado !== false), sideCostado: undefined })} />}
+          {c.cajoneroPos === 'left' && <ClosetToggle label={api.leftWall ? 'Costado junto al muro (izquierdo)' : 'Costado junto al costado (izquierdo)'} on={c.costadoLeft !== false && c.sideCostado !== false} onClick={() => onChange({ costadoLeft: !(c.costadoLeft !== false && c.sideCostado !== false), sideCostado: undefined })} />}
+          {c.cajoneroPos === 'right' && <ClosetToggle label={api.rightWall ? 'Costado junto al muro (derecho)' : 'Costado junto al costado (derecho)'} on={c.costadoRight !== false && c.sideCostado !== false} onClick={() => onChange({ costadoRight: !(c.costadoRight !== false && c.sideCostado !== false), sideCostado: undefined })} />}
         </>
       )}
       {section === 'maletero' && (
@@ -2082,7 +2098,7 @@ interface KitchenViewer3DProps {
   onDragModule?: (id: string, newPositionX: number) => void;
   onResizeEdge?: (id: string, side: 'left' | 'right', deltaX: number, initialWidth: number, initialPositionX: number) => void;
   onMoveAppliance?: (type: ApplianceType, wall: WallName, distance: number) => void;
-  visibility?: { upper: boolean; lower: boolean; counter: boolean; appliances: boolean; doors?: boolean };
+  visibility?: { upper: boolean; lower: boolean; counter: boolean; appliances: boolean; doors?: boolean; shelves?: boolean; cajonero?: boolean; costado?: boolean };
   collisions?: Box[]; // cajas que chocan: se marcan en rojo
   measureMode?: boolean; // cinta métrica activa: la escena solo se mira y se mide
   onResizeJunction?: (leftId: string, rightId: string, deltaX: number, initialLeftWidth: number, initialRightWidth: number, initialLeftPositionX: number, initialRightPositionX: number) => void;
@@ -2268,7 +2284,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         ))}
 
         {/* Piezas de los módulos convertidos: laterales, base, techo, puentes, amarres, espaldar y entrepaños */}
-        {boxes.filter(b => b.kind === 'panel' && (b.name.startsWith('Puerta corrediza') ? vis.doors !== false : (b.id.startsWith('panel-upper-') ? vis.upper : vis.lower))).map(b => (
+        {boxes.filter(b => b.kind === 'panel' && !((vis.shelves === false && closetSectionOf(b.name) === 'entrepanos') || (vis.cajonero === false && closetSectionOf(b.name) === 'cajonero') || (vis.costado === false && closetSectionOf(b.name) === 'costado')) && (b.name.startsWith('Puerta corrediza') ? vis.doors !== false : (b.id.startsWith('panel-upper-') ? vis.upper : vis.lower))).map(b => (
           <mesh
             key={b.id}
             position={boxCenter(b)}

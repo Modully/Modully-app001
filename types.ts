@@ -81,6 +81,10 @@ export interface ClosetConfig {
   cajoneroPos: 'left' | 'center' | 'right'; // dónde va el cajonero (se sugiere según el espacio)
   cajonCount?: number;        // cajones del cajonero; sin valor = los que hagan falta para llegar a la altura del cajonero con frentes de 200 mm como máximo
   maleteroTop?: number;       // altura del tablero del maletero; sin valor = la menor de 1900 mm o (techo - 350)
+  cajonFront?: 'parche' | 'embebido'; // frentes de cajón: de parche (adelante de los laterales, por defecto) o embebidos (dentro: ancho interno - 6 mm y el lateral se alarga 15 mm, canto al ras del frente)
+  sinLateral?: boolean;       // solo con frentes embebidos y el cajonero junto a un costado del closet: se quita el lateral de ese lado y las correderas se amarran al costado
+  lateralesAlMaletero?: boolean; // solo con frentes embebidos: los laterales del cajonero suben hasta el maletero (hacen de costados de los entrepaños) y la tapa queda entre ellos
+  shelvesOn?: boolean;        // sección de entrepaños (costados y entrepaños sobre el cajonero): activa por defecto
   costadoDepth?: number;      // fondo del costado piso-techo; la base toma el mismo fondo (sin valor = 550)
   costadoLeft?: boolean;      // costado izquierdo de los entrepaños: lleva (por defecto) o no; sin costado los entrepaños se alargan
   costadoRight?: boolean;     // ídem a la derecha
