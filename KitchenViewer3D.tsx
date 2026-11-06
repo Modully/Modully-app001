@@ -5,7 +5,7 @@ import { OrbitControls, Grid, Environment, Text, Edges, PerspectiveCamera, Ortho
 import * as THREE from 'three';
 import { IslandItem, KitchenModule, Appliance, ApplianceType, LayoutType, WallName } from './types';
 import type { CounterEdge, CounterExtras, closetDerived } from './boxes';
-import { closetSectionOf } from './boxes';
+import { closetSectionOf, closetCajoneroIndex } from './boxes';
 import type { ClosetConfig } from './types';
 import { Box, findModuleBox, boxesBounds, applianceCenter, counterTopZ, CORNER_BLIND_OFFSET, WALL_THICKNESS } from './boxes';
 import { COLORS } from './constants';
@@ -175,6 +175,46 @@ const FaceHandle: React.FC<{
         </button>
       </div>
     </Html>
+  );
+};
+
+
+/** Flecha azul para estirar el fondo del cajonero (arrastre = cambia el fondo; los entrepaños y laterales quedan 20 mm menos) */
+const CajoneroStretch: React.FC<{ position: [number, number, number]; depth: number; onChange: (d: number) => void; controlsRef?: React.RefObject<any> }> = ({ position, depth, onChange, controlsRef }) => {
+  const { camera, size } = useThree();
+  const st = useRef<{ value: number; sx: number; sy: number } | null>(null);
+  const [live, setLive] = useState(depth);
+  const [from, setFrom] = useState(depth);   // fondo con el que empezó el arrastre: la cota muestra cuánto se ha movido
+  useEffect(() => { if (!st.current) { setLive(depth); setFrom(depth); } }, [depth]);
+  const startDrag = useDocumentDrag(
+    (dx, dy) => {
+      const s = st.current;
+      if (!s) return;
+      const v = Math.min(500, Math.max(300, Math.round((s.value + pixelsToMm(dx, dy, s.sx, s.sy)) / 5) * 5));
+      setLive(v);
+      onChange(v);
+    },
+    () => { st.current = null; if (controlsRef?.current) controlsRef.current.enabled = true; document.body.style.cursor = 'auto'; }
+  );
+  return (
+    <FaceHandle
+      position={position}
+      normal={[0, 0, 1]}
+      meshPosition={[0, 0, 0]}
+      meshRotation={[0, 0, 0]}
+      label={`${Math.round(live)} mm  (${live - from >= 0 ? '+' : ''}${Math.round(live - from)})`}
+      title="Estirar el fondo del cajonero (los entrepaños quedan 20 mm menos)"
+      onStart={(e) => {
+        const { sx, sy } = screenPixelsPerMeter(camera, size, new THREE.Vector3(...position), new THREE.Vector3(0, 0, 1));
+        st.current = { value: depth, sx, sy };
+        setLive(depth);
+        setFrom(depth);
+        if (controlsRef?.current) controlsRef.current.enabled = false;
+        document.body.style.cursor = 'ns-resize';
+        startDrag(e);
+      }}
+      onClick={() => {}}
+    />
   );
 };
 
@@ -1294,6 +1334,12 @@ export interface ClosetFormApi {
   onLArm: (side: 'left' | 'right') => void;
   onChange: (patch: Partial<ClosetConfig>) => void;
   onZocalo: (patch: { hasZocalo?: boolean; zocaloHeight?: number }) => void;
+  // dos cajoneros: el segundo tiene sus propias medidas y su propio formulario
+  doorsGhost?: boolean;                 // puertas translúcidas
+  onDoorsGhost?: (on: boolean) => void;
+  config2?: ClosetConfig;
+  derived2?: ReturnType<typeof closetDerived>;
+  onChange2?: (patch: Partial<ClosetConfig>) => void;
 }
 
 /** Campo numérico del formulario del closet: se escribe libremente y se aplica con Enter o al salir del campo */
@@ -1325,7 +1371,7 @@ const ClosetToggle: React.FC<{ label: string; on: boolean; onClick: () => void }
   </button>
 );
 
-const CLOSET_SECTION_TITLES: Record<string, string> = { muro: 'Muros del closet', taparriel: 'Tapa de riel', costado: 'Costado piso a techo', zocalo: 'Zócalo', base: 'Base (marco inferior)', cajonero: 'Cajonero', entrepanos: 'Entrepaños', maletero: 'Maletero' };
+const CLOSET_SECTION_TITLES: Record<string, string> = { puertas: 'Puertas corredizas', muro: 'Muros del closet', taparriel: 'Tapa de riel', costado: 'Costado piso a techo', zocalo: 'Zócalo', base: 'Base (marco inferior)', cajonero: 'Cajonero', entrepanos: 'Entrepaños', maletero: 'Maletero' };
 
 /** Formulario de una sección del closet (doble clic sobre sus piezas): zócalo, base, cajonero, entrepaños o maletero */
 const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose: () => void }> = ({ section, api, onClose }) => {
@@ -1333,6 +1379,13 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
   return (
     <div data-overlay data-module-editor className="pointer-events-auto w-60 p-3 space-y-2 rounded-xl bg-white border border-slate-300 shadow-xl" onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
       <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">{CLOSET_SECTION_TITLES[section]}</div>
+      {section === 'puertas' && (
+        <>
+          <ClosetNumber label="Alto de las puertas (mm)" value={d.doorHeight} hint={d.suggestedDoorHeight} onCommit={(n) => onChange({ doorHeight: Math.max(500, Math.round(n)) })} />
+          <ClosetToggle label="Translúcidas" on={api.doorsGhost === true} onClick={() => api.onDoorsGhost?.(api.doorsGhost !== true)} />
+          <p className="text-[9px] font-bold text-slate-400">Alto sugerido: espacio libre − 20 mm. Translúcidas para ver el interior sin ocultar las puertas.</p>
+        </>
+      )}
       {section === 'muro' && (
         <>
           <div className="grid grid-cols-3 gap-1">
@@ -1381,11 +1434,11 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
       )}
       {section === 'cajonero' && (
         <>
-          <div className="grid grid-cols-3 gap-1">
+          {c.twoCajoneros !== true && <div className="grid grid-cols-3 gap-1">
             {([['left', 'Izquierda'], ['center', 'Centro'], ['right', 'Derecha']] as const).map(([val, label]) => (
               <button key={val} onClick={() => onChange({ cajoneroPos: val })} className={`py-1 rounded-lg text-[10px] font-black border-2 ${c.cajoneroPos === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
             ))}
-          </div>
+          </div>}
           <div className="grid grid-cols-2 gap-1">
             {([['parche', 'De parche'], ['embebido', 'Embebido']] as const).map(([val, label]) => (
               <button key={val} onClick={() => onChange({ cajonFront: val })} className={`py-1 rounded-lg text-[10px] font-black border-2 ${(c.cajonFront ?? 'parche') === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
@@ -1394,12 +1447,10 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
           {c.cajonFront === 'embebido' && ((c.cajoneroPos === 'left' && !api.leftWall) || (c.cajoneroPos === 'right' && !api.rightWall)) && (
             <ClosetToggle label="Sin lateral (correderas al costado)" on={c.sinLateral === true} onClick={() => onChange({ sinLateral: c.sinLateral !== true })} />
           )}
-          {c.cajonFront === 'embebido' && (
-            <>
+          <>
               <ClosetToggle label="Laterales hasta el maletero" on={c.lateralesAlMaletero === true} onClick={() => onChange({ lateralesAlMaletero: c.lateralesAlMaletero !== true, shelvesOn: true })} />
               {c.lateralesAlMaletero === true && <ClosetNumber label="Entrepaños" value={d.shelfCount} hint={d.suggestedShelves} onCommit={(n) => onChange({ shelfCount: Math.max(0, Math.min(12, Math.round(n))) })} />}
-            </>
-          )}
+          </>
           <p className="text-[9px] font-bold text-slate-400">Parche: el frente va adelante del lateral. Embebido: va dentro (ancho interno − 6 mm) y el lateral se alarga 15 mm.</p>
           <ClosetNumber label="Cajones" value={d.drawerCount} hint={d.suggestedDrawers} onCommit={(n) => onChange({ cajonCount: Math.max(1, Math.min(8, Math.round(n))) })} />
           <ClosetNumber label="Altura (mm del piso)" value={d.cajoneroTop} hint={d.suggestedCajoneroTop} onCommit={(n) => onChange({ cajoneroTop: Math.max(300, Math.min(1800, Math.round(n))) })} />
@@ -2120,7 +2171,9 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
     setContextId(prev => (prev === id ? prev : null));
   };
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [closetSection, setClosetSection] = useState<{ section: string; pos: [number, number, number] } | null>(null); // sección del closet con su formulario abierto
+  const [doorsGhost, setDoorsGhost] = useState(false); // puertas del closet translúcidas
+  const [cajoneroSel, setCajoneroSel] = useState<0 | 1 | 2>(0); // cajonero seleccionado con un clic: muestra la flecha para estirar su fondo
+  const [closetSection, setClosetSection] = useState<{ section: string; idx?: 1 | 2; pos: [number, number, number] } | null>(null); // sección del closet con su formulario abierto
   const [contextId, setContextId] = useState<string | null>(null); // módulo con el formulario del clic derecho abierto
   const [selectedCounter, setSelectedCounter] = useState<string | null>(null);
   const [editingCounter, setEditingCounter] = useState<string | null>(null);
@@ -2235,6 +2288,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           setEditingId(null);
           setContextId(null);
           setClosetSection(null);
+          setCajoneroSel(0);
           setSelectedCounter(null);
           setEditingCounter(null);
           setPair([]);
@@ -2290,20 +2344,31 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             position={boxCenter(b)}
             castShadow
             {...(closetForm && closetSectionOf(b.name) ? {
-              onDoubleClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setClosetSection({ section: closetSectionOf(b.name)!, pos: [boxCenter(b)[0], closetSectionOf(b.name) === 'costado' ? (b.z + b.sz * 0.5) / 1000 : (b.z + b.sz) / 1000 + 0.05, boxCenter(b)[2]] }); },
+              onDoubleClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setClosetSection({ section: closetSectionOf(b.name)!, idx: closetCajoneroIndex(b.name), pos: [boxCenter(b)[0], (closetSectionOf(b.name) === 'costado' || closetSectionOf(b.name) === 'puertas') ? (b.z + b.sz * 0.5) / 1000 : (b.z + b.sz) / 1000 + 0.05, boxCenter(b)[2]] }); },
+              onClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setCajoneroSel(closetSectionOf(b.name) === 'cajonero' ? closetCajoneroIndex(b.name) : 0); },
               onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; },
               onPointerOut: () => { document.body.style.cursor = 'auto'; },
             } : { raycast: () => null })}
           >
             <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
-            <meshStandardMaterial color={b.name.startsWith('Espaldar') || b.name.includes('fondo') ? '#e5e7eb' : b.name.startsWith('Puerta corrediza') ? '#cdb592' : b.name.startsWith('Tubo') ? '#9ca3af' : b.name.startsWith('Entrepaño') ? '#f3e8d2' : (b.id.startsWith('panel-upper-') ? '#e8d3b0' : '#dcc5a0')} roughness={0.7} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
-            <Edges color={b.moduleId && b.moduleId === selectedId ? '#ef4444' : (b.moduleId && pair.includes(b.moduleId) ? '#f59e0b' : '#5b4630')} linewidth={b.moduleId && (b.moduleId === selectedId || pair.includes(b.moduleId)) ? 3 : 1} />
+            <meshStandardMaterial color={b.name.startsWith('Espaldar') || b.name.includes('fondo') ? '#e5e7eb' : b.name.startsWith('Puerta corrediza') ? '#cdb592' : b.name.startsWith('Tubo') ? '#9ca3af' : b.name.startsWith('Entrepaño') ? '#f3e8d2' : (b.id.startsWith('panel-upper-') ? '#e8d3b0' : '#dcc5a0')} roughness={0.7} key={doorsGhost && b.name.startsWith('Puerta corrediza') ? 'ghost' : 'solid'} transparent={doorsGhost && b.name.startsWith('Puerta corrediza')} opacity={doorsGhost && b.name.startsWith('Puerta corrediza') ? 0.25 : 1} depthWrite={!(doorsGhost && b.name.startsWith('Puerta corrediza'))}  polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+            <Edges color={cajoneroSel !== 0 && closetSectionOf(b.name) === 'cajonero' && closetCajoneroIndex(b.name) === cajoneroSel ? '#ef4444' : b.moduleId && b.moduleId === selectedId ? '#ef4444' : (b.moduleId && pair.includes(b.moduleId) ? '#f59e0b' : '#5b4630')} linewidth={b.moduleId && (b.moduleId === selectedId || pair.includes(b.moduleId)) ? 3 : 1} />
           </mesh>
         ))}
 
+        {closetForm && cajoneroSel && (() => {
+          const tapa = boxes.find(x => x.name === (cajoneroSel === 2 ? 'Tapa cajonero · 2' : 'Tapa cajonero'));
+          if (!tapa) return null;
+          const cfgK = cajoneroSel === 2 && closetForm.config2 ? closetForm.config2 : closetForm.config;
+          const changeK = cajoneroSel === 2 && closetForm.onChange2 ? closetForm.onChange2 : closetForm.onChange;
+          const c = boxCenter(tapa);
+          const front = toWorldXZ(0, tapa.y + tapa.sy)[1];
+          return <CajoneroStretch position={[c[0], c[1] + 0.12, front + 0.06]} depth={cfgK.cajoneroDepth ?? 450} onChange={(d) => changeK({ cajoneroDepth: d })} controlsRef={controlsRef} />;
+        })()}
+
         {closetForm && closetSection && (
           <Html position={closetSection.pos} center zIndexRange={[220, 0]} occlude={false} style={{ pointerEvents: 'none' }}>
-            <ClosetSectionForm section={closetSection.section} api={closetForm} onClose={() => setClosetSection(null)} />
+            <ClosetSectionForm section={closetSection.section} api={{ ...(closetSection.idx === 2 && closetForm.config2 && closetForm.derived2 && closetForm.onChange2 ? { ...closetForm, config: closetForm.config2, derived: closetForm.derived2, onChange: closetForm.onChange2 } : closetForm), doorsGhost, onDoorsGhost: setDoorsGhost }} onClose={() => setClosetSection(null)} />
           </Html>
         )}
 

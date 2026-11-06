@@ -880,6 +880,8 @@ export default function App() {
     rightWall: layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right') || hasRightClosure,
   } : undefined), [isClosetSection, closet, layout, lArm, hasLeftClosure, hasRightClosure]);
 
+  const closetPos2 = closet.twoPlacement === 'extremos' ? 'right' as const : 'center' as const;
+  const closetDerived2 = useMemo(() => (closetInput && closet.twoCajoneros ? closetDerived({ ...closetInput, ...closet.cajonero2, cajoneroPos: closetPos2 }, wallA, spaceHeight, hasZocalo, zocaloHeight) : null), [closetInput, closet, closetPos2, wallA, spaceHeight, hasZocalo, zocaloHeight]);
   const closetDerivedValues = useMemo(() => (closetInput ? closetDerived(closetInput, wallA, spaceHeight, hasZocalo, zocaloHeight) : null), [closetInput, wallA, spaceHeight, hasZocalo, zocaloHeight]);
 
   const activeIslands = useMemo(() => islands
@@ -4063,6 +4065,23 @@ export default function App() {
                       )}
 
                       <div className="space-y-1">
+                        <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Cantidad de cajoneros</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([[false, '1 cajonero'], [true, '2 cajoneros']] as const).map(([val, label]) => (
+                            <button key={label} onClick={() => setCloset(c => ({ ...c, twoCajoneros: val, doorCount: undefined }))} className={`py-2 rounded-xl text-[10px] font-black border-2 ${(closet.twoCajoneros === true) === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+                          ))}
+                        </div>
+                        {closet.twoCajoneros === true && (
+                          <div className="grid grid-cols-2 gap-2 pt-1">
+                            {([['centro', 'Al centro (dilatada central de 6 cm)'], ['extremos', 'A los extremos']] as const).map(([val, label]) => (
+                              <button key={val} onClick={() => setCloset(c => ({ ...c, twoPlacement: val, doorCount: undefined }))} className={`py-2 px-2 rounded-xl text-[10px] font-black border-2 leading-tight ${(closet.twoPlacement ?? 'centro') === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {closet.twoCajoneros !== true && (
+                      <div className="space-y-1">
                         <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Cajonero: dónde va (sugerido: {wallA >= 2300 ? 'al centro' : 'a un extremo'})</label>
                         <div className="grid grid-cols-3 gap-2">
                           {([['left', 'Izquierda'], ['center', 'Centro'], ['right', 'Derecha']] as const).map(([val, label]) => (
@@ -4070,6 +4089,7 @@ export default function App() {
                           ))}
                         </div>
                       </div>
+                      )}
 
                       <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
                         <div>
@@ -4383,7 +4403,10 @@ export default function App() {
                   lArm={lArm}
                   onEditIsland={updateIsland}
                   closetForm={isClosetSection && closetDerivedValues ? {
-                    config: closet,
+                    config: closet.twoCajoneros ? { ...closet, cajoneroPos: closet.twoPlacement === 'extremos' ? 'left' : 'center' } : closet,
+                    config2: closet.twoCajoneros ? { ...closet, ...closet.cajonero2, cajoneroPos: closetPos2 } : undefined,
+                    derived2: closetDerived2 ?? undefined,
+                    onChange2: (patch) => setCloset(c => ({ ...c, cajonero2: { ...c.cajonero2, ...patch } })),
                     derived: closetDerivedValues,
                     hasZocalo,
                     zocaloHeight,

@@ -83,7 +83,11 @@ export interface ClosetConfig {
   maleteroTop?: number;       // altura del tablero del maletero; sin valor = la menor de 1900 mm o (techo - 350)
   cajonFront?: 'parche' | 'embebido'; // frentes de cajón: de parche (adelante de los laterales, por defecto) o embebidos (dentro: ancho interno - 6 mm y el lateral se alarga 15 mm, canto al ras del frente)
   sinLateral?: boolean;       // solo con frentes embebidos y el cajonero junto a un costado del closet: se quita el lateral de ese lado y las correderas se amarran al costado
-  lateralesAlMaletero?: boolean; // solo con frentes embebidos: los laterales del cajonero suben hasta el maletero (hacen de costados de los entrepaños) y la tapa queda entre ellos
+  lateralesAlMaletero?: boolean; // los laterales del cajonero (de parche o embebido) suben hasta el maletero (hacen de costados de los entrepaños) y la tapa queda entre ellos
+  cajoneroDepth?: number;     // fondo del cajonero (tapa y costados de arriba; laterales y entrepaños 20 mm menos); sin valor = 450. Se estira con la flecha al seleccionarlo
+  twoCajoneros?: boolean;     // dos cajoneros
+  twoPlacement?: 'centro' | 'extremos'; // dos cajoneros: juntos al centro (con dilatada central de 60 mm para el traslape de las puertas) o uno en cada extremo
+  cajonero2?: Partial<ClosetConfig>; // medidas propias del segundo cajonero (cajones, ancho, altura, fondo, frentes, entrepaños...); el primero usa los campos de arriba
   shelvesOn?: boolean;        // sección de entrepaños (costados y entrepaños sobre el cajonero): activa por defecto
   costadoDepth?: number;      // fondo del costado piso-techo; la base toma el mismo fondo (sin valor = 550)
   costadoLeft?: boolean;      // costado izquierdo de los entrepaños: lleva (por defecto) o no; sin costado los entrepaños se alargan
