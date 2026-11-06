@@ -1053,8 +1053,9 @@ export function closetDerived(cfg: ClosetConfig & { leftWall: boolean; rightWall
 }
 
 /** A qué sección del closet pertenece una pieza (para abrir su formulario con doble clic); sin sección = no se abre nada */
-export function closetSectionOf(name: string): 'costado' | 'zocalo' | 'base' | 'cajonero' | 'entrepanos' | 'maletero' | null {
+export function closetSectionOf(name: string): 'taparriel' | 'costado' | 'zocalo' | 'base' | 'cajonero' | 'entrepanos' | 'maletero' | null {
   if (name === 'Costado closet') return 'costado';
+  if (name === 'Tapa riel closet') return 'taparriel';
   if (name.startsWith('Zócalo closet')) return 'zocalo';
   if (name === 'Base closet' || name === 'Base marco hor closet') return 'base';
   if (name.startsWith('Lateral cajonero') || name === 'Tapa cajonero' || name.startsWith('Frente cajón') || name.startsWith('Cajón ') || name === 'Puente amarre cajonero' || name === 'Dilatación lateral cajonero') return 'cajonero';

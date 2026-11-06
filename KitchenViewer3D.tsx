@@ -1288,6 +1288,10 @@ export interface ClosetFormApi {
   zocaloHeight: number;
   leftWall: boolean;
   rightWall: boolean;
+  layout: 'STRAIGHT' | 'L_SHAPE' | 'U_SHAPE';
+  lArm: 'left' | 'right';
+  onLayout: (l: 'STRAIGHT' | 'L_SHAPE' | 'U_SHAPE') => void;
+  onLArm: (side: 'left' | 'right') => void;
   onChange: (patch: Partial<ClosetConfig>) => void;
   onZocalo: (patch: { hasZocalo?: boolean; zocaloHeight?: number }) => void;
 }
@@ -1321,7 +1325,7 @@ const ClosetToggle: React.FC<{ label: string; on: boolean; onClick: () => void }
   </button>
 );
 
-const CLOSET_SECTION_TITLES: Record<string, string> = { costado: 'Costado piso a techo', zocalo: 'Zócalo', base: 'Base (marco inferior)', cajonero: 'Cajonero', entrepanos: 'Entrepaños', maletero: 'Maletero' };
+const CLOSET_SECTION_TITLES: Record<string, string> = { muro: 'Muros del closet', taparriel: 'Tapa de riel', costado: 'Costado piso a techo', zocalo: 'Zócalo', base: 'Base (marco inferior)', cajonero: 'Cajonero', entrepanos: 'Entrepaños', maletero: 'Maletero' };
 
 /** Formulario de una sección del closet (doble clic sobre sus piezas): zócalo, base, cajonero, entrepaños o maletero */
 const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose: () => void }> = ({ section, api, onClose }) => {
@@ -1329,6 +1333,30 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
   return (
     <div data-overlay data-module-editor className="pointer-events-auto w-60 p-3 space-y-2 rounded-xl bg-white border border-slate-300 shadow-xl" onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
       <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">{CLOSET_SECTION_TITLES[section]}</div>
+      {section === 'muro' && (
+        <>
+          <div className="grid grid-cols-3 gap-1">
+            {([['STRAIGHT', 'Recto'], ['L_SHAPE', 'En L'], ['U_SHAPE', 'En U']] as const).map(([val, label]) => (
+              <button key={val} onClick={() => api.onLayout(val)} className={`py-1 rounded-lg text-[10px] font-black border-2 ${api.layout === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+            ))}
+          </div>
+          {api.layout === 'L_SHAPE' && (
+            <div className="grid grid-cols-2 gap-1">
+              {([['left', 'Brazo izquierdo'], ['right', 'Brazo derecho']] as const).map(([val, label]) => (
+                <button key={val} onClick={() => api.onLArm(val)} className={`py-1 rounded-lg text-[10px] font-black border-2 ${api.lArm === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+              ))}
+            </div>
+          )}
+          <p className="text-[9px] font-bold text-slate-400">El lado con muro lleva marco lateral y dilatada; el lado sin muro lleva costado.</p>
+        </>
+      )}
+      {section === 'taparriel' && (
+        <>
+          <ClosetToggle label="Lleva tapa de riel" on={c.tapaRiel !== false} onClick={() => onChange({ tapaRiel: c.tapaRiel === false })} />
+          <ClosetNumber label="Altura (mm)" value={c.tapaRielHeight ?? 110} hint={110} onCommit={(n) => onChange({ tapaRielHeight: Math.max(20, Math.min(400, Math.round(n))) })} />
+          <p className="text-[9px] font-bold text-slate-400">Va parada, adelante del marco. Si no la quieres, apágala (se vuelve a activar en el formulario del closet del Espacio).</p>
+        </>
+      )}
       {section === 'costado' && (
         <>
           <ClosetNumber label="Profundidad (mm)" value={c.costadoDepth ?? 550} hint={550} onCommit={(n) => onChange({ costadoDepth: Math.max(200, Math.min(900, Math.round(n))) })} />
@@ -2226,7 +2254,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         )}
 
         {boxes.filter(b => b.kind === 'wall').map(b => (
-          <mesh key={b.id} position={boxCenter(b)} castShadow receiveShadow>
+          <mesh key={b.id} position={boxCenter(b)} castShadow receiveShadow
+            {...(closetForm ? { onDoubleClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setClosetSection({ section: 'muro', pos: [e.point.x, e.point.y, e.point.z] }); } } : {})}>
             <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
             <meshStandardMaterial
               color={viewMode === 'plan' ? '#64748b' : (b.id.startsWith('closure') ? '#e2e8f0' : (b.wall === 'A' ? '#ffffff' : '#f8fafc'))}

@@ -4380,6 +4380,9 @@ export default function App() {
                     zocaloHeight,
                     leftWall: !!closetInput?.leftWall,
                     rightWall: !!closetInput?.rightWall,
+                    layout, lArm,
+                    onLayout: (l) => setLayout(l),
+                    onLArm: (side) => setLArm(side),
                     onChange: (patch) => setCloset(c => ({ ...c, ...patch })),
                     onZocalo: (patch) => { if (patch.hasZocalo !== undefined) setHasZocalo(patch.hasZocalo); if (patch.zocaloHeight !== undefined) setZocaloHeight(patch.zocaloHeight); },
                   } : undefined}
