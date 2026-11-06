@@ -4071,14 +4071,25 @@ export default function App() {
                         </div>
                       </div>
 
-                      {closet.cajoneroPos !== 'center' && (
+                      {closet.cajoneroPos === 'left' && closetInput?.leftWall && (
                         <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
                           <div>
-                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Costado junto al lado del closet</label>
-                            <p className="text-[9px] font-bold text-slate-400 mt-0.5">Costado de los entrepaños; si no lleva, los entrepaños se alargan hasta el largo de la tapa</p>
+                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Costado de los entrepaños junto al muro izquierdo</label>
+                            <p className="text-[9px] font-bold text-slate-400 mt-0.5">Frente al marco con dilatada; si no lleva, los entrepaños se alargan hasta el muro</p>
                           </div>
-                          <button onClick={() => setCloset(c => ({ ...c, sideCostado: c.sideCostado === false }))} className={`w-10 h-5 rounded-full transition-all relative shrink-0 ${closet.sideCostado !== false ? 'bg-indigo-600' : 'bg-slate-200'}`}>
-                            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${closet.sideCostado !== false ? 'left-5.5' : 'left-0.5'}`} />
+                          <button onClick={() => setCloset(c => ({ ...c, costadoLeft: !(c.costadoLeft !== false && c.sideCostado !== false), sideCostado: undefined }))} className={`w-10 h-5 rounded-full transition-all relative shrink-0 ${(closet.costadoLeft !== false && closet.sideCostado !== false) ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+                            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${(closet.costadoLeft !== false && closet.sideCostado !== false) ? 'left-5.5' : 'left-0.5'}`} />
+                          </button>
+                        </div>
+                      )}
+                      {closet.cajoneroPos === 'right' && closetInput?.rightWall && (
+                        <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
+                          <div>
+                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Costado de los entrepaños junto al muro derecho</label>
+                            <p className="text-[9px] font-bold text-slate-400 mt-0.5">Frente al marco con dilatada; si no lleva, los entrepaños se alargan hasta el muro</p>
+                          </div>
+                          <button onClick={() => setCloset(c => ({ ...c, costadoRight: !(c.costadoRight !== false && c.sideCostado !== false), sideCostado: undefined }))} className={`w-10 h-5 rounded-full transition-all relative shrink-0 ${(closet.costadoRight !== false && closet.sideCostado !== false) ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+                            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${(closet.costadoRight !== false && closet.sideCostado !== false) ? 'left-5.5' : 'left-0.5'}`} />
                           </button>
                         </div>
                       )}
@@ -4367,6 +4378,8 @@ export default function App() {
                     derived: closetDerivedValues,
                     hasZocalo,
                     zocaloHeight,
+                    leftWall: !!closetInput?.leftWall,
+                    rightWall: !!closetInput?.rightWall,
                     onChange: (patch) => setCloset(c => ({ ...c, ...patch })),
                     onZocalo: (patch) => { if (patch.hasZocalo !== undefined) setHasZocalo(patch.hasZocalo); if (patch.zocaloHeight !== undefined) setZocaloHeight(patch.zocaloHeight); },
                   } : undefined}
@@ -4456,7 +4469,7 @@ export default function App() {
                   )}
                   <div className="w-px h-6 bg-slate-200" />
                   <div className="flex gap-1">
-                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos'], ['doors', 'Puertas', 'las puertas corredizas']] as const).filter(([key]) => (key !== 'doors' || isClosetSection) && (key !== 'upper' || cfg.hasUpper) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
+                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos'], ['doors', 'Puertas', 'las puertas corredizas']] as const).filter(([key]) => (key !== 'doors' || isClosetSection) && (key !== 'upper' || (cfg.hasUpper && !isClosetSection)) && (key !== 'lower' || !isClosetSection) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
                       <button
                         key={key}
                         onClick={() => setVisibility(v => ({ ...v, [key]: !v[key] }))}

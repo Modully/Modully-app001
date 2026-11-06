@@ -1286,6 +1286,8 @@ export interface ClosetFormApi {
   derived: ReturnType<typeof closetDerived>;
   hasZocalo: boolean;
   zocaloHeight: number;
+  leftWall: boolean;
+  rightWall: boolean;
   onChange: (patch: Partial<ClosetConfig>) => void;
   onZocalo: (patch: { hasZocalo?: boolean; zocaloHeight?: number }) => void;
 }
@@ -1319,7 +1321,7 @@ const ClosetToggle: React.FC<{ label: string; on: boolean; onClick: () => void }
   </button>
 );
 
-const CLOSET_SECTION_TITLES: Record<string, string> = { zocalo: 'Zócalo', base: 'Base (marco inferior)', cajonero: 'Cajonero', entrepanos: 'Entrepaños', maletero: 'Maletero' };
+const CLOSET_SECTION_TITLES: Record<string, string> = { costado: 'Costado piso a techo', zocalo: 'Zócalo', base: 'Base (marco inferior)', cajonero: 'Cajonero', entrepanos: 'Entrepaños', maletero: 'Maletero' };
 
 /** Formulario de una sección del closet (doble clic sobre sus piezas): zócalo, base, cajonero, entrepaños o maletero */
 const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose: () => void }> = ({ section, api, onClose }) => {
@@ -1327,6 +1329,12 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
   return (
     <div data-overlay data-module-editor className="pointer-events-auto w-60 p-3 space-y-2 rounded-xl bg-white border border-slate-300 shadow-xl" onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
       <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">{CLOSET_SECTION_TITLES[section]}</div>
+      {section === 'costado' && (
+        <>
+          <ClosetNumber label="Profundidad (mm)" value={c.costadoDepth ?? 550} hint={550} onCommit={(n) => onChange({ costadoDepth: Math.max(200, Math.min(900, Math.round(n))) })} />
+          <p className="text-[9px] font-bold text-slate-400">La base toma la misma profundidad del costado.</p>
+        </>
+      )}
       {section === 'zocalo' && (
         <>
           <ClosetToggle label="Lleva zócalo" on={api.hasZocalo} onClick={() => api.onZocalo({ hasZocalo: !api.hasZocalo })} />
@@ -1337,6 +1345,8 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
       {section === 'base' && (
         <>
           <ClosetToggle label="Marco inferior (base acostada)" on={c.bottomFrame} onClick={() => onChange({ bottomFrame: !c.bottomFrame })} />
+          <ClosetToggle label="Lleva zócalo" on={api.hasZocalo} onClick={() => api.onZocalo({ hasZocalo: !api.hasZocalo })} />
+          {api.hasZocalo && <ClosetNumber label="Altura del zócalo" value={api.zocaloHeight} hint={80} onCommit={(n) => api.onZocalo({ zocaloHeight: Math.max(30, Math.min(200, Math.round(n))) })} />}
           <p className="text-[9px] font-bold text-slate-400">Va sobre el piso o sobre el zócalo. Con zócalo y sin marco queda el tipo T.</p>
         </>
       )}
@@ -1350,13 +1360,14 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
           <ClosetNumber label="Cajones" value={d.drawerCount} hint={d.suggestedDrawers} onCommit={(n) => onChange({ cajonCount: Math.max(1, Math.min(8, Math.round(n))) })} />
           <ClosetNumber label="Altura (mm del piso)" value={d.cajoneroTop} hint={d.suggestedCajoneroTop} onCommit={(n) => onChange({ cajoneroTop: Math.max(300, Math.min(1800, Math.round(n))) })} />
           <ClosetNumber label="Ancho" value={d.cajoneroWidth} hint={d.suggestedCajonero} onCommit={(n) => onChange({ cajoneroWidth: Math.max(300, Math.round(n)) })} />
-          {c.cajoneroPos !== 'center' && <ClosetToggle label="Costado junto al lado del closet" on={c.sideCostado !== false} onClick={() => onChange({ sideCostado: c.sideCostado === false })} />}
         </>
       )}
       {section === 'entrepanos' && (
         <>
           <ClosetNumber label="Entrepaños" value={d.shelfCount} hint={d.suggestedShelves} onCommit={(n) => onChange({ shelfCount: Math.max(0, Math.min(12, Math.round(n))) })} />
           <p className="text-[9px] font-bold text-slate-400">Se reparten el espacio entre la tapa del cajonero y el maletero.</p>
+          {c.cajoneroPos === 'left' && api.leftWall && <ClosetToggle label="Costado junto al muro (izquierdo)" on={c.costadoLeft !== false && c.sideCostado !== false} onClick={() => onChange({ costadoLeft: !(c.costadoLeft !== false && c.sideCostado !== false), sideCostado: undefined })} />}
+          {c.cajoneroPos === 'right' && api.rightWall && <ClosetToggle label="Costado junto al muro (derecho)" on={c.costadoRight !== false && c.sideCostado !== false} onClick={() => onChange({ costadoRight: !(c.costadoRight !== false && c.sideCostado !== false), sideCostado: undefined })} />}
         </>
       )}
       {section === 'maletero' && (
@@ -2233,7 +2244,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             position={boxCenter(b)}
             castShadow
             {...(closetForm && closetSectionOf(b.name) ? {
-              onDoubleClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setClosetSection({ section: closetSectionOf(b.name)!, pos: [boxCenter(b)[0], (b.z + b.sz) / 1000 + 0.05, boxCenter(b)[2]] }); },
+              onDoubleClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setClosetSection({ section: closetSectionOf(b.name)!, pos: [boxCenter(b)[0], closetSectionOf(b.name) === 'costado' ? (b.z + b.sz * 0.5) / 1000 : (b.z + b.sz) / 1000 + 0.05, boxCenter(b)[2]] }); },
               onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; },
               onPointerOut: () => { document.body.style.cursor = 'auto'; },
             } : { raycast: () => null })}

@@ -31,6 +31,7 @@ Fuente: planos de Inventor del usuario (closets corredizos de 1450 a 2800 mm y u
 - Cajonero al lado del marco (lado con muro): el cajonero queda a 45 mm del muro (el marco solo enmarca el frente), la tapa se alarga 45 mm hasta quedar al ras del muro y se crea una dilatación de 45 mm (del alto de los laterales, a ras del costado del cajonero) para tapar el hueco que se forma. Si el cajonero va al lado del costado o al centro, no lleva.
 - Si el cajonero va a un extremo, se pregunta si el costado de los entrepaños junto al lado del closet lleva o desaparece; si desaparece, los entrepaños se alargan hasta el largo de la tapa del cajonero.
 - Puente amarre de 70 mm al frente del cajonero, sobre la base, entre los dos laterales: tapa el hueco bajo el cajón de abajo.
+- Principio del cajonero (y de los muebles especiales): siempre 2 laterales y 5 puentes: 2 arriba (juntan la tapa), 2 atrás (para instalar al muro) y 1 inferior frontal (estructura). Si el cajonero va flotado, el puente inferior frontal pasa a ser base. Anotado, aún no construido en la escena.
 - Ancho sugerido: ancho de la puerta − 200 mm.
 - El cajón inferior no choca con el marco inferior: siempre 40 mm de espacio sobre la cara superior del marco inferior.
 

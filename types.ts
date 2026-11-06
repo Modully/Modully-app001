@@ -81,6 +81,9 @@ export interface ClosetConfig {
   cajoneroPos: 'left' | 'center' | 'right'; // dónde va el cajonero (se sugiere según el espacio)
   cajonCount?: number;        // cajones del cajonero; sin valor = los que hagan falta para llegar a la altura del cajonero con frentes de 200 mm como máximo
   maleteroTop?: number;       // altura del tablero del maletero; sin valor = la menor de 1900 mm o (techo - 350)
+  costadoDepth?: number;      // fondo del costado piso-techo; la base toma el mismo fondo (sin valor = 550)
+  costadoLeft?: boolean;      // costado izquierdo de los entrepaños: lleva (por defecto) o no; sin costado los entrepaños se alargan
+  costadoRight?: boolean;     // ídem a la derecha
   sideCostado?: boolean;      // cajonero a un extremo: el costado de los entrepaños junto al lado del closet lleva (true, por defecto) o desaparece y los entrepaños se alargan
   shelfCount?: number;        // entrepaños sobre el cajonero, repartidos en el espacio hasta el maletero; sin valor = los sugeridos (a ~330 mm como máximo)
   cajoneroTop?: number;       // altura de la cara de arriba del cajonero medida desde el piso; sin valor = 800 (sugerido)

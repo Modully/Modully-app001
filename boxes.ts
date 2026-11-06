@@ -900,6 +900,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   // base (zócalo o marco inferior) y tablero del maletero. Las medidas salen de los planos (marcos de 80 x 15, dilatada de 15, fondo de 550) ---
   if (closet) {
     const E = PANEL_THICKNESS, D = CLOSET_DEPTH, FW = CLOSET_FRAME_WIDTH;
+    const Db = Math.max(200, closet.costadoDepth ?? D);  // fondo del costado piso-techo; la base y el zócalo siguen ese fondo
     const Hc = spaceHeight - TOP_MARGIN;       // alto del closet: hasta 2 cm bajo el techo
     const bb = zh;                              // alto de la base (zócalo o marco inferior)
     let n = 0;
@@ -908,7 +909,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     };
     const side = (isLeft: boolean) => {
       const hasWall = isLeft ? closet.leftWall : closet.rightWall;
-      if (!hasWall) { add('Costado closet', isLeft ? 0 : wallA - E, 0, 0, E, D, Hc); return; } // costado propio: del piso al tope
+      if (!hasWall) { add('Costado closet', isLeft ? 0 : wallA - E, 0, 0, E, Db, Hc); return; } // costado propio: del piso al tope
       add('Dilatada marco lateral', isLeft ? 0 : wallA - E, D - E, bb, E, E, Hc - bb);          // 15 x 15 contra el muro
       add('Marco lateral closet', isLeft ? E : wallA - 2 * E, D - FW, bb, E, FW, Hc - bb);       // 80 x 15
     };
@@ -925,15 +926,15 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       // La base va encima del zócalo (sugerido de 80 mm): el zócalo es la pieza parada y sobre él va la base (o la pieza acostada de la T)
       if (closet.bottomFrame) {
         // Zócalo con marco inferior (base completa): el zócalo va al frente, a ras con el frente de la base
-        add('Zócalo closet', bx0, D - E, 0, bx1 - bx0, E, zocaloHeight);
-        add('Base closet', bx0, 0, zocaloHeight, bx1 - bx0, D, E);
+        add('Zócalo closet', bx0, Db - E, 0, bx1 - bx0, E, zocaloHeight);
+        add('Base closet', bx0, 0, zocaloHeight, bx1 - bx0, Db, E);
       } else {
         // Zócalo sin marco inferior (tipo T): la pieza parada va centrada bajo la acostada
         add('Zócalo closet', bx0, D - 62, 0, bx1 - bx0, E, zocaloHeight);
         add('Zócalo closet (horizontal)', bx0, D - 95, zocaloHeight, bx1 - bx0, FW, E);
       }
     } else if (!hasZocalo && closet.bottomFrame) {
-      add('Base marco hor closet', bx0, 0, 0, bx1 - bx0, D, E);
+      add('Base marco hor closet', bx0, 0, 0, bx1 - bx0, Db, E);
     }
     // Maletero: tablero de 455 de fondo; queda a la menor de 1.90 m o (techo - 350 mm)
     const dv = closetDerived(closet, wallA, spaceHeight, hasZocalo, zocaloHeight);
@@ -981,12 +982,14 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     if (colTop - zt > 100) {
       // Sobre la tapa: dos costados (siempre, también contra el lado del closet) y los entrepaños dentro de ellos, cada ~315 mm hasta cerca del maletero
       // Cajonero a un extremo: el costado junto al lado del closet se puede quitar (se pregunta); entonces los entrepaños se alargan hasta el largo de la tapa
-      const dropSide = closet.cajoneroPos !== 'center' && closet.sideCostado === false;
-      if (!(dropSide && closet.cajoneroPos === 'left')) add('Costado entrepaños izquierdo', xc, 0, zt, E, Dc, colTop - zt);
-      if (!(dropSide && closet.cajoneroPos === 'right')) add('Costado entrepaños derecho', xc + Wc - E, 0, zt, E, Dc, colTop - zt);
+      // El costado solo se puede quitar del lado del cajonero que da a un muro (frente a un marco con dilatada)
+      const dropL = closet.cajoneroPos === 'left' && closet.leftWall && (closet.costadoLeft === false || closet.sideCostado === false);
+      const dropR = closet.cajoneroPos === 'right' && closet.rightWall && (closet.costadoRight === false || closet.sideCostado === false);
+      if (!dropL) add('Costado entrepaños izquierdo', xc, 0, zt, E, Dc, colTop - zt);
+      if (!dropR) add('Costado entrepaños derecho', xc + Wc - E, 0, zt, E, Dc, colTop - zt);
       const tapaX0 = closet.cajoneroPos === 'left' ? xc - dilW : xc, tapaX1 = tapaX0 + Wc + dilW;
-      const shX0 = dropSide && closet.cajoneroPos === 'left' ? tapaX0 : xc + E;
-      const shX1 = dropSide && closet.cajoneroPos === 'right' ? tapaX1 : xc + Wc - E;
+      const shX0 = dropL ? tapaX0 : xc + E;
+      const shX1 = dropR ? tapaX1 : xc + Wc - E;
       // Los entrepaños (cantidad que se pregunta) se reparten el espacio entre la tapa del cajonero y el maletero: los huecos quedan iguales
       const nSh = dv.shelfCount, gapS = (colTop - zt - nSh * E) / (nSh + 1);
       for (let i = 0; i < nSh; i++) add('Entrepaño closet', shX0, 0, zt + gapS * (i + 1) + E * i, shX1 - shX0, Dl, E);
@@ -1050,7 +1053,8 @@ export function closetDerived(cfg: ClosetConfig & { leftWall: boolean; rightWall
 }
 
 /** A qué sección del closet pertenece una pieza (para abrir su formulario con doble clic); sin sección = no se abre nada */
-export function closetSectionOf(name: string): 'zocalo' | 'base' | 'cajonero' | 'entrepanos' | 'maletero' | null {
+export function closetSectionOf(name: string): 'costado' | 'zocalo' | 'base' | 'cajonero' | 'entrepanos' | 'maletero' | null {
+  if (name === 'Costado closet') return 'costado';
   if (name.startsWith('Zócalo closet')) return 'zocalo';
   if (name === 'Base closet' || name === 'Base marco hor closet') return 'base';
   if (name.startsWith('Lateral cajonero') || name === 'Tapa cajonero' || name.startsWith('Frente cajón') || name.startsWith('Cajón ') || name === 'Puente amarre cajonero' || name === 'Dilatación lateral cajonero') return 'cajonero';
