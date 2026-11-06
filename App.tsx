@@ -882,6 +882,8 @@ export default function App() {
 
   const closetPos2 = closet.twoPlacement === 'extremos' ? 'right' as const : 'center' as const;
   const closetDerived2 = useMemo(() => (closetInput && closet.twoCajoneros ? closetDerived({ ...closetInput, ...closet.cajonero2, cajoneroPos: closetPos2 }, wallA, spaceHeight, hasZocalo, zocaloHeight) : null), [closetInput, closet, closetPos2, wallA, spaceHeight, hasZocalo, zocaloHeight]);
+  const closetTorre2Cfg = useMemo(() => ({ ...closet, ...(closet.torre2 ?? {}) }), [closet]);
+  const closetDerivedT2 = useMemo(() => (closetInput && closet.torreOn && closet.torre2On ? closetDerived({ ...closetInput, ...(closet.torre2 ?? {}) }, wallA, spaceHeight, hasZocalo, zocaloHeight) : null), [closetInput, closet, wallA, spaceHeight, hasZocalo, zocaloHeight]);
   const closetDerivedValues = useMemo(() => (closetInput ? closetDerived(closetInput, wallA, spaceHeight, hasZocalo, zocaloHeight) : null), [closetInput, wallA, spaceHeight, hasZocalo, zocaloHeight]);
 
   const activeIslands = useMemo(() => islands
@@ -3847,8 +3849,95 @@ export default function App() {
                     <div><h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Módulos Especiales</h2><p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none">Configuración Avanzada</p></div>
                     <button onClick={() => setIsSpecialModulesPanelOpen(false)} className="p-2 bg-slate-100 rounded-xl text-slate-500 hover:text-red-500"><X size={20} /></button>
                   </div>
+                  {isClosetSection && (
+                    <div className="space-y-3">
+                      {(
+                        <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
+                          <div>
+                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Torre de entrepaños</label>
+                            <p className="text-[9px] font-bold text-slate-400 mt-0.5">Columna con laterales, entrepaños y divisiones; se ajusta con doble clic sobre ella</p>
+                          </div>
+                          <button onClick={() => setCloset(c => ({ ...c, torreOn: c.torreOn !== true }))} className={`w-10 h-5 rounded-full transition-all relative shrink-0 ${closet.torreOn === true ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+                            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${closet.torreOn === true ? 'left-5.5' : 'left-0.5'}`} />
+                          </button>
+                        </div>
+                      )}
+
+                      {closet.torreOn === true && closetDerivedValues && (
+                        <div className="p-3 bg-slate-50 rounded-2xl space-y-3">
+                          <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Torre de entrepaños (zapatero)</label>
+                          <div className="grid grid-cols-3 gap-2">
+                            {([['left', 'Izquierda'], ['center', 'Centro'], ['right', 'Derecha']] as const).map(([val, label]) => (
+                              <button key={val} onClick={() => setCloset(c => ({ ...c, torrePos: val }))} className={`py-2 rounded-xl text-[10px] font-black border-2 ${(closet.torrePos ?? 'left') === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {([[false, 'Hasta el maletero'], [true, 'Hasta el techo']] as const).map(([val, label]) => (
+                              <button key={label} onClick={() => setCloset(c => ({ ...c, torreToCeiling: val, torreShelves: undefined }))} className={`py-2 rounded-xl text-[10px] font-black border-2 ${(closet.torreToCeiling === true) === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+                            ))}
+                          </div>
+                          {(() => { const side = closet.torrePos ?? 'left'; const hasCostado = (side === 'left' && !closetInput?.leftWall) || (side === 'right' && !closetInput?.rightWall); return hasCostado ? (
+                            <button onClick={() => setCloset(c => ({ ...c, torreSinLateral: c.torreSinLateral !== true }))} className={`w-full py-2 rounded-xl text-[10px] font-black border-2 ${closet.torreSinLateral === true ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>Sin lateral junto al costado</button>
+                          ) : null; })()}
+                          <div className="grid grid-cols-2 gap-3">
+                            {([
+                              ['Ancho (mm)', closetDerivedValues.torreWidth, closetDerivedValues.suggestedCajonero, (n: number) => setCloset(c => ({ ...c, torreWidth: Math.max(300, Math.min(1200, Math.round(n))) }))],
+                              ['Entrepaños por columna', closetDerivedValues.torreShelves, closetDerivedValues.suggestedTorreShelves, (n: number) => setCloset(c => ({ ...c, torreShelves: Math.max(0, Math.min(20, Math.round(n))) }))],
+                              ['Divisiones', closetDerivedValues.torreDivisions, 0, (n: number) => setCloset(c => ({ ...c, torreDivisions: Math.max(0, Math.min(5, Math.round(n))) }))],
+                              ['Fondo (mm)', closet.torreDepth ?? 450, 450, (n: number) => setCloset(c => ({ ...c, torreDepth: Math.max(300, Math.min(500, Math.round(n))) }))],
+                            ] as Array<[string, number, number, (n: number) => void]>).map(([label, value, suggested, onCommit]) => (
+                              <div key={label} className="space-y-1">
+                                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label} · sugerido {Math.round(suggested)}</label>
+                                <DeferredNumber value={Math.round(value)} onCommit={onCommit} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-[9px] font-bold text-slate-400">Las divisiones tienen la altura de los laterales y la profundidad de los entrepaños.</p>
+                        </div>
+                      )}
+                      {closet.torreOn === true && (closet.torrePos ?? 'left') !== 'center' && (
+                        <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
+                          <div>
+                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Otra torre al otro extremo</label>
+                            <p className="text-[9px] font-bold text-slate-400 mt-0.5">Segunda torre de entrepaños con sus propias medidas</p>
+                          </div>
+                          <button onClick={() => setCloset(c => ({ ...c, torre2On: c.torre2On !== true }))} className={`w-10 h-5 rounded-full transition-all relative shrink-0 ${closet.torre2On === true ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+                            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${closet.torre2On === true ? 'left-5.5' : 'left-0.5'}`} />
+                          </button>
+                        </div>
+                      )}
+                      {closet.torreOn === true && closet.torre2On === true && (closet.torrePos ?? 'left') !== 'center' && closetDerivedT2 && (
+                        <div className="p-3 bg-slate-50 rounded-2xl space-y-3">
+                          <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Segunda torre</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {([[false, 'Hasta el maletero'], [true, 'Hasta el techo']] as const).map(([val, label]) => (
+                              <button key={label} onClick={() => setCloset(c => ({ ...c, torre2: { ...c.torre2, torreToCeiling: val, torreShelves: undefined } }))} className={`py-2 rounded-xl text-[10px] font-black border-2 ${(closetTorre2Cfg.torreToCeiling === true) === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+                            ))}
+                          </div>
+                          {(() => { const side = (closet.torrePos ?? 'left') === 'left' ? 'right' : 'left'; const hasCostado = (side === 'left' && !closetInput?.leftWall) || (side === 'right' && !closetInput?.rightWall); return hasCostado ? (
+                            <button onClick={() => setCloset(c => ({ ...c, torre2: { ...c.torre2, torreSinLateral: !(c.torre2?.torreSinLateral === true) } }))} className={`w-full py-2 rounded-xl text-[10px] font-black border-2 ${closetTorre2Cfg.torreSinLateral === true ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>Sin lateral junto al costado</button>
+                          ) : null; })()}
+                          <div className="grid grid-cols-2 gap-3">
+                            {([
+                              ['Ancho (mm)', closetDerivedT2.torreWidth, closetDerivedT2.suggestedCajonero, (n: number) => setCloset(c => ({ ...c, torre2: { ...c.torre2, torreWidth: Math.max(300, Math.min(1200, Math.round(n))) } }))],
+                              ['Entrepaños por columna', closetDerivedT2.torreShelves, closetDerivedT2.suggestedTorreShelves, (n: number) => setCloset(c => ({ ...c, torre2: { ...c.torre2, torreShelves: Math.max(0, Math.min(20, Math.round(n))) } }))],
+                              ['Divisiones', closetDerivedT2.torreDivisions, 0, (n: number) => setCloset(c => ({ ...c, torre2: { ...c.torre2, torreDivisions: Math.max(0, Math.min(5, Math.round(n))) } }))],
+                              ['Fondo (mm)', closetTorre2Cfg.torreDepth ?? 450, 450, (n: number) => setCloset(c => ({ ...c, torre2: { ...c.torre2, torreDepth: Math.max(300, Math.min(500, Math.round(n))) } }))],
+                            ] as Array<[string, number, number, (n: number) => void]>).map(([label, value, suggested, onCommit]) => (
+                              <div key={label} className="space-y-1">
+                                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label} · sugerido {Math.round(suggested)}</label>
+                                <DeferredNumber value={Math.round(value)} onCommit={onCommit} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+
+                    </div>
+                  )}
                   <div className="space-y-4">
-                    {(['tall-pantry', 'tall-oven'] as const).map(kind => {
+                    {(isClosetSection ? [] : ['tall-pantry', 'tall-oven'] as const).map(kind => {
                       const items = specialModules.filter(sm => sm.kind === kind);
                       const anyActive = items.some(sm => sm.active);
                       const title = kind === 'tall-pantry' ? 'Alacena Alta' : 'Torre de Hornos';
@@ -4071,7 +4160,7 @@ export default function App() {
                             <button key={label} onClick={() => setCloset(c => ({ ...c, twoCajoneros: val, doorCount: undefined }))} className={`py-2 rounded-xl text-[10px] font-black border-2 ${(closet.twoCajoneros === true) === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
                           ))}
                         </div>
-                        {closet.twoCajoneros === true && (
+                        {closet.twoCajoneros === true && closet.torreOn !== true && (
                           <div className="grid grid-cols-2 gap-2 pt-1">
                             {([['centro', 'Al centro (dilatada central de 6 cm)'], ['extremos', 'A los extremos']] as const).map(([val, label]) => (
                               <button key={val} onClick={() => setCloset(c => ({ ...c, twoPlacement: val, doorCount: undefined }))} className={`py-2 px-2 rounded-xl text-[10px] font-black border-2 leading-tight ${(closet.twoPlacement ?? 'centro') === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
@@ -4083,24 +4172,19 @@ export default function App() {
                       {closet.twoCajoneros !== true && (
                       <div className="space-y-1">
                         <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Cajonero: dónde va (sugerido: {wallA >= 2300 ? 'al centro' : 'a un extremo'})</label>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-4 gap-2">
                           {([['left', 'Izquierda'], ['center', 'Centro'], ['right', 'Derecha']] as const).map(([val, label]) => (
-                            <button key={val} onClick={() => setCloset(c => ({ ...c, cajoneroPos: val }))} className={`py-2 rounded-xl text-[10px] font-black border-2 ${closet.cajoneroPos === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+                            <button key={val} onClick={() => setCloset(c => ({ ...c, cajoneroPos: val, cajoneroX: undefined }))} className={`py-2 rounded-xl text-[10px] font-black border-2 ${closet.cajoneroX == null && closet.cajoneroPos === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
                           ))}
+                          <button onClick={() => setCloset(c => ({ ...c, cajoneroX: Math.max(0, Math.round(((closetDerivedValues?.opening ?? 0) - (closetDerivedValues?.cajoneroWidth ?? 0)) / 2)) }))} className={`py-2 rounded-xl text-[10px] font-black border-2 ${closet.cajoneroX != null ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>Libre</button>
                         </div>
-                      </div>
-                      )}
-
-                      {closet.twoCajoneros !== true && (
-                        <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
-                          <div>
-                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Torre de entrepaños</label>
-                            <p className="text-[9px] font-bold text-slate-400 mt-0.5">Columna con laterales, entrepaños y divisiones; se ajusta con doble clic sobre ella</p>
+                        {closet.cajoneroX != null && (
+                          <div className="space-y-1 pt-1">
+                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Distancia desde la izquierda (mm)</label>
+                            <DeferredNumber value={closet.cajoneroX} onCommit={n => setCloset(c => ({ ...c, cajoneroX: Math.max(0, Math.round(n)) }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
                           </div>
-                          <button onClick={() => setCloset(c => ({ ...c, torreOn: c.torreOn !== true }))} className={`w-10 h-5 rounded-full transition-all relative shrink-0 ${closet.torreOn === true ? 'bg-indigo-600' : 'bg-slate-200'}`}>
-                            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${closet.torreOn === true ? 'left-5.5' : 'left-0.5'}`} />
-                          </button>
-                        </div>
+                        )}
+                      </div>
                       )}
 
                       <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
@@ -4419,6 +4503,10 @@ export default function App() {
                     config2: closet.twoCajoneros ? { ...closet, ...closet.cajonero2, cajoneroPos: closetPos2 } : undefined,
                     derived2: closetDerived2 ?? undefined,
                     onChange2: (patch) => setCloset(c => ({ ...c, cajonero2: { ...c.cajonero2, ...patch } })),
+                    torre2Config: closet.torre2On ? closetTorre2Cfg : undefined,
+                    torre2Derived: closetDerivedT2 ?? undefined,
+                    onTorre2: (patch) => setCloset(c => ({ ...c, torre2: { ...c.torre2, ...patch } })),
+                    onRemoveTorre2: () => setCloset(c => ({ ...c, torre2On: false })),
                     derived: closetDerivedValues,
                     hasZocalo,
                     zocaloHeight,

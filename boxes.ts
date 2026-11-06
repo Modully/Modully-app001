@@ -954,7 +954,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       const Wc = Math.min(Math.max(300, dv.cajoneroWidth), maxW ?? inner - dilW);
       // El conjunto (dilatación + cajonero) arranca en el muro, detrás del marco (el marco solo enmarca el frente): al ras del muro
       const wallL = closet.leftWall ? x0 - 2 * E : x0, wallR = closet.rightWall ? x1 + 2 * E : x1;
-      const xc = xcFixed != null ? xcFixed : closet.cajoneroPos === 'left' ? (dilW ? wallL + dilW : x0) : closet.cajoneroPos === 'right' ? (dilW ? wallR - dilW - Wc : x1 - Wc) : x0 + (inner - Wc) / 2;
+      const xc = xcFixed != null ? xcFixed : closet.cajoneroPos === 'left' ? (dilW ? wallL + dilW : x0) : closet.cajoneroPos === 'right' ? (dilW ? wallR - dilW - Wc : x1 - Wc) : Math.min(Math.max(wallA / 2 - Wc / 2, x0), x1 - Wc); // el centro es el del muro (y de la puerta central), no el del maletero ni el de lo que quede libre
       const Dc = Math.max(300, Math.min(500, closet.cajoneroDepth ?? CLOSET_INTERIOR_DEPTH));                             // la tapa y los costados de arriba: 450 de fondo (adelante quedan los rieles de las puertas)
       const Dl0 = Dc - 20;                        // entrepaños y laterales del cajonero: 430
       const embebido = closet.cajonFront === 'embebido';           // frente embebido: el lateral se alarga 15 mm y su canto queda al ras del frente
@@ -1044,19 +1044,51 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     };
     const placed: Array<{ xc: number; Wc: number; Dc: number }> = [];
     let torreSpan: { xT: number; Wt: number } | null = null;
-    if (!two && closet.torreOn === true) {
+    // Posición libre del cajonero (distancia desde la izquierda) y centro del muro, siempre dentro del espacio disponible
+    const freeOn = !two && closet.cajoneroX != null;
+    const clampX = (v: number, a0: number, a1: number, W: number) => Math.min(Math.max(v, a0), Math.max(a0, a1 - W));
+    const xFree = (a0: number, a1: number, W: number) => clampX(x0 + (closet.cajoneroX ?? 0), a0, a1, W);
+    const xMid = (a0: number, a1: number, W: number) => clampX(wallA / 2 - W / 2, a0, a1, W);
+    if (closet.torreOn === true) {
       // Torre de entrepaños: ocupa un lado (o el centro) y el cajonero se acomoda en el espacio que queda
-      const Wt = Math.min(dv.torreWidth, inner - 300), cp = closet.cajoneroPos, tp = closet.torrePos ?? 'left';
+      const cp = closet.cajoneroPos, tp = closet.torrePos ?? 'left';
+      // Segunda torre en el extremo opuesto (no con la primera al centro)
+      const t2On = closet.torre2On === true && tp !== 'center';
+      const clT2 = { ...closet, ...(closet.torre2 ?? {}) } as ClosetInput;
+      const dvT2 = closetDerived(clT2, wallA, spaceHeight, hasZocalo, zocaloHeight);
+      const minRest = two ? 700 : 300;
+      const Wt = Math.min(dv.torreWidth, inner - minRest - (t2On ? 300 : 0));
+      const Wt2 = t2On ? Math.min(dvT2.torreWidth, inner - Wt - minRest) : 0;
+      let xT2 = 0;
+      // La torre del lado de un muro queda pegada al muro (detrás del marco lateral y la dilatada), no contra el marco
+      const tL = closet.leftWall ? x0 - 2 * E : x0, tR = closet.rightWall ? x1 + 2 * E : x1;
       const capW = (a: number) => Math.min(Math.max(300, dv.cajoneroWidth), a);
+      const o2Width = () => closetDerived({ ...closet, ...(closet.cajonero2 ?? {}), cajoneroPos: 'center' } as ClosetInput, wallA, spaceHeight, hasZocalo, zocaloHeight).cajoneroWidth;
       let xT = x0, xcF: number | undefined, maxW: number | undefined, posUse = cp;
-      if (tp === 'left') {
-        xT = x0;
-        if (cp === 'right') maxW = inner - Wt - (closet.rightWall ? CLOSET_CAJONERO_DIL : 0);
-        else { const W = capW(inner - Wt); xcF = cp === 'left' ? x0 + Wt : x0 + Wt + (inner - Wt - W) / 2; maxW = inner - Wt; posUse = 'center'; }
+      let second: { xcF?: number; maxW: number; pos: 'left' | 'center' | 'right' } | null = null;
+      if (t2On) {
+        // Dos torres, una en cada extremo: los cajoneros quedan entre ellas (el primero junto a la primera torre)
+        const a0 = tp === 'left' ? tL + Wt : tL + Wt2, a1 = tp === 'left' ? tR - Wt2 : tR - Wt;
+        xT = tp === 'left' ? tL : tR - Wt; xT2 = tp === 'left' ? tR - Wt2 : tL;
+        posUse = 'center';
+        if (two) { const each = (a1 - a0) / 2; const W2 = Math.min(Math.max(300, o2Width()), each); xcF = a0; maxW = each; second = { xcF: a1 - W2, maxW: each, pos: 'center' }; }
+        else { const W = capW(a1 - a0); xcF = freeOn ? xFree(a0, a1, W) : cp === 'left' ? a0 : cp === 'right' ? a1 - W : xMid(a0, a1, W); maxW = a1 - a0; }
+      } else if (two) {
+        // Torre y dos cajoneros: el primero queda junto a la torre y el segundo en el otro extremo (con la torre al centro, uno a cada lado)
+        const each = (tp === 'right' ? tR - Wt - x0 : tp === 'left' ? x1 - (tL + Wt) : inner - Wt) / 2, W1 = capW(each);
+        if (tp === 'left') { xT = tL; xcF = tL + Wt; posUse = 'center'; maxW = each; second = { maxW: each - (closet.rightWall ? CLOSET_CAJONERO_DIL : 0), pos: 'right' }; }
+        else if (tp === 'right') { xT = tR - Wt; xcF = tR - Wt - W1; posUse = 'center'; maxW = each; second = { maxW: each - (closet.leftWall ? CLOSET_CAJONERO_DIL : 0), pos: 'left' }; }
+        else { xT = x0 + each; xcF = xT - W1; posUse = 'center'; maxW = each; second = { xcF: xT + Wt, maxW: each, pos: 'center' }; }
+      } else if (tp === 'left') {
+        xT = tL;
+        const av = x1 - (tL + Wt);
+        if (cp === 'right' && !freeOn) maxW = av - (closet.rightWall ? CLOSET_CAJONERO_DIL : 0);
+        else { const W = capW(av); xcF = freeOn ? xFree(tL + Wt, x1, W) : cp === 'left' ? tL + Wt : xMid(tL + Wt, x1, W); maxW = av; posUse = 'center'; }
       } else if (tp === 'right') {
-        xT = x1 - Wt;
-        if (cp === 'left') maxW = inner - Wt - (closet.leftWall ? CLOSET_CAJONERO_DIL : 0);
-        else { const W = capW(inner - Wt); xcF = cp === 'right' ? x1 - Wt - W : x0 + (inner - Wt - W) / 2; maxW = inner - Wt; posUse = 'center'; }
+        xT = tR - Wt;
+        const av = tR - Wt - x0;
+        if (cp === 'left' && !freeOn) maxW = av - (closet.leftWall ? CLOSET_CAJONERO_DIL : 0);
+        else { const W = capW(av); xcF = freeOn ? xFree(x0, tR - Wt, W) : cp === 'right' ? tR - Wt - W : xMid(x0, tR - Wt, W); maxW = av; posUse = 'center'; }
       } else if (cp === 'center') {
         const W = capW(inner - Wt);
         xT = x0 + (inner - Wt - W) / 2; xcF = xT + Wt; maxW = inner - Wt; posUse = 'center';
@@ -1065,35 +1097,41 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       }
       const o = mkCfg(undefined, posUse);
       placed.push(buildCajonero(o.cl, o.dvK, '', xcF, maxW));
-      // La torre: dos laterales y, entre ellos, columnas iguales separadas por divisiones (de la altura de los laterales y la profundidad de los entrepaños)
-      const Dct = Math.max(300, Math.min(500, closet.torreDepth ?? CLOSET_INTERIOR_DEPTH));
-      const Dlt = Dct - 20, Dst = Dlt - 20;
-      const zbT = dv.cajBase, topT = dv.torreTop, baseS = dv.baseH;
-      add('Lateral torre izquierdo', xT, 0, zbT, E, Dlt, topT - zbT);
-      add('Lateral torre derecho', xT + Wt - E, 0, zbT, E, Dlt, topT - zbT);
-      const nD = dv.torreDivisions, colW = (Wt - 2 * E - nD * E) / (nD + 1);
-      for (let k = 0; k < nD; k++) add('División torre', xT + E + (k + 1) * colW + k * E, 0, zbT, E, Dst, topT - zbT);
-      const nS = dv.torreShelves, gapT = (topT - baseS - nS * E) / (nS + 1);
-      for (let k = 0; k <= nD; k++) for (let i = 0; i < nS; i++) add('Entrepaño torre', xT + E + k * (colW + E), 0, baseS + gapT * (i + 1) + E * i, colW, Dst, E);
-      placed.push({ xc: xT, Wc: Wt, Dc: Dct });
-      torreSpan = { xT, Wt };
-      // Hasta el techo: la torre atraviesa el maletero, que se corta en su ancho
-      if (closet.torreToCeiling) {
-        const mi = boxes.findIndex(q => q.name === 'Maletero closet');
-        if (mi >= 0) {
-          const m = boxes[mi], mx0 = m.x, mx1 = m.x + m.sx, c0 = Math.max(mx0, xT), c1 = Math.min(mx1, xT + Wt);
-          if (c1 > c0) {
+      if (second) { const o2 = mkCfg(closet.cajonero2, second.pos); placed.push(buildCajonero(o2.cl, o2.dvK, ' · 2', second.xcF, second.maxW)); }
+      // Torres: dos laterales y, entre ellos, columnas iguales separadas por divisiones (de la altura de los laterales y la profundidad de los entrepaños)
+      const buildTorre = (cl: ClosetInput, dvT: ReturnType<typeof closetDerived>, xT: number, Wt: number, sfx: string, side: 'left' | 'center' | 'right') => {
+        const Dct = Math.max(300, Math.min(500, cl.torreDepth ?? CLOSET_INTERIOR_DEPTH));
+        const Dlt = Dct - 20, Dst = Dlt - 20;
+        const zbT = dvT.cajBase, topT = dvT.torreTop, baseS = dvT.baseH;
+        // Junto a un costado del closet (lado sin muro) se puede quitar el lateral de ese lado: el costado hace de lateral y los entrepaños llegan a él
+        const sinL = cl.torreSinLateral === true && side === 'left' && !closet.leftWall, sinR = cl.torreSinLateral === true && side === 'right' && !closet.rightWall;
+        const eL = sinL ? 0 : E, eR = sinR ? 0 : E;
+        if (!sinL) add('Lateral torre izquierdo' + sfx, xT, 0, zbT, E, Dlt, topT - zbT);
+        if (!sinR) add('Lateral torre derecho' + sfx, xT + Wt - E, 0, zbT, E, Dlt, topT - zbT);
+        const nD = dvT.torreDivisions, colW = (Wt - eL - eR - nD * E) / (nD + 1);
+        for (let k = 0; k < nD; k++) add('División torre' + sfx, xT + eL + (k + 1) * colW + k * E, 0, zbT, E, Dst, topT - zbT);
+        const nS = dvT.torreShelves, gapT = (topT - baseS - nS * E) / (nS + 1);
+        for (let k = 0; k <= nD; k++) for (let i = 0; i < nS; i++) add('Entrepaño torre' + sfx, xT + eL + k * (colW + E), 0, baseS + gapT * (i + 1) + E * i, colW, Dst, E);
+        placed.push({ xc: xT, Wc: Wt, Dc: Dct });
+        // Hasta el techo: la torre atraviesa el maletero, que se corta en su ancho
+        if (cl.torreToCeiling) {
+          const hit = boxes.filter(q => q.name.startsWith('Maletero closet') && q.x < xT + Wt && q.x + q.sx > xT);
+          hit.forEach(m => {
+            const mx0 = m.x, mx1 = m.x + m.sx, c0 = Math.max(mx0, xT), c1 = Math.min(mx1, xT + Wt);
             const parts: Array<[number, number]> = [];
             if (c0 - mx0 > 1) parts.push([mx0, c0]);
             if (mx1 - c1 > 1) parts.push([c1, mx1]);
-            boxes.splice(mi, 1);
-            parts.forEach(([p0, p1], pi) => add(pi === 0 ? 'Maletero closet' : 'Maletero closet (2)', p0, m.y, m.z, p1 - p0, m.sy, m.sz));
-          }
+            boxes.splice(boxes.indexOf(m), 1);
+            parts.forEach(([p0, p1]) => add('Maletero closet', p0, m.y, m.z, p1 - p0, m.sy, m.sz));
+          });
         }
-      }
+      };
+      buildTorre(closet, dv, xT, Wt, '', tp);
+      if (t2On) buildTorre(clT2, dvT2, xT2, Wt2, ' · T2', tp === 'left' ? 'right' : 'left');
     } else if (!two) {
-      const o = mkCfg(undefined, closet.cajoneroPos);
-      placed.push(buildCajonero(o.cl, o.dvK, ''));
+      const o = mkCfg(undefined, freeOn ? 'center' : closet.cajoneroPos);
+      if (freeOn) { const W = Math.min(Math.max(300, o.dvK.cajoneroWidth), inner); placed.push(buildCajonero(o.cl, o.dvK, '', xFree(x0, x1, W), inner)); }
+      else placed.push(buildCajonero(o.cl, o.dvK, ''));
     } else if (closet.twoPlacement === 'extremos') {
       const o1 = mkCfg(undefined, 'left'), o2 = mkCfg(closet.cajonero2, 'right');
       placed.push(buildCajonero(o1.cl, o1.dvK, '', undefined, inner / 2 - GAP_C));
@@ -1189,8 +1227,11 @@ export function closetDerived(cfg: ClosetConfig & { leftWall: boolean; rightWall
 /** Cuál cajonero es una pieza: 2 si lleva el sufijo del segundo, si no 1 */
 export function closetCajoneroIndex(name: string): 1 | 2 { return name.endsWith(' · 2') ? 2 : 1; }
 
+/** Cuál torre es una pieza: 2 si lleva el sufijo de la segunda torre */
+export function closetTorreIndex(name: string): 1 | 2 { return name.endsWith(' · T2') ? 2 : 1; }
+
 export function closetSectionOf(rawName: string): 'torre' | 'puertas' | 'taparriel' | 'costado' | 'zocalo' | 'base' | 'cajonero' | 'entrepanos' | 'maletero' | null {
-  const name = rawName.replace(/ · 2$/, '');
+  const name = rawName.replace(/ · (2|T2)$/, '');
   if (name === 'Costado closet') return 'costado';
   if (name === 'Tapa riel closet') return 'taparriel';
   if (name.startsWith('Puerta corrediza')) return 'puertas';

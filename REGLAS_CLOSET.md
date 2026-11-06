@@ -48,7 +48,24 @@ Fuente: planos de Inventor del usuario (closets corredizos de 1450 a 2800 mm y u
 - Una pieza que pase de 2400 mm de alto o de largo se divide en una de 2400 y otra con lo que falta, con alarma. La división se edita: lo que se suma a una se resta a la otra.
 - Aplica al maletero, los marcos y la tapa de riel.
 
+## Cajonero: variantes (2026-11-06)
+- Frentes **de parche** (por defecto: el frente va adelante del lateral; entrepaños 2 cm detrás del frente de los laterales) o **embebidos** (frente = ancho interno − 6 mm; lateral +15 mm con el canto al ras del frente; entrepaños a 15 mm detrás).
+- Solo embebido y junto a un costado del closet (lado sin muro): se puede **quitar el lateral** y amarrar las correderas al costado (13 mm del cajón al costado, 3 mm del frente al costado).
+- **Laterales hasta el maletero** (parche o embebido): hacen de costados de los entrepaños y la tapa queda entre ellos (se reduce lo de los laterales).
+- Costado de los entrepaños del lado del cajonero (muro o costado) se puede quitar y los entrepaños y la tapa llegan al ras. Cápsula "Lleva entrepaños" para activar o desactivar toda la sección.
+- Fondo del cajonero editable con la flecha (un clic en el cajonero): 450 sugerido, entre 300 y 500; laterales −20 mm y entrepaños −20 mm más que los laterales. Los costados de entrepaños tienen la profundidad del lateral.
+- Posición: izquierda, centro, derecha o **libre** (distancia desde la izquierda). El centro es el del muro (la puerta central), no el del maletero ni el del espacio que dejen las torres.
+- Con zócalo tipo T: sin base; el cajonero baja al piso, el cajón de abajo queda a zócalo + marco + 30 mm, la T va corrida a 5 mm del frente y un puente vertical sube hasta el puente acostado. Con base o marco: el cajón de abajo a 40 mm.
+- Puentes internos (principio: 2 laterales y 5 puentes): 2 arriba bajo la tapa, 2 atrás contra el muro y 1 inferior frontal; los del frente retrocedidos 15 mm. El puente parado de 70 mm solo va si el hueco bajo el cajón de abajo es de 70 mm o menos. Con el cajonero flotado el puente inferior pasaría a ser base (pendiente).
+- **Dos cajoneros:** al centro (con dilatada central de 60 mm hasta el maletero, 4 puertas sugeridas) o uno en cada extremo (3 puertas); cada uno con su formulario y sus medidas. Con torre: el primero junto a la torre y el segundo en el otro extremo.
+
+## Torre de entrepaños (zapatero) (2026-11-06)
+- Se activa en Módulos Especiales (en closets reemplaza a alacena y torre de hornos). Posición como el cajonero (izquierda, centro o derecha), hasta el maletero o hasta el techo (corta el maletero), ancho sugerido = el del cajonero, entrepaños por columna (~330 mm de hueco), divisiones verticales (columnas iguales, altura de los laterales, profundidad de los entrepaños) y fondo 450 (laterales −20, entrepaños y divisiones −20 más).
+- Se puede pedir otra torre al extremo opuesto con medidas propias. Pegada a un muro queda al ras del muro (detrás del marco); junto a un costado del closet se puede quitar su lateral.
+- Puertas: 3 puertas = una adelante (la del centro) y dos atrás. Techo del closet a 5 mm (cocinas 20 mm).
+
 ## Pendiente de definir
 - Puertas batientes (plano Bellavista: 3 módulos de 728 + 385, 8 cajones, puertas de maletero separadas).
-- Zapateros y columnas de entrepaños (se sugieren; falta su regla de medidas).
+- Zapateros: la torre de entrepaños ya existe; falta su regla de medidas definitiva y qué lleva cada columna.
+- Cajonero flotado (el puente inferior pasa a ser base), alarma de láminas de 2400, estructura en los brazos de L y U.
 - Listado de corte y cantos de las piezas del closet.

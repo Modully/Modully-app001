@@ -94,7 +94,11 @@ export interface ClosetConfig {
   torreToCeiling?: boolean;   // hasta el techo (atraviesa el maletero) en vez de hasta el maletero
   torreShelves?: number;      // entrepaños por columna; sin valor = los que dejen huecos de ~330 mm
   torreDivisions?: number;    // divisiones verticales (columnas iguales); 0 por defecto
+  torreSinLateral?: boolean;  // torre junto a un costado del closet (lado sin muro): se quita su lateral de ese lado y los entrepaños llegan al costado
   torreDepth?: number;        // fondo de la torre (laterales 20 mm menos; entrepaños y divisiones 20 mm menos que los laterales)
+  torre2On?: boolean;         // otra torre de entrepaños en el extremo opuesto a la primera
+  torre2?: Partial<ClosetConfig>; // medidas propias de la segunda torre (torreWidth, torreToCeiling, torreShelves, torreDivisions, torreDepth)
+  cajoneroX?: number;         // posición libre del cajonero: distancia (mm) desde la cara izquierda del closet hasta su borde izquierdo; sin valor = izquierda / centro / derecha
   shelvesOn?: boolean;        // sección de entrepaños (costados y entrepaños sobre el cajonero): activa por defecto
   costadoDepth?: number;      // fondo del costado piso-techo; la base toma el mismo fondo (sin valor = 550)
   costadoLeft?: boolean;      // costado izquierdo de los entrepaños: lleva (por defecto) o no; sin costado los entrepaños se alargan

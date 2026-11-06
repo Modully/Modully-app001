@@ -5,7 +5,7 @@ import { OrbitControls, Grid, Environment, Text, Edges, PerspectiveCamera, Ortho
 import * as THREE from 'three';
 import { IslandItem, KitchenModule, Appliance, ApplianceType, LayoutType, WallName } from './types';
 import type { CounterEdge, CounterExtras, closetDerived } from './boxes';
-import { closetSectionOf, closetCajoneroIndex } from './boxes';
+import { closetSectionOf, closetCajoneroIndex, closetTorreIndex } from './boxes';
 import type { ClosetConfig } from './types';
 import { Box, findModuleBox, boxesBounds, applianceCenter, counterTopZ, CORNER_BLIND_OFFSET, WALL_THICKNESS } from './boxes';
 import { COLORS } from './constants';
@@ -1337,7 +1337,13 @@ export interface ClosetFormApi {
   // dos cajoneros: el segundo tiene sus propias medidas y su propio formulario
   doorsGhost?: boolean;                 // puertas translúcidas
   onDoorsGhost?: (on: boolean) => void;
+  torreIdx?: 1 | 2;
+  onRemove?: () => void; // quitar esta torre (la segunda)
   onRoot?: (patch: Partial<ClosetConfig>) => void; // cambios de la configuración general (cantidad y ubicación de los cajoneros) aunque el formulario sea del segundo
+  torre2Config?: ClosetConfig;
+  torre2Derived?: ReturnType<typeof closetDerived>;
+  onTorre2?: (patch: Partial<ClosetConfig>) => void;
+  onRemoveTorre2?: () => void;
   config2?: ClosetConfig;
   derived2?: ReturnType<typeof closetDerived>;
   onChange2?: (patch: Partial<ClosetConfig>) => void;
@@ -1388,11 +1394,12 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
             ))}
           </div>
           <ClosetToggle label="Hasta el techo" on={c.torreToCeiling === true} onClick={() => onChange({ torreToCeiling: c.torreToCeiling !== true, torreShelves: undefined })} />
+          {(() => { const side = api.torreIdx === 2 ? ((c.torrePos ?? 'left') === 'left' ? 'right' : 'left') : (c.torrePos ?? 'left'); const hasCostado = (side === 'left' && !api.leftWall) || (side === 'right' && !api.rightWall); return hasCostado ? <ClosetToggle label="Sin lateral junto al costado" on={c.torreSinLateral === true} onClick={() => onChange({ torreSinLateral: c.torreSinLateral !== true })} /> : null; })()}
           <ClosetNumber label="Ancho (mm)" value={d.torreWidth} hint={d.suggestedCajonero} onCommit={(n) => onChange({ torreWidth: Math.max(300, Math.min(1200, Math.round(n))) })} />
           <ClosetNumber label="Entrepaños por columna" value={d.torreShelves} hint={d.suggestedTorreShelves} onCommit={(n) => onChange({ torreShelves: Math.max(0, Math.min(20, Math.round(n))) })} />
           <ClosetNumber label="Divisiones" value={d.torreDivisions} hint={0} onCommit={(n) => onChange({ torreDivisions: Math.max(0, Math.min(5, Math.round(n))) })} />
           <ClosetNumber label="Fondo (mm)" value={c.torreDepth ?? 450} hint={450} onCommit={(n) => onChange({ torreDepth: Math.max(300, Math.min(500, Math.round(n))) })} />
-          <button className="w-full py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-[11px] font-black" onClick={() => { onChange({ torreOn: false }); onClose(); }}>Quitar la torre</button>
+          <button className="w-full py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-[11px] font-black" onClick={() => { if (api.onRemove) api.onRemove(); else onChange({ torreOn: false }); onClose(); }}>Quitar la torre</button>
           <p className="text-[9px] font-bold text-slate-400">Las divisiones tienen la altura de los laterales y la profundidad de los entrepaños (20 mm menos que los laterales).</p>
         </>
       )}
@@ -1456,18 +1463,22 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
               <button key={label} onClick={() => (api.onRoot ?? onChange)({ twoCajoneros: val, doorCount: undefined })} className={`py-1 rounded-lg text-[10px] font-black border-2 ${(c.twoCajoneros === true) === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
             ))}
           </div>
-          {c.twoCajoneros === true ? (
+          {c.twoCajoneros === true && c.torreOn === true ? null : c.twoCajoneros === true ? (
             <div className="grid grid-cols-2 gap-1">
               {([['centro', 'Al centro'], ['extremos', 'A los extremos']] as const).map(([val, label]) => (
                 <button key={val} onClick={() => (api.onRoot ?? onChange)({ twoPlacement: val, doorCount: undefined })} className={`py-1 rounded-lg text-[10px] font-black border-2 ${(c.twoPlacement ?? 'centro') === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-1">
-              {([['left', 'Izquierda'], ['center', 'Centro'], ['right', 'Derecha']] as const).map(([val, label]) => (
-                <button key={val} onClick={() => onChange({ cajoneroPos: val })} className={`py-1 rounded-lg text-[10px] font-black border-2 ${c.cajoneroPos === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-4 gap-1">
+                {([['left', 'Izq.'], ['center', 'Centro'], ['right', 'Der.']] as const).map(([val, label]) => (
+                  <button key={val} onClick={() => onChange({ cajoneroPos: val, cajoneroX: undefined })} className={`py-1 rounded-lg text-[10px] font-black border-2 ${c.cajoneroX == null && c.cajoneroPos === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+                ))}
+                <button onClick={() => onChange({ cajoneroX: Math.max(0, Math.round((d.opening - d.cajoneroWidth) / 2)) })} className={`py-1 rounded-lg text-[10px] font-black border-2 ${c.cajoneroX != null ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>Libre</button>
+              </div>
+              {c.cajoneroX != null && <ClosetNumber label="Distancia desde la izquierda (mm)" value={c.cajoneroX} hint={Math.round((d.opening - d.cajoneroWidth) / 2)} onCommit={(n) => onChange({ cajoneroX: Math.max(0, Math.round(n)) })} />}
+            </>
           )}
           <div className="grid grid-cols-2 gap-1">
             {([['parche', 'De parche'], ['embebido', 'Embebido']] as const).map(([val, label]) => (
@@ -1725,7 +1736,7 @@ const measureParts = (a: THREE.Vector3, b: THREE.Vector3) => {
 const MeasureLabel: React.FC<{ a: THREE.Vector3; b: THREE.Vector3; ghost?: boolean; onRemove?: () => void }> = ({ a, b, ghost, onRemove }) => {
   const { total, detail } = measureParts(a, b);
   return (
-    <Html position={a.clone().add(b).multiplyScalar(0.5)} center zIndexRange={[150, 0]} style={{ pointerEvents: 'none' }}>
+    <Html position={a.clone().add(b).multiplyScalar(0.5)} center occlude={false} zIndexRange={[150, 0]} style={{ pointerEvents: 'none' }}>
       <div data-overlay className={`select-none whitespace-nowrap px-2 py-1 rounded-lg border-2 shadow-lg text-center ${ghost ? 'bg-amber-50 border-amber-400 text-amber-700' : 'bg-amber-500 border-white text-white'}`}>
         <div className="flex items-center justify-center gap-1.5 text-[12px] leading-none font-black">
           {total} mm
@@ -1740,7 +1751,7 @@ const MeasureLabel: React.FC<{ a: THREE.Vector3; b: THREE.Vector3; ghost?: boole
 };
 
 const MeasureDot: React.FC<{ p: THREE.Vector3; ring?: boolean }> = ({ p, ring }) => (
-  <Html position={p} center zIndexRange={[140, 0]} style={{ pointerEvents: 'none' }}>
+  <Html position={p} center occlude={false} zIndexRange={[140, 0]} style={{ pointerEvents: 'none' }}>
     <div className={ring ? 'w-4 h-4 rounded-full border-2 border-amber-500 bg-amber-200/60' : 'w-2.5 h-2.5 rounded-full bg-amber-500 border border-white'} />
   </Html>
 );
@@ -1768,6 +1779,20 @@ const MeasureTool: React.FC<{ corners: THREE.Vector3[]; measures: Measure[]; onC
       // 1) esquina más cercana en pantalla (a igualdad, la más cercana a la cámara)
       let best: THREE.Vector3 | null = null;
       let bestScore = Infinity;
+      const isSolid = (h: THREE.Intersection) => {
+        const o = h.object as any;
+        const mat = Array.isArray(o.material) ? o.material[0] : o.material;
+        return o.isMesh && !o.isLine2 && o.visible && !o.userData?.noMeasure && o.geometry?.type !== 'SphereGeometry' && !(mat?.transparent && mat.opacity < 0.9);
+      };
+      // una esquina tapada por otra pieza (detrás de un cajón, de una puerta, de un costado...) no se puede tocar
+      const occluded = (c: THREE.Vector3) => {
+        const p = c.clone().project(camera);
+        raycaster.setFromCamera(new THREE.Vector2(p.x, p.y), camera);
+        const t = c.clone().sub(raycaster.ray.origin).dot(raycaster.ray.direction);
+        const hit = raycaster.intersectObjects(scene.children, true).find(isSolid);
+        return !!hit && hit.distance < t - 0.02;
+      };
+      const cands: Array<{ c: THREE.Vector3; score: number }> = [];
       const topDown = Math.abs(camera.getWorldDirection(new THREE.Vector3()).y) > 0.95;
       const v = new THREE.Vector3();
       for (const c of live.current.corners) {
@@ -1779,8 +1804,10 @@ const MeasureTool: React.FC<{ corners: THREE.Vector3[]; measures: Measure[]; onC
         const ref = live.current.first;
         const sameLevel = topDown && ref ? Math.abs(c.y - ref.y) * 40 : 0;
         const score = d + sameLevel + c.distanceTo(camera.position) * 0.01;
-        if (score < bestScore) { bestScore = score; best = c; }
+        cands.push({ c, score });
       }
+      cands.sort((p, q) => p.score - q.score);
+      for (const cand of cands.slice(0, 12)) { if (!occluded(cand.c)) { best = cand.c; bestScore = cand.score; break; } }
       if (best) return best.clone();
       // 2) lo que haya bajo el cursor
       raycaster.setFromCamera(new THREE.Vector2((px / rect.width) * 2 - 1, -(py / rect.height) * 2 + 1), camera);
@@ -2213,7 +2240,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   // Al salir de la cinta se borran las mediciones, y mientras se mide no hay selección
   useEffect(() => {
     if (!measureMode) setMeasures([]);
-    else { setSelectedId(null); setEditingId(null); setSelectedCounter(null); setEditingCounter(null); }
+    else { setSelectedId(null); setEditingId(null); setSelectedCounter(null); setEditingCounter(null); setCajoneroSel(0); setClosetSection(null); }
   }, [measureMode]);
   // Qué se dibuja. Lo que se oculta se lleva sus herramientas: etiquetas de medida, botones X y +, flechas dobles y cotas.
   const vis = visibility ?? { upper: true, lower: true, counter: true, appliances: true };
@@ -2235,13 +2262,21 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   const measureCorners = useMemo(() => {
     const out: THREE.Vector3[] = [];
     boxes.forEach(b => {
+      // piezas ocultas con los botones de vista (puertas, entrepaños, cajonero, costado) no cuentan
+      if (b.kind === 'panel') {
+        const sec = closetSectionOf(b.name);
+        if (b.name.startsWith('Puerta corrediza') && vis.doors === false) return;
+        if (vis.shelves === false && (sec === 'entrepanos' || sec === 'torre')) return;
+        if (vis.cajonero === false && sec === 'cajonero') return;
+        if (vis.costado === false && sec === 'costado') return;
+      }
       for (const X of [b.x, b.x + b.sx]) for (const Y of [b.y, b.y + b.sy]) for (const Z of [b.z, b.z + b.sz]) {
         out.push(new THREE.Vector3((X - wallA / 2) / 1000, Z / 1000, offsetZ + Y / 1000));
       }
     });
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boxes, wallA]);
+  }, [boxes, wallA, vis.doors, vis.shelves, vis.cajonero, vis.costado]);
   const boxCenter = (b: Box): [number, number, number] => {
     const [x, z] = toWorldXZ(b.x + b.sx / 2, b.y + b.sy / 2);
     return [x, (b.z + b.sz / 2) / 1000, z];
@@ -2356,7 +2391,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
 
         {boxes.filter(b => b.kind === 'wall').map(b => (
           <mesh key={b.id} position={boxCenter(b)} castShadow receiveShadow
-            {...(closetForm ? { onDoubleClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setClosetSection({ section: 'muro', pos: [e.point.x, e.point.y, e.point.z] }); } } : {})}>
+            {...(closetForm && !measureMode ? { onDoubleClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setClosetSection({ section: 'muro', pos: [e.point.x, e.point.y, e.point.z] }); } } : {})}>
             <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
             <meshStandardMaterial
               color={viewMode === 'plan' ? '#64748b' : (b.id.startsWith('closure') ? '#e2e8f0' : (b.wall === 'A' ? '#ffffff' : '#f8fafc'))}
@@ -2373,12 +2408,12 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             key={b.id}
             position={boxCenter(b)}
             castShadow
-            {...(closetForm && closetSectionOf(b.name) ? {
-              onDoubleClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setClosetSection({ section: closetSectionOf(b.name)!, idx: closetCajoneroIndex(b.name), pos: [boxCenter(b)[0], (closetSectionOf(b.name) === 'costado' || closetSectionOf(b.name) === 'puertas' || closetSectionOf(b.name) === 'torre') ? (b.z + b.sz * 0.5) / 1000 : (b.z + b.sz) / 1000 + 0.05, boxCenter(b)[2]] }); },
+            {...(closetForm && !measureMode && closetSectionOf(b.name) ? {
+              onDoubleClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setClosetSection({ section: closetSectionOf(b.name)!, idx: closetSectionOf(b.name) === 'torre' ? closetTorreIndex(b.name) : closetCajoneroIndex(b.name), pos: [boxCenter(b)[0], (closetSectionOf(b.name) === 'costado' || closetSectionOf(b.name) === 'puertas' || closetSectionOf(b.name) === 'torre') ? (b.z + b.sz * 0.5) / 1000 : (b.z + b.sz) / 1000 + 0.05, boxCenter(b)[2]] }); },
               onClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setCajoneroSel(closetSectionOf(b.name) === 'cajonero' ? closetCajoneroIndex(b.name) : 0); },
               onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; },
               onPointerOut: () => { document.body.style.cursor = 'auto'; },
-            } : { raycast: () => null })}
+            } : closetForm ? {} : { raycast: () => null })}
           >
             <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
             <meshStandardMaterial color={b.name.startsWith('Espaldar') || b.name.includes('fondo') ? '#e5e7eb' : b.name.startsWith('Puerta corrediza') ? '#cdb592' : b.name.startsWith('Tubo') ? '#9ca3af' : b.name.startsWith('Entrepaño') ? '#f3e8d2' : (b.id.startsWith('panel-upper-') ? '#e8d3b0' : '#dcc5a0')} roughness={0.7} key={doorsGhost && b.name.startsWith('Puerta corrediza') ? 'ghost' : 'solid'} transparent={doorsGhost && b.name.startsWith('Puerta corrediza')} opacity={doorsGhost && b.name.startsWith('Puerta corrediza') ? 0.25 : 1} depthWrite={!(doorsGhost && b.name.startsWith('Puerta corrediza'))}  polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
@@ -2386,7 +2421,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           </mesh>
         ))}
 
-        {closetForm && cajoneroSel && (() => {
+        {closetForm && !measureMode && cajoneroSel !== 0 && (() => {
           const tapa = boxes.find(x => x.name === (cajoneroSel === 2 ? 'Tapa cajonero · 2' : 'Tapa cajonero'));
           if (!tapa) return null;
           const cfgK = cajoneroSel === 2 && closetForm.config2 ? closetForm.config2 : closetForm.config;
@@ -2396,9 +2431,9 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           return <CajoneroStretch position={[c[0], c[1] + 0.12, front + 0.06]} depth={cfgK.cajoneroDepth ?? 450} onChange={(d) => changeK({ cajoneroDepth: d })} controlsRef={controlsRef} />;
         })()}
 
-        {closetForm && closetSection && (
+        {closetForm && !measureMode && closetSection && (
           <Html position={closetSection.pos} center zIndexRange={[220, 0]} occlude={false} style={{ pointerEvents: 'none' }}>
-            <ClosetSectionForm section={closetSection.section} api={{ ...(closetSection.idx === 2 && closetForm.config2 && closetForm.derived2 && closetForm.onChange2 ? { ...closetForm, config: closetForm.config2, derived: closetForm.derived2, onChange: closetForm.onChange2 } : closetForm), onRoot: closetForm.onChange, doorsGhost, onDoorsGhost: setDoorsGhost }} onClose={() => setClosetSection(null)} />
+            <ClosetSectionForm section={closetSection.section} api={{ ...(closetSection.section === 'torre' && closetSection.idx === 2 && closetForm.torre2Config && closetForm.torre2Derived && closetForm.onTorre2 ? { ...closetForm, config: closetForm.torre2Config, derived: closetForm.torre2Derived, onChange: closetForm.onTorre2, onRemove: closetForm.onRemoveTorre2, torreIdx: 2 as const } : closetSection.idx === 2 && closetForm.config2 && closetForm.derived2 && closetForm.onChange2 ? { ...closetForm, config: closetForm.config2, derived: closetForm.derived2, onChange: closetForm.onChange2 } : closetForm), onRoot: closetForm.onChange, doorsGhost, onDoorsGhost: setDoorsGhost }} onClose={() => setClosetSection(null)} />
           </Html>
         )}
 
