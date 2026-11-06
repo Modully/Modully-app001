@@ -24,13 +24,20 @@ Fuente: planos de Inventor del usuario (closets corredizos de 1450 a 2800 mm y u
 
 ## Cajonero
 - Siempre se propone uno, con entrepaños encima de los cajones (cada ~300–330 mm), maletero y zona de tubos.
-- Posición sugerida: al centro o a un extremo (el usuario elige). Cajones sugeridos: 2 (editable).
+- Posición sugerida: al centro o a un extremo (el usuario elige).
+- Altura: el cajonero se sugiere con su cara de arriba a 800 mm del piso (editable). Los frentes de los cajones no pasan de 200 mm de alto, así que los cajones sugeridos son los que hagan falta (4 con la base de 15 mm). La altura pedida del cajonero siempre se cumple: si se piden menos cajones, los frentes quedan de 200 y los costados del cajonero se alargan hasta esa altura. Los cajones siempre van pegados a la tapa (el de arriba al ras de la tapa) y el hueco que sobre queda abajo, sobre la base.
+- Entre un frente de cajón y el siguiente van 30 mm (para meter la mano). El frente de arriba llega hasta la cara de abajo de la tapa y su frente queda a ras con el de la tapa. La tapa va por encima de los dos laterales (ancho completo, 450 de fondo); encima van dos costados y los entrepaños dentro de ellos.
+- Entrepaños sobre el cajonero: se pregunta la cantidad y se reparten el espacio entre la tapa del cajonero y el maletero (huecos iguales). Sugeridos: los que dejen huecos de 330 mm como máximo.
+- Cajonero al lado del marco (lado con muro): el cajonero queda a 45 mm del muro (el marco solo enmarca el frente), la tapa se alarga 45 mm hasta quedar al ras del muro y se crea una dilatación de 45 mm (del alto de los laterales, a ras del costado del cajonero) para tapar el hueco que se forma. Si el cajonero va al lado del costado o al centro, no lleva.
+- Si el cajonero va a un extremo, se pregunta si el costado de los entrepaños junto al lado del closet lleva o desaparece; si desaparece, los entrepaños se alargan hasta el largo de la tapa del cajonero.
+- Puente amarre de 70 mm al frente del cajonero, sobre la base, entre los dos laterales: tapa el hueco bajo el cajón de abajo.
 - Ancho sugerido: ancho de la puerta − 200 mm.
 - El cajón inferior no choca con el marco inferior: siempre 40 mm de espacio sobre la cara superior del marco inferior.
 
 ## Puertas corredizas
 - Cantidad: se pregunta; sugerida 3 si el cajonero va al centro y 2 si va a un lado (un closet de 2 m puede llevar 4).
 - Traslape entre puertas: 25 mm. Ancho de cada puerta = (marco horizontal + (n − 1) × 25) / n.
+- En la escena las puertas van en dos rieles (adelante y atrás) y se alternan; el botón "Puertas" de las vistas las oculta para ver el interior.
 - Alto de la puerta = espacio libre − 20 mm (sugerido, editable). Espacio libre: entre la cara de arriba del marco inferior (o el piso, si no lleva) y la cara de abajo del marco superior donde corre la riel.
 
 ## Láminas (máximo 2400 mm)

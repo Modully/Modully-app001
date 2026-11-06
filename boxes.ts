@@ -91,6 +91,14 @@ export const CLOSET_RAIL_COVER = 110;   // alto de la tapa de riel
 export const CLOSET_MALETERO_DEPTH = 455; // fondo del tablero del maletero
 export const CLOSET_MALETERO_MAX = 1900;  // el tablero del maletero no pasa de esta altura...
 export const CLOSET_MALETERO_CLEAR = 350; // ...y deja al menos esta medida libre hasta el techo
+export const CLOSET_INTERIOR_DEPTH = 450;   // fondo del cajonero y de los entrepaños (los costados interiores son de 450)
+export const CLOSET_DRAWER_FRONT_MAX = 200; // los frentes de los cajones no pasan de 200 mm de alto
+export const CLOSET_DRAWER_GAP = 30;        // espacio entre frentes de cajón: 30 mm para meter la mano
+export const CLOSET_CAJONERO_PUENTE = 70;   // puente amarre al frente del cajonero, sobre la base, para tapar el hueco bajo el cajón de abajo
+export const CLOSET_CAJONERO_DIL = 45;      // dilatación del cajonero contra el marco: la tapa se alarga 45 mm y una pieza de 45 tapa el hueco
+export const CLOSET_CAJONERO_TOP = 800;     // el cajonero se sugiere con su cara de arriba a 800 mm del piso
+export const CLOSET_DRAWER_BOTTOM_GAP = 40; // el cajón de abajo queda 40 mm sobre la cara de arriba de la base
+export const CLOSET_SHELF_PITCH = 315;      // separación de los entrepaños sobre el cajonero
 export const LOWER_DEPTH = 570;          // fondo módulo base (mm)
 export const ISLAND_PLINTH_INSET = 50;   // el zócalo de una isla o península queda 5 cm hacia adentro de su medida general, por cada lado
 export const MAX_MODULE_WIDTH = 900;     // ancho máximo de un módulo (mm)
@@ -176,7 +184,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   const T = WALL_THICKNESS;
   const closet = input.closet;
   // En el closet la base la define su configuración: zócalo (tipo T o base completa), marco inferior acostado (15) o nada
-  const zh = closet ? (hasZocalo ? zocaloHeight : closet.bottomFrame ? PANEL_THICKNESS : 0) : (hasZocalo ? zocaloHeight : 0);
+  const zh = closet ? (hasZocalo ? zocaloHeight + PANEL_THICKNESS : closet.bottomFrame ? PANEL_THICKNESS : 0) : (hasZocalo ? zocaloHeight : 0);
   const boxes: Box[] = [];
   // En L el brazo es el muro B (izquierda) o el muro C (derecha); en U están los dos
   const hasB = layout === 'U_SHAPE' || (layout === 'L_SHAPE' && input.lArm !== 'right');
@@ -887,6 +895,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     });
   }
 
+  // (la función closetDerived está al final del archivo)
   // --- Estructura del closet sobre el muro A: lados (costado propio o marco lateral + dilatada contra el muro), marco horizontal, tapa de riel,
   // base (zócalo o marco inferior) y tablero del maletero. Las medidas salen de los planos (marcos de 80 x 15, dilatada de 15, fondo de 550) ---
   if (closet) {
@@ -905,23 +914,149 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     };
     side(true); side(false);
     const x0 = closet.leftWall ? 2 * E : E, x1 = wallA - (closet.rightWall ? 2 * E : E);          // entre lados: 30 por el lado del muro, 15 por el del costado
-    add('Marco hor closet', x0, D - E - FW, Hc - E, x1 - x0, FW, E);
-    add('Tapa riel closet', 0, D - E, Hc - CLOSET_RAIL_COVER, wallA, E, CLOSET_RAIL_COVER);
+    // Marco horizontal: acostado (80 de ancho, 15 de espesor), al tope del marco: a ras con la parte de arriba de los marcos laterales y con su frente
+    add('Marco hor closet', x0, D - FW, Hc - E, x1 - x0, FW, E);
+    // Tapa de riel (se activa o se desactiva y se pregunta su altura): siempre parada adelante del marco
+    const tapaH = Math.max(20, closet.tapaRielHeight ?? CLOSET_RAIL_COVER);
+    if (closet.tapaRiel !== false) add('Tapa riel closet', 0, D, Hc - tapaH, wallA, E, tapaH);
     // Base: entre el muro y el costado (sin pasar por el costado)
     const bx0 = closet.leftWall ? 0 : E, bx1 = closet.rightWall ? wallA : wallA - E;
-    if (hasZocalo && bb > E) {
-      if (closet.zocaloType === 'base') add('Base closet', bx0, 0, bb - E, bx1 - bx0, D, E);
-      add('Zócalo closet', bx0, D - 62, 0, bx1 - bx0, E, bb - E);
-      if (closet.zocaloType === 'T') add('Zócalo closet (horizontal)', bx0, D - 95, bb - E, bx1 - bx0, FW, E); // la T: pieza acostada sobre la parada
+    if (hasZocalo && zocaloHeight > 0) {
+      // La base va encima del zócalo (sugerido de 80 mm): el zócalo es la pieza parada y sobre él va la base (o la pieza acostada de la T)
+      if (closet.bottomFrame) {
+        // Zócalo con marco inferior (base completa): el zócalo va al frente, a ras con el frente de la base
+        add('Zócalo closet', bx0, D - E, 0, bx1 - bx0, E, zocaloHeight);
+        add('Base closet', bx0, 0, zocaloHeight, bx1 - bx0, D, E);
+      } else {
+        // Zócalo sin marco inferior (tipo T): la pieza parada va centrada bajo la acostada
+        add('Zócalo closet', bx0, D - 62, 0, bx1 - bx0, E, zocaloHeight);
+        add('Zócalo closet (horizontal)', bx0, D - 95, zocaloHeight, bx1 - bx0, FW, E);
+      }
     } else if (!hasZocalo && closet.bottomFrame) {
       add('Base marco hor closet', bx0, 0, 0, bx1 - bx0, D, E);
     }
     // Maletero: tablero de 455 de fondo; queda a la menor de 1.90 m o (techo - 350 mm)
-    const topM = Math.min(CLOSET_MALETERO_MAX, spaceHeight - CLOSET_MALETERO_CLEAR);
+    const dv = closetDerived(closet, wallA, spaceHeight, hasZocalo, zocaloHeight);
+    const topM = dv.maleteroTop;
     add('Maletero closet', closet.leftWall ? 0 : E, 0, topM - E, bx1 - bx0, CLOSET_MALETERO_DEPTH, E);
+
+    // --- Interior (según los planos de cajoneros): cajonero con dos laterales de 430 de fondo, la tapa POR ENCIMA de los laterales (de todo el ancho y
+    // 450 de fondo) y los cajones; sobre la tapa, dos costados y los entrepaños DENTRO de esos dos costados; tubos para colgar en las zonas libres ---
+    const inner = x1 - x0;                                        // ancho entre los lados
+    // Cajonero al lado del marco (lado con muro): la tapa se alarga 45 mm hasta quedar al ras del marco y una dilatación tapa el hueco que se forma
+    const dilW = (closet.cajoneroPos === 'left' && closet.leftWall) || (closet.cajoneroPos === 'right' && closet.rightWall) ? CLOSET_CAJONERO_DIL : 0;
+    const Wc = Math.min(Math.max(300, dv.cajoneroWidth), inner - dilW);
+    // El conjunto (dilatación + cajonero) arranca en el muro, detrás del marco (el marco solo enmarca el frente): al ras del muro
+    const wallL = closet.leftWall ? x0 - 2 * E : x0, wallR = closet.rightWall ? x1 + 2 * E : x1;
+    const xc = closet.cajoneroPos === 'left' ? (dilW ? wallL + dilW : x0) : closet.cajoneroPos === 'right' ? (dilW ? wallR - dilW - Wc : x1 - Wc) : x0 + (inner - Wc) / 2;
+    const Dc = CLOSET_INTERIOR_DEPTH;                             // la tapa y los costados de arriba: 450 de fondo (adelante quedan los rieles de las puertas)
+    const Dl = CLOSET_INTERIOR_DEPTH - 20;                        // laterales y entrepaños del cajonero: 430
+    const nDrawers = dv.drawerCount;
+    const gapF = CLOSET_DRAWER_GAP;
+    const z0 = bb;
+    // El cajonero se sugiere a 800 mm del piso (cara de arriba) y los frentes no pasan de 200 mm de alto: si con los cajones pedidos los frentes
+    // pasarían de 200, el cajonero queda más bajo. El cajón de abajo deja 40 mm sobre la cara de arriba de la base; arriba queda aire y la tapa
+    // 30 mm entre frentes para meter la mano; el frente de arriba llega hasta la cara de abajo de la tapa y su frente queda a ras con el de la tapa
+    const Hf = dv.drawerFront, Hcj = dv.cajoneroHeight;
+    const colTop = topM - E;                                      // cara de abajo del tablero del maletero
+    add('Lateral cajonero izquierdo', xc, 0, z0, E, Dl, Hcj - E);
+    add('Lateral cajonero derecho', xc + Wc - E, 0, z0, E, Dl, Hcj - E);
+    // Puente amarre de 70 mm al frente, sobre la base: tapa el hueco que queda bajo el cajón de abajo (a ras del frente de los laterales)
+    add('Puente amarre cajonero', xc + E, Dl - E, z0, Wc - 2 * E, E, CLOSET_CAJONERO_PUENTE);
+    add('Tapa cajonero', closet.cajoneroPos === 'left' ? xc - dilW : xc, 0, z0 + Hcj - E, Wc + dilW, Dc, E); // la tapa va por encima de los laterales, del ancho completo (y los 45 mm de la dilatación)
+    if (dilW > 0) add('Dilatación lateral cajonero', closet.cajoneroPos === 'left' ? xc - dilW : xc + Wc, Dl - E, z0, dilW, E, Hcj - E); // a ras del costado (lateral) del cajonero: su frente queda en el mismo plano
+    for (let i = 0; i < nDrawers; i++) {
+      // Los cajones van pegados a la tapa (el de arriba al ras de la tapa); si sobra altura, el hueco queda abajo, sobre la base
+      const zf = z0 + Hcj - E - (nDrawers - i) * Hf - (nDrawers - 1 - i) * gapF;
+      add(`Frente cajón ${i + 1}`, xc + 4, Dc - E, zf, Wc - 8, E, Hf);
+      const bw = Wc - 2 * E - 26, bxl = xc + E + 13, yb = Dc - E - 400, zb = zf + 20, hb = Math.max(80, Hf - 60); // caja del cajón: luz de 13 por lado, 400 de fondo; 60 mm más baja que el frente
+      add(`Cajón ${i + 1} lateral izquierdo`, bxl, yb, zb, E, 400, hb);
+      add(`Cajón ${i + 1} lateral derecho`, bxl + bw - E, yb, zb, E, 400, hb);
+      add(`Cajón ${i + 1} testero frontal`, bxl + E, yb + 400 - E, zb, bw - 2 * E, E, hb);
+      add(`Cajón ${i + 1} testero trasero`, bxl + E, yb, zb, bw - 2 * E, E, hb);
+      add(`Cajón ${i + 1} fondo`, bxl + E, yb + E, zb + 10, bw - 2 * E, 400 - 2 * E, PANEL_BACK - 2);
+    }
+    const leftZone = xc - x0 > 1, rightZone = x1 - (xc + Wc) > 1;
+    const zt = z0 + Hcj;                                          // cara de arriba de la tapa del cajonero
+    if (colTop - zt > 100) {
+      // Sobre la tapa: dos costados (siempre, también contra el lado del closet) y los entrepaños dentro de ellos, cada ~315 mm hasta cerca del maletero
+      // Cajonero a un extremo: el costado junto al lado del closet se puede quitar (se pregunta); entonces los entrepaños se alargan hasta el largo de la tapa
+      const dropSide = closet.cajoneroPos !== 'center' && closet.sideCostado === false;
+      if (!(dropSide && closet.cajoneroPos === 'left')) add('Costado entrepaños izquierdo', xc, 0, zt, E, Dc, colTop - zt);
+      if (!(dropSide && closet.cajoneroPos === 'right')) add('Costado entrepaños derecho', xc + Wc - E, 0, zt, E, Dc, colTop - zt);
+      const tapaX0 = closet.cajoneroPos === 'left' ? xc - dilW : xc, tapaX1 = tapaX0 + Wc + dilW;
+      const shX0 = dropSide && closet.cajoneroPos === 'left' ? tapaX0 : xc + E;
+      const shX1 = dropSide && closet.cajoneroPos === 'right' ? tapaX1 : xc + Wc - E;
+      // Los entrepaños (cantidad que se pregunta) se reparten el espacio entre la tapa del cajonero y el maletero: los huecos quedan iguales
+      const nSh = dv.shelfCount, gapS = (colTop - zt - nSh * E) / (nSh + 1);
+      for (let i = 0; i < nSh; i++) add('Entrepaño closet', shX0, 0, zt + gapS * (i + 1) + E * i, shX1 - shX0, Dl, E);
+    }
+    // Tubos para colgar en las zonas libres: el primero 40 mm bajo el maletero y el segundo a 900 mm del piso
+    // --- Puertas corredizas: ancho = (marco horizontal + (n - 1) x traslape) / n, alto = espacio libre - 20; van en dos rieles (adelante y atrás) y se alternan ---
+    const nDoors = dv.doorCount, dw = dv.doorWidth, DT = 18;
+    for (let i = 0; i < nDoors; i++) {
+      const front = i % 2 === 0;
+      add(`Puerta corrediza ${i + 1}`, x0 + i * (dw - closet.overlap), front ? D - 28 : D - 53, bb + 10, dw, DT, dv.doorHeight);
+    }
+    ([[x0, xc], [xc + Wc, x1]] as const).forEach(([zx0, zx1]) => {
+      if (zx1 - zx0 < 200) return;
+      add('Tubo colgar superior', zx0, Dc / 2 - 12, colTop - 40 - 25, zx1 - zx0, 25, 25);
+      if (900 + 12 < colTop - 40 - 25 - 200) add('Tubo colgar inferior', zx0, Dc / 2 - 12, 900 - 12, zx1 - zx0, 25, 25);
+    });
   }
 
   return boxes;
+}
+
+/**
+ * Valores del closet que se sugieren y se pueden editar: puertas corredizas, cajonero y alto de las puertas.
+ * Reglas del usuario: 3 puertas si el cajonero va al centro y 2 si va a un lado; puerta = (marco horizontal + (n - 1) x traslape) / n;
+ * cajonero sugerido = ancho de la puerta - 200; alto de la puerta = espacio libre - 20 (espacio libre: de la cara de arriba de la base
+ * a la cara de abajo del marco horizontal).
+ */
+export function closetDerived(cfg: ClosetConfig & { leftWall: boolean; rightWall: boolean }, wallA: number, spaceHeight: number, hasZocalo: boolean, zocaloHeight: number) {
+  const E = PANEL_THICKNESS;
+  const Hc = spaceHeight - TOP_MARGIN;
+  const baseH = hasZocalo ? zocaloHeight + E : cfg.bottomFrame ? E : 0; // la base va encima del zócalo
+  const opening = wallA - (cfg.leftWall ? 2 * E : E) - (cfg.rightWall ? 2 * E : E);        // largo del marco horizontal
+  const suggestedDoors = cfg.cajoneroPos === 'center' ? 3 : 2;
+  const doorCount = Math.max(1, Math.round(cfg.doorCount ?? suggestedDoors));
+  const doorWidth = (opening + (doorCount - 1) * cfg.overlap) / doorCount;
+  const suggestedCajonero = Math.max(300, Math.round((doorWidth - 200) / 5) * 5);
+  const cajoneroTop = cfg.cajoneroTop ?? CLOSET_CAJONERO_TOP;
+  // Cajones sugeridos: los que hagan falta para llegar a la altura del cajonero con frentes de 200 mm como máximo
+  const suggestedDrawers = Math.max(1, Math.ceil((cajoneroTop - baseH - E - CLOSET_DRAWER_BOTTOM_GAP + CLOSET_DRAWER_GAP) / (CLOSET_DRAWER_FRONT_MAX + CLOSET_DRAWER_GAP)));
+  const drawerCount = Math.max(1, Math.round(cfg.cajonCount ?? suggestedDrawers));
+  // Cajonero: frentes de 200 como máximo con 30 mm entre ellos; el de abajo deja 40 mm sobre la base y el de arriba llega a la cara de abajo de la tapa
+  // La altura del cajonero es la pedida (cara de arriba de la tapa a 800/850 mm...): si con los cajones pedidos los frentes pasarían de 200, los
+  // cajones quedan abajo con frentes de 200 y los costados del cajonero se alargan hasta cumplir la medida (queda un hueco sobre el cajón de arriba)
+  const minHeight = CLOSET_DRAWER_BOTTOM_GAP + drawerCount * 80 + (drawerCount - 1) * CLOSET_DRAWER_GAP + E;
+  const cajoneroHeight = Math.max(minHeight, cajoneroTop - baseH);
+  const drawerFront = Math.max(80, Math.min(CLOSET_DRAWER_FRONT_MAX, (cajoneroHeight - E - CLOSET_DRAWER_BOTTOM_GAP - (drawerCount - 1) * CLOSET_DRAWER_GAP) / drawerCount));
+  // Entrepaños sobre el cajonero: hasta el tablero del maletero, con huecos de ~330 mm como máximo
+  const suggestedMaleteroTop = Math.min(CLOSET_MALETERO_MAX, spaceHeight - CLOSET_MALETERO_CLEAR);
+  const maleteroTop = cfg.maleteroTop ?? suggestedMaleteroTop;
+  const shelfZone = (maleteroTop - E) - (baseH + cajoneroHeight);
+  const suggestedShelves = shelfZone > 100 ? Math.max(0, Math.ceil(shelfZone / 330) - 1) : 0;
+  const freeHeight = (Hc - E) - baseH; // de la cara de arriba de la base a la cara de abajo del marco horizontal (acostado, de 15)
+  const suggestedDoorHeight = freeHeight - 20;
+  return {
+    Hc, baseH, opening, suggestedDoors, doorCount, doorWidth, suggestedCajonero, cajoneroWidth: cfg.cajoneroWidth ?? suggestedCajonero,
+    freeHeight, suggestedDoorHeight, doorHeight: cfg.doorHeight ?? suggestedDoorHeight,
+    maleteroTop, suggestedMaleteroTop,
+    suggestedCajoneroTop: CLOSET_CAJONERO_TOP, cajoneroTop, suggestedDrawers, drawerCount, drawerFront, cajoneroHeight,
+    shelfZone, suggestedShelves, shelfCount: shelfZone > 100 ? Math.max(0, Math.min(12, Math.round(cfg.shelfCount ?? suggestedShelves))) : 0,
+  };
+}
+
+/** A qué sección del closet pertenece una pieza (para abrir su formulario con doble clic); sin sección = no se abre nada */
+export function closetSectionOf(name: string): 'zocalo' | 'base' | 'cajonero' | 'entrepanos' | 'maletero' | null {
+  if (name.startsWith('Zócalo closet')) return 'zocalo';
+  if (name === 'Base closet' || name === 'Base marco hor closet') return 'base';
+  if (name.startsWith('Lateral cajonero') || name === 'Tapa cajonero' || name.startsWith('Frente cajón') || name.startsWith('Cajón ') || name === 'Puente amarre cajonero' || name === 'Dilatación lateral cajonero') return 'cajonero';
+  if (name === 'Entrepaño closet' || name.startsWith('Costado entrepaños')) return 'entrepanos';
+  if (name === 'Maletero closet') return 'maletero';
+  return null;
 }
 
 /** Cara superior del mesón (mm) si existe; si no, la de los módulos bajos */

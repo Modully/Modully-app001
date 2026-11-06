@@ -45,7 +45,7 @@ export const SECTIONS: Record<SectionId, SectionConfig> = {
   closets: {
     id: 'closets', name: 'Closets', singular: 'closet',
     layouts: ['STRAIGHT', 'L_SHAPE', 'U_SHAPE'],
-    defaults: { layout: 'STRAIGHT', wallA: 2400, wallB: 1800, wallC: 1800, spaceHeight: 2400, hasZocalo: false, zocaloHeight: 100, zocaloDepth: 500, hasCounter: false },
+    defaults: { layout: 'STRAIGHT', wallA: 2400, wallB: 1800, wallC: 1800, spaceHeight: 2400, hasZocalo: false, zocaloHeight: 80, zocaloDepth: 500, hasCounter: false },
     baseModuleHeight: 1900, upperGap: 0, hasUpper: true,
     lowerName: 'Cuerpo', upperName: 'Maletero',
     features: { counter: false, islands: false },
@@ -56,7 +56,7 @@ export const SECTIONS: Record<SectionId, SectionConfig> = {
   walking: {
     id: 'walking', name: 'Walking closets', singular: 'walking closet',
     layouts: ['U_SHAPE', 'L_SHAPE', 'STRAIGHT'],
-    defaults: { layout: 'U_SHAPE', wallA: 3000, wallB: 2400, wallC: 2400, spaceHeight: 2400, hasZocalo: false, zocaloHeight: 100, zocaloDepth: 500, hasCounter: false },
+    defaults: { layout: 'U_SHAPE', wallA: 3000, wallB: 2400, wallC: 2400, spaceHeight: 2400, hasZocalo: false, zocaloHeight: 80, zocaloDepth: 500, hasCounter: false },
     baseModuleHeight: 1900, upperGap: 0, hasUpper: true,
     lowerName: 'Cuerpo', upperName: 'Maletero',
     features: { counter: false, islands: false },

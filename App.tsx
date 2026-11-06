@@ -21,7 +21,9 @@ import { getAgentAdvice, type KitchenAgentContext } from './agentService';
 import { generateBOM, exportBOMToExcel } from './bomService';
 import { resizeSymmetric, snapToNeighbors } from './moduleResize';
 import type { CounterExtras, Box as BoxData } from './boxes';
+import { closetDerived } from './boxes';
 import type { IslandItem, ColumnItem, ClosetConfig } from './types';
+import { DEFAULT_CLOSET } from './types';
 import { SECTIONS, SECTION_ORDER, SectionId } from './sections';
 import { buildBoxes, boxesToJSON, armUpperOrigin, findCollisions, LOWER_DEPTH, UPPER_DEPTH, CORNER_BLIND_OFFSET, TOP_MARGIN, MAX_MODULE_WIDTH, SPLASH_HEIGHT_DEFAULT, COUNTER_THICKNESS_DEFAULT, COUNTER_OVERHANG_DEFAULT, FRIDGE_CLEARANCE, OVER_FRIDGE_DEPTH, DILATATION_GAP_DEFAULT, DILATATION_DEPTH_DEFAULT } from './boxes';
 
@@ -495,7 +497,7 @@ export default function App() {
   const [dilatationGap, setDilatationGap] = useState(DILATATION_GAP_DEFAULT);
   const [dilatationDepth, setDilatationDepth] = useState(DILATATION_DEPTH_DEFAULT);
   // Qué se ve en la escena (solo visual: no cambia el diseño, el despiece ni la exportación)
-  const [visibility, setVisibility] = useState({ upper: true, lower: true, counter: true, appliances: true });
+  const [visibility, setVisibility] = useState({ upper: true, lower: true, counter: true, appliances: true, doors: true });
   const [hasLeftClosure, setHasLeftClosure] = useState(false);
   const [hasRightClosure, setHasRightClosure] = useState(false);
 
@@ -547,7 +549,7 @@ export default function App() {
   // Islas y penínsulas (Módulos especiales): medida general y dos cotas editables desde el punto 0
   const [islands, setIslands] = useState<IslandItem[]>([]);
   const [columns, setColumns] = useState<ColumnItem[]>([]); // columnas o muros atravesados del espacio
-  const [closet, setCloset] = useState<ClosetConfig>({ zocaloType: 'T', bottomFrame: true }); // base y zócalo del closet
+  const [closet, setCloset] = useState<ClosetConfig>(DEFAULT_CLOSET); // formulario del closet
   // Cocina en L: el brazo va a la izquierda (muro B) o a la derecha (muro C); se pregunta al elegir la forma
   const [lArm, setLArm] = useState<'left' | 'right'>('left');
   // Borrado con confirmación dentro de la app (isla o tarjeta especial pendiente de confirmar)
@@ -633,7 +635,7 @@ export default function App() {
     setLayout(snap.layout); setWallA(snap.wallA); setWallB(snap.wallB); setWallC(snap.wallC);
     setSpaceHeight(snap.spaceHeight); setHasZocalo(snap.hasZocalo); setZocaloHeight(snap.zocaloHeight);
     setZocaloDepth(snap.zocaloDepth); setHasCounter(snap.hasCounter); setCounterThickness(snap.counterThickness);
-    setCounterOverhang(snap.counterOverhang); setHasSplash(snap.hasSplash); setSplashHeight(snap.splashHeight); setCounterExtras(snap.counterExtras); setIslands(snap.islands); setColumns(snap.columns ?? []); setCloset(snap.closet ?? { zocaloType: 'T', bottomFrame: true }); setLArm(snap.lArm); setHasLeftClosure(snap.hasLeftClosure); setHasRightClosure(snap.hasRightClosure);
+    setCounterOverhang(snap.counterOverhang); setHasSplash(snap.hasSplash); setSplashHeight(snap.splashHeight); setCounterExtras(snap.counterExtras); setIslands(snap.islands); setColumns(snap.columns ?? []); setCloset({ ...DEFAULT_CLOSET, ...(snap.closet ?? {}) }); setLArm(snap.lArm); setHasLeftClosure(snap.hasLeftClosure); setHasRightClosure(snap.hasRightClosure);
     setHasDilatation(snap.hasDilatation); setDilatationGap(snap.dilatationGap); setDilatationDepth(snap.dilatationDepth);
     setModules(snap.modules); setSpecialModules(snap.specialModules); setAppliances(snap.appliances);
     setHasIsland(snap.hasIsland); setLineType(snap.lineType); setFaceColor(snap.faceColor);
@@ -648,7 +650,7 @@ export default function App() {
     const first = initialDesign.current!;
     return {
       ...first, ...c.defaults,
-      modules: [], islands: [], columns: [], closet: { zocaloType: 'T' as const, bottomFrame: true }, counterExtras: {}, hasLeftClosure: false, hasRightClosure: false, hasIsland: false, lArm: 'left',
+      modules: [], islands: [], columns: [], closet: { ...DEFAULT_CLOSET }, counterExtras: {}, hasLeftClosure: false, hasRightClosure: false, hasIsland: false, lArm: 'left',
       specialModules: first.specialModules.map((sm, i) => ({ ...sm, active: false, name: c.specials[i] ?? sm.name })),
       appliances: first.appliances.map(ap => ({ ...ap, active: false })),
     } as DesignSnapshot;
@@ -877,6 +879,8 @@ export default function App() {
     leftWall: layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left') || hasLeftClosure,
     rightWall: layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right') || hasRightClosure,
   } : undefined), [isClosetSection, closet, layout, lArm, hasLeftClosure, hasRightClosure]);
+
+  const closetDerivedValues = useMemo(() => (closetInput ? closetDerived(closetInput, wallA, spaceHeight, hasZocalo, zocaloHeight) : null), [closetInput, wallA, spaceHeight, hasZocalo, zocaloHeight]);
 
   const activeIslands = useMemo(() => islands
     .filter(i => i.kind === 'isla' || layout === 'L_SHAPE')
@@ -1481,7 +1485,7 @@ export default function App() {
   const handleMathematicalSuggestion = async (strategy: OptimizationStrategy) => {
     setIsOptMenuOpen(false);
     if (isClosetSection) {
-      window.alert('Por ahora el closet muestra su estructura: marcos, costado o dilatadas, base o zócalo, tapa de riel y maletero. El interior (cajonero, entrepaños, tubos y puertas corredizas) se agrega en el siguiente paso.');
+      window.alert('En el closet la estructura y el interior (cajonero, entrepaños, tubos) se arman solos con las respuestas del formulario de Espacio. Las puertas corredizas se agregan en el siguiente paso.');
       return;
     }
     const conflicts = islandConflicts();
@@ -3962,6 +3966,7 @@ export default function App() {
                     )}
                   </div>
                   
+                  {!isClosetSection && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
                       <div>
@@ -4002,32 +4007,108 @@ export default function App() {
                       </div>
                     )}
                   </div>
+                  )}
 
-                  {isClosetSection && (
-                    <div className="p-4 rounded-3xl border-2 border-slate-100 bg-white space-y-3">
+                  {isClosetSection && closetDerivedValues && (
+                    <div className="p-4 rounded-3xl border-2 border-slate-100 bg-white space-y-4">
                       <div>
-                        <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">Estructura del closet</p>
-                        <p className="text-[9px] font-bold text-slate-400 mt-0.5">Los lados salen del Espacio: el lado con muro lleva marco lateral y dilatada de 15 mm; el lado sin muro lleva costado propio.</p>
+                        <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">Formulario del closet</p>
+                        <p className="text-[9px] font-bold text-slate-400 mt-0.5">Los lados salen del Espacio: el lado con muro lleva marco lateral y dilatada de 15 mm; el lado sin muro lleva costado propio. Lo sugerido se puede editar.</p>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-[10px] font-black uppercase tracking-wide">
                         {([['Izquierdo', closetInput?.leftWall], ['Derecho', closetInput?.rightWall]] as const).map(([lado, hasWall]) => (
                           <div key={lado} className="px-3 py-2 rounded-xl bg-slate-50 text-slate-600">{lado}: <span className="text-indigo-600">{hasWall ? 'con muro' : 'con costado'}</span></div>
                         ))}
                       </div>
+
+                      <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
+                        <div>
+                          <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Zócalo</label>
+                          <p className="text-[9px] font-bold text-slate-400 mt-0.5">La base va encima del zócalo</p>
+                        </div>
+                        <button onClick={() => setHasZocalo(!hasZocalo)} className={`w-10 h-5 rounded-full transition-all relative shrink-0 ${hasZocalo ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+                          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${hasZocalo ? 'left-5.5' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                      {hasZocalo && (
+                        <div className="space-y-1">
+                          <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Altura del zócalo (mm) · sugerido 80</label>
+                          <DeferredNumber value={zocaloHeight} onCommit={n => setZocaloHeight(Math.max(30, Math.min(200, Math.round(n))))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
+                        <div>
+                          <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Marco inferior</label>
+                          <p className="text-[9px] font-bold text-slate-400 mt-0.5">Acostado sobre el piso o sobre el zócalo; con zócalo y sin marco queda el tipo T</p>
+                        </div>
+                        <button onClick={() => setCloset(c => ({ ...c, bottomFrame: !c.bottomFrame }))} className={`w-10 h-5 rounded-full transition-all relative shrink-0 ${closet.bottomFrame ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+                          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${closet.bottomFrame ? 'left-5.5' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
+                        <div>
+                          <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Tapa de riel</label>
+                          <p className="text-[9px] font-bold text-slate-400 mt-0.5">Va siempre adelante del marco</p>
+                        </div>
+                        <button onClick={() => setCloset(c => ({ ...c, tapaRiel: !c.tapaRiel }))} className={`w-10 h-5 rounded-full transition-all relative shrink-0 ${closet.tapaRiel ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+                          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${closet.tapaRiel ? 'left-5.5' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                      {closet.tapaRiel && (
+                        <div className="space-y-1">
+                          <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Altura de la tapa de riel (mm) · sugerido 110</label>
+                          <DeferredNumber value={closet.tapaRielHeight} onCommit={n => setCloset(c => ({ ...c, tapaRielHeight: Math.max(30, Math.min(300, Math.round(n))) }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                        </div>
+                      )}
+
                       <div className="space-y-1">
-                        <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{hasZocalo ? 'Zócalo' : 'Marco inferior'}</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {(hasZocalo
-                            ? [['T', 'Tipo T (una horizontal y una vertical)'], ['base', 'Base completa y zócalo al frente']] as const
-                            : [[true, 'Marco inferior acostado sobre el piso'], [false, 'Sin marco inferior']] as const
-                          ).map(([val, label]) => {
-                            const active = hasZocalo ? closet.zocaloType === val : closet.bottomFrame === val;
-                            return (
-                              <button key={String(val)} onClick={() => setCloset(c => (hasZocalo ? { ...c, zocaloType: val as 'T' | 'base' } : { ...c, bottomFrame: val as boolean }))} className={`py-2 px-2 rounded-xl text-[10px] font-black border-2 text-center leading-tight ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
-                            );
-                          })}
+                        <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Cajonero: dónde va (sugerido: {wallA >= 2300 ? 'al centro' : 'a un extremo'})</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {([['left', 'Izquierda'], ['center', 'Centro'], ['right', 'Derecha']] as const).map(([val, label]) => (
+                            <button key={val} onClick={() => setCloset(c => ({ ...c, cajoneroPos: val }))} className={`py-2 rounded-xl text-[10px] font-black border-2 ${closet.cajoneroPos === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+                          ))}
                         </div>
                       </div>
+
+                      {closet.cajoneroPos !== 'center' && (
+                        <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
+                          <div>
+                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Costado junto al lado del closet</label>
+                            <p className="text-[9px] font-bold text-slate-400 mt-0.5">Costado de los entrepaños; si no lleva, los entrepaños se alargan hasta el largo de la tapa</p>
+                          </div>
+                          <button onClick={() => setCloset(c => ({ ...c, sideCostado: c.sideCostado === false }))} className={`w-10 h-5 rounded-full transition-all relative shrink-0 ${closet.sideCostado !== false ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+                            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${closet.sideCostado !== false ? 'left-5.5' : 'left-0.5'}`} />
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-3">
+                        {([
+                          ['Altura del cajonero (mm del piso)', closetDerivedValues.cajoneroTop, closetDerivedValues.suggestedCajoneroTop, (n: number) => setCloset(c => ({ ...c, cajoneroTop: Math.max(300, Math.min(Math.round(n), 1800)) }))],
+          ['Cajones (frentes de 200 mm como máximo)', closetDerivedValues.drawerCount, closetDerivedValues.suggestedDrawers, (n: number) => setCloset(c => ({ ...c, cajonCount: Math.max(1, Math.min(6, Math.round(n))) }))],
+                          ['Entrepaños (repartidos en el espacio)', closetDerivedValues.shelfCount, closetDerivedValues.suggestedShelves, (n: number) => setCloset(c => ({ ...c, shelfCount: Math.max(0, Math.min(12, Math.round(n))) }))],
+          ['Puertas corredizas', closetDerivedValues.doorCount, closetDerivedValues.suggestedDoors, (n: number) => setCloset(c => ({ ...c, doorCount: Math.max(2, Math.min(6, Math.round(n))) }))],
+                          ['Ancho del cajonero (mm)', closetDerivedValues.cajoneroWidth, closetDerivedValues.suggestedCajonero, (n: number) => setCloset(c => ({ ...c, cajoneroWidth: Math.max(300, Math.round(n)) }))],
+                          ['Traslape de puertas (mm)', closet.overlap, 25, (n: number) => setCloset(c => ({ ...c, overlap: Math.max(0, Math.min(100, Math.round(n))) }))],
+                          ['Alto de las puertas (mm)', closetDerivedValues.doorHeight, closetDerivedValues.suggestedDoorHeight, (n: number) => setCloset(c => ({ ...c, doorHeight: Math.max(500, Math.round(n)) }))],
+                        ] as Array<[string, number, number, (n: number) => void]>).map(([label, value, suggested, onCommit]) => (
+                          <div key={label} className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label} · sugerido {Math.round(suggested)}</label>
+                            <DeferredNumber value={Math.round(value)} onCommit={onCommit} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                          </div>
+                        ))}
+                        <div className="space-y-1">
+                          <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Ancho de cada puerta</label>
+                          <div className="w-full bg-slate-100 rounded-xl p-2 text-xs font-black text-slate-500">{Math.round(closetDerivedValues.doorWidth)} mm</div>
+                        </div>
+                      </div>
+
+                      <div className="px-3 py-2 rounded-xl bg-slate-50 text-[9px] font-bold text-slate-500 space-y-0.5">
+                        <p>Espacio libre para las puertas: {Math.round(closetDerivedValues.freeHeight)} mm (de la cara de arriba de la base a la cara de abajo del marco horizontal).</p>
+                        <p>Maletero: tablero a {Math.round(closetDerivedValues.maleteroTop)} mm; primer tubo 40 mm más abajo y el segundo a 900 mm del piso.</p>
+                      </div>
+                      <button onClick={() => setCloset({ ...DEFAULT_CLOSET, bottomFrame: closet.bottomFrame })} className="w-full py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 text-[10px] font-black uppercase tracking-wide">Volver a lo sugerido</button>
                     </div>
                   )}
 
@@ -4281,6 +4362,14 @@ export default function App() {
                   islands={activeIslands}
                   lArm={lArm}
                   onEditIsland={updateIsland}
+                  closetForm={isClosetSection && closetDerivedValues ? {
+                    config: closet,
+                    derived: closetDerivedValues,
+                    hasZocalo,
+                    zocaloHeight,
+                    onChange: (patch) => setCloset(c => ({ ...c, ...patch })),
+                    onZocalo: (patch) => { if (patch.hasZocalo !== undefined) setHasZocalo(patch.hasZocalo); if (patch.zocaloHeight !== undefined) setZocaloHeight(patch.zocaloHeight); },
+                  } : undefined}
                   onEditWall={(wall, v) => (wall === 'A' ? setWallA : wall === 'B' ? setWallB : setWallC)(Math.max(500, Math.round(v)))}
                   onDeleteIsland={removeIsland}
                   viewMode={activeView} 
@@ -4367,7 +4456,7 @@ export default function App() {
                   )}
                   <div className="w-px h-6 bg-slate-200" />
                   <div className="flex gap-1">
-                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos']] as const).filter(([key]) => (key !== 'upper' || cfg.hasUpper) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
+                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos'], ['doors', 'Puertas', 'las puertas corredizas']] as const).filter(([key]) => (key !== 'doors' || isClosetSection) && (key !== 'upper' || cfg.hasUpper) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
                       <button
                         key={key}
                         onClick={() => setVisibility(v => ({ ...v, [key]: !v[key] }))}

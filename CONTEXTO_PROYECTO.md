@@ -272,3 +272,9 @@ Pendiente: las posiciones del cajonero (35, 445, 605), la gola media (330) y el 
 - Reglas completas en `REGLAS_CLOSET.md`. Tarjeta "Estructura del closet" en Espacio (secciones Closets y Walking closets): los lados (con muro o con costado) se deducen de los muros auxiliares, L o U; con zócalo se elige tipo T o base completa con zócalo al frente; sin zócalo, marco inferior acostado o sin marco (`ClosetConfig`, `closetInput`).
 - `boxes.ts` arma sobre el muro A: costado propio (lado sin muro) o dilatada 15×15 + marco lateral 80×15 (lado con muro), marco horizontal (ancho − 30 − 15), tapa de riel de 110, base (zócalo T / base + zócalo / marco acostado) y tablero del maletero de 455 de fondo a min(1900, techo − 350). Ids `closet-N` (kind `panel`).
 - Pendiente: interior (cajonero, entrepaños, tubos), puertas corredizas, alarma de láminas de 2400, listado de corte y estructura en los brazos de L/U. "Optimizar modulación" en closets avisa que el interior viene después.
+
+## Closets: pasos 2 y 3, interior, puertas y formularios (2026-11-05)
+- Formulario del closet en Espacio: zócalo/marco inferior (si/no), tapa de riel (activar + altura), cajonero (posición, cajones, ancho, altura de la cara superior sugerida 800), entrepaños (cantidad, reparto igual), puertas corredizas (cantidad, traslape 25, alto = libre − 20) y chip "Puertas" para ocultarlas.
+- Cajonero: tapa por encima, cajones pegados a la tapa con 30 mm entre frentes y frentes ≤ 200, puente amarre de 70, dilatación de 45 junto al muro, opción de quitar el costado junto al lado del closet.
+- Doble clic en una pieza del closet abre el formulario de su sección (zócalo, base, cajonero, entrepaños, maletero) en `KitchenViewer3D.tsx` (`ClosetSectionForm`, `closetSectionOf` en `boxes.ts`). Probado: entrepaños y cajonero.
+- Pendiente: alarma de láminas de 2400 con división editable, listado de corte de piezas del closet, estructura en brazos L/U, batientes, zapateros.

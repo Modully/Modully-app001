@@ -77,9 +77,22 @@ export interface ColumnItem {
 
 /** Closet: base y zócalo. Los lados (muro o costado) se deducen del Espacio */
 export interface ClosetConfig {
-  zocaloType: 'T' | 'base';   // con zócalo: tipo T (una pieza horizontal y otra vertical) o base completa con el zócalo al frente
-  bottomFrame: boolean;       // sin zócalo: marco inferior acostado sobre el piso (true) o sin ese marco (false)
+  bottomFrame: boolean;       // marco inferior: la base acostada (550 de fondo) sobre el piso o sobre el zócalo. Con zócalo y sin marco inferior queda el tipo T
+  cajoneroPos: 'left' | 'center' | 'right'; // dónde va el cajonero (se sugiere según el espacio)
+  cajonCount?: number;        // cajones del cajonero; sin valor = los que hagan falta para llegar a la altura del cajonero con frentes de 200 mm como máximo
+  maleteroTop?: number;       // altura del tablero del maletero; sin valor = la menor de 1900 mm o (techo - 350)
+  sideCostado?: boolean;      // cajonero a un extremo: el costado de los entrepaños junto al lado del closet lleva (true, por defecto) o desaparece y los entrepaños se alargan
+  shelfCount?: number;        // entrepaños sobre el cajonero, repartidos en el espacio hasta el maletero; sin valor = los sugeridos (a ~330 mm como máximo)
+  cajoneroTop?: number;       // altura de la cara de arriba del cajonero medida desde el piso; sin valor = 800 (sugerido)
+  cajoneroWidth?: number;     // ancho del cajonero; sin valor = el sugerido (ancho de la puerta - 200)
+  doorCount?: number;         // puertas corredizas; sin valor = la sugerida (3 si el cajonero va al centro, 2 si va a un lado)
+  overlap: number;            // traslape entre puertas corredizas (25)
+  doorHeight?: number;        // alto de las puertas; sin valor = el sugerido (espacio libre - 20)
+  tapaRiel: boolean;          // la tapa de riel (siempre va parada adelante del marco): activada o desactivada
+  tapaRielHeight: number;     // altura de la tapa de riel (110 sugerido)
 }
+
+export const DEFAULT_CLOSET: ClosetConfig = { bottomFrame: true, cajoneroPos: 'center', overlap: 25, tapaRiel: true, tapaRielHeight: 110 };
 
 export interface Appliance {
   type: ApplianceType;
