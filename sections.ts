@@ -5,7 +5,7 @@ import { LayoutType } from './types';
  * motor (módulos, medir, espacio, especiales, accesorios y vistas); lo que cambia es esta configuración. Las reglas propias de cada
  * sección (qué lleva cada accesorio, cómo se modula) se van agregando aquí a medida que se definan.
  */
-export type SectionId = 'cocinas' | 'closets' | 'walking' | 'puertas' | 'bano' | 'tv';
+export type SectionId = 'cocinas' | 'closets' | 'closetfit' | 'walking' | 'puertas' | 'bano' | 'tv';
 
 export interface SectionConfig {
   id: SectionId;
@@ -43,7 +43,7 @@ export const SECTIONS: Record<SectionId, SectionConfig> = {
     note: '',
   },
   closets: {
-    id: 'closets', name: 'Closets', singular: 'closet',
+    id: 'closets', name: 'Closet constructor', singular: 'closet',
     layouts: ['STRAIGHT', 'L_SHAPE', 'U_SHAPE'],
     defaults: { layout: 'STRAIGHT', wallA: 2400, wallB: 1800, wallC: 1800, spaceHeight: 2400, hasZocalo: false, zocaloHeight: 80, zocaloDepth: 500, hasCounter: false },
     baseModuleHeight: 1900, upperGap: 0, hasUpper: true,
@@ -52,6 +52,17 @@ export const SECTIONS: Record<SectionId, SectionConfig> = {
     accessories: [],
     specials: ['Columna de cajones', 'Columna zapatero'],
     note: 'Aún no hay reglas propias de closets: arranca con las de la cocina adaptadas (cuerpo de 1.9 m y maletero arriba).',
+  },
+  closetfit: {
+    id: 'closetfit', name: 'Closet fit', singular: 'closet',
+    layouts: ['STRAIGHT', 'L_SHAPE', 'U_SHAPE'],
+    defaults: { layout: 'STRAIGHT', wallA: 2400, wallB: 1800, wallC: 1800, spaceHeight: 2400, hasZocalo: false, zocaloHeight: 80, zocaloDepth: 500, hasCounter: false },
+    baseModuleHeight: 1900, upperGap: 0, hasUpper: false,
+    lowerName: 'Cuerpo', upperName: 'Superior',
+    features: { counter: false, islands: false },
+    accessories: [],
+    specials: ['', ''],
+    note: 'Closet personalizado: un cubo cubre el área y se arma por cuerpos, paso a paso.',
   },
   walking: {
     id: 'walking', name: 'Walking closets', singular: 'walking closet',
@@ -99,4 +110,4 @@ export const SECTIONS: Record<SectionId, SectionConfig> = {
   },
 };
 
-export const SECTION_ORDER: SectionId[] = ['cocinas', 'closets', 'walking', 'puertas', 'bano', 'tv'];
+export const SECTION_ORDER: SectionId[] = ['cocinas', 'closets', 'closetfit', 'walking', 'puertas', 'bano', 'tv'];

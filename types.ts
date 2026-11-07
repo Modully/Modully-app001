@@ -99,6 +99,14 @@ export interface ClosetConfig {
   torre2On?: boolean;         // otra torre de entrepaños en el extremo opuesto a la primera
   torre2?: Partial<ClosetConfig>; // medidas propias de la segunda torre (torreWidth, torreToCeiling, torreShelves, torreDivisions, torreDepth)
   cajoneroX?: number;         // posición libre del cajonero: distancia (mm) desde la cara izquierda del closet hasta su borde izquierdo; sin valor = izquierda / centro / derecha
+  sheetSplit?: number;        // piezas largas (maletero, marcos, tapa de riel, base, zócalo) de más de 2400 mm: largo de la primera lámina; la segunda es lo que falta (lo que se suma a una se resta a la otra)
+  doorType?: 'corredizas' | 'abatibles'; // puertas corredizas (por defecto) o abatibles de parche
+  doorEdges?: Array<{ hinge?: 'izq' | 'der'; type?: 'costado' | 'marco' }>; // abatibles: por puerta, de qué lado va la bisagra (ahí lleva su propio costado o marco; el otro lado queda libre) y de qué tipo es
+  doorGap?: number;           // abatibles: luz entre puertas (2 mm)
+  doorCover?: number;         // abatibles de parche: cuánto cubre la puerta de su costado o marco al inicio y al cierre (13 mm)
+  narizEntrepanos?: boolean;  // entrepaños (del cajonero y de la torre) con nariz: tira al frente de 15 mm de espesor; sin nariz por defecto
+  narizMaletero?: boolean;    // maletero con nariz: el tablero llega a 470 mm de fondo con la nariz
+  narizAlto?: number;         // alto de la nariz (sugerido 40 mm)
   shelvesOn?: boolean;        // sección de entrepaños (costados y entrepaños sobre el cajonero): activa por defecto
   costadoDepth?: number;      // fondo del costado piso-techo; la base toma el mismo fondo (sin valor = 550)
   costadoLeft?: boolean;      // costado izquierdo de los entrepaños: lleva (por defecto) o no; sin costado los entrepaños se alargan
@@ -207,3 +215,16 @@ export interface IslandItem {
   sink?: { distance: number };   // lleva poceta / fregadero: igual
   bar?: number;   // barra: voladizo del mesón por el frente (mm); los módulos miden ancho - barra de fondo y el zócalo retrocede la barra
 }
+
+/** Closet fit (closet personalizado): un cubo que cubre el área y se arma por cuerpos (inferiores y superiores), paso a paso */
+export interface ClosetFit {
+  depth: number;          // fondo del cubo (mm)
+  lowerBodies: number;    // cuerpos inferiores, uno al lado del otro
+  upperBodies: number;    // cuerpos superiores (0 = ninguno)
+  upperHeight: number;    // alto de los cuerpos superiores (mm)
+  lowerW?: number[];      // anchos de los cuerpos inferiores (mm); sin valor = iguales
+  upperW?: number[];      // anchos de los cuerpos superiores (mm); sin valor = iguales
+  lowerCells?: number[][]; // por cuerpo inferior: alturas de sus celdas de arriba hacia abajo (mm); sin valor = una sola celda
+  upperCells?: number[][]; // lo mismo para los cuerpos superiores
+}
+export const DEFAULT_FIT: ClosetFit = { depth: 550, lowerBodies: 3, upperBodies: 1, upperHeight: 350 };

@@ -5,8 +5,8 @@ import { OrbitControls, Grid, Environment, Text, Edges, PerspectiveCamera, Ortho
 import * as THREE from 'three';
 import { IslandItem, KitchenModule, Appliance, ApplianceType, LayoutType, WallName } from './types';
 import type { CounterEdge, CounterExtras, closetDerived } from './boxes';
-import { closetSectionOf, closetCajoneroIndex, closetTorreIndex } from './boxes';
-import type { ClosetConfig } from './types';
+import { closetSectionOf, closetCajoneroIndex, closetTorreIndex, fitRows, fitCells } from './boxes';
+import type { ClosetConfig, ClosetFit } from './types';
 import { Box, findModuleBox, boxesBounds, applianceCenter, counterTopZ, CORNER_BLIND_OFFSET, WALL_THICKNESS } from './boxes';
 import { COLORS } from './constants';
 import { X, Plus, Ruler } from 'lucide-react';
@@ -215,6 +215,135 @@ const CajoneroStretch: React.FC<{ position: [number, number, number]; depth: num
       }}
       onClick={() => {}}
     />
+  );
+};
+
+
+/** Flecha para arrastrar un borde de un cuerpo del Closet fit (mueve el borde y muestra la medida) */
+const FitEdgeHandle: React.FC<{ position: [number, number, number]; normal: [number, number, number]; axis: [number, number, number]; label: string; begin: () => (deltaMm: number) => void; controlsRef?: React.RefObject<any> }> = ({ position, normal, axis, label, begin, controlsRef }) => {
+  const { camera, size } = useThree();
+  const st = useRef<{ sx: number; sy: number; apply: (d: number) => void } | null>(null);
+  const startDrag = useDocumentDrag(
+    (dx, dy) => { const s = st.current; if (s) s.apply(pixelsToMm(dx, dy, s.sx, s.sy)); },
+    () => { st.current = null; if (controlsRef?.current) controlsRef.current.enabled = true; document.body.style.cursor = 'auto'; }
+  );
+  return (
+    <FaceHandle
+      position={position}
+      normal={normal}
+      meshPosition={[0, 0, 0]}
+      meshRotation={[0, 0, 0]}
+      label={label}
+      title="Arrastrar para mover este borde"
+      onStart={(e) => {
+        const { sx, sy } = screenPixelsPerMeter(camera, size, new THREE.Vector3(...position), new THREE.Vector3(...axis));
+        st.current = { sx, sy, apply: begin() };
+        if (controlsRef?.current) controlsRef.current.enabled = false;
+        document.body.style.cursor = 'ew-resize';
+        startDrag(e);
+      }}
+      onClick={() => {}}
+    />
+  );
+};
+
+
+/** Flecha doble en el contacto entre dos cuerpos del Closet fit (como la unión de las cocinas): arrastrarla mueve la cara compartida */
+const FitJunction: React.FC<{ position: [number, number, number]; axis: [number, number, number]; vertical?: boolean; posMm: number; group: string; begin: () => (deltaMm: number, exact?: boolean) => void; controlsRef?: React.RefObject<any> }> = ({ position, axis, vertical, posMm, group, begin, controlsRef }) => {
+  const { camera, size } = useThree();
+  const [isResizing, setIsResizing] = useState(false);
+  const [matched, setMatched] = useState(false);
+  const matchedEl = useRef<HTMLElement | null>(null);
+  const st = useRef<{ sx: number; sy: number; startPos: number; apply: (d: number, exact?: boolean) => void } | null>(null);
+  const highlight = (el: HTMLElement | null) => {
+    if (matchedEl.current === el) return;
+    matchedEl.current?.classList.remove('ring-8', 'ring-emerald-500');
+    el?.classList.add('ring-8', 'ring-emerald-500');
+    matchedEl.current = el;
+    setMatched(el !== null);
+  };
+  const startDrag = useDocumentDrag(
+    (dx, dy, ev) => {
+      const t = st.current;
+      if (!t) return;
+      let d = pixelsToMm(dx, dy, t.sx, t.sy);
+      // si el cursor toca otra flecha doble del mismo eje (de otra fila o cuerpo), la unión queda perfectamente alineada con ella
+      // se busca la flecha más cercana al cursor (a menos de 36 px) aunque haya una nota encima: no hace falta acertar exacto
+      let valid: HTMLElement | null = null, best = 36;
+      document.querySelectorAll<HTMLElement>('[data-fit-pos]').forEach(el => {
+        if (el.dataset.fitAxis !== (vertical ? 'y' : 'x') || el.dataset.fitGroup === group) return;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0) return;
+        const dist = Math.hypot(r.left + r.width / 2 - ev.clientX, r.top + r.height / 2 - ev.clientY);
+        if (dist < best) { best = dist; valid = el; }
+      });
+      highlight(valid);
+      // el desplazamiento se mide desde donde empezó el arrastre (posMm cambia a medida que la unión se mueve)
+      if (valid) d = Number((valid as HTMLElement).dataset.fitPos) - t.startPos;
+      t.apply(d, !!valid); // alineado: medida exacta, sin redondear a 5 mm
+    },
+    () => { highlight(null); st.current = null; setIsResizing(false); if (controlsRef?.current) controlsRef.current.enabled = true; document.body.style.cursor = 'auto'; }
+  );
+  return (
+    <HtmlScaled zoomScale position={position} center distanceFactor={1} zIndexRange={[100, 0]}>
+      <div
+        className={`w-14 h-14 rounded-full ${isResizing ? 'bg-green-200 border-green-600' : 'bg-purple-100 border-purple-600'} border-[3px] shadow-xl flex items-center justify-center backdrop-blur-sm ${vertical ? 'cursor-ns-resize' : 'cursor-ew-resize'}`}
+        title="Contacto con la cara interna del otro cuerpo: arrastra para mover la unión (si tocas otra flecha doble, quedan alineadas)"
+        data-fit-pos={posMm}
+        data-fit-axis={vertical ? 'y' : 'x'}
+        data-fit-group={group}
+        style={{ pointerEvents: isResizing ? 'none' : undefined }}
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          const { sx, sy } = screenPixelsPerMeter(camera, size, new THREE.Vector3(...position), new THREE.Vector3(...axis));
+          st.current = { sx, sy, startPos: posMm, apply: begin() };
+          setIsResizing(true);
+          if (controlsRef?.current) controlsRef.current.enabled = false;
+          document.body.style.cursor = vertical ? 'ns-resize' : 'ew-resize';
+          startDrag(e);
+        }}
+      >
+        <div className="flex items-center gap-0" style={{ transform: `rotate(${vertical ? 90 : 0}deg)` }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M15 18L9 12L15 6" stroke="#7c3aed" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <div className="w-[3px] h-4 bg-purple-600 rounded"></div>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M9 18L15 12L9 6" stroke="#7c3aed" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </div>
+      </div>
+      {isResizing && (
+        <div className="absolute top-full mt-2 px-3 py-1 bg-green-600 text-white text-lg font-black rounded-lg shadow-2xl border-2 border-white whitespace-nowrap">{matched ? '✓ IGUALADA' : '↔ UNIÓN'}</div>
+      )}
+    </HtmlScaled>
+  );
+};
+
+
+/** Nota con las medidas de un cuerpo del Closet fit: ancho y alto se pueden escribir (Enter o salir del campo para aplicar) */
+const FitDimLabel: React.FC<{ w: number; h: number; canEditH: boolean; onCommit: (patch: { width?: number; height?: number }) => void; offset: { x: number; y: number }; onOffset: (o: { x: number; y: number }) => void }> = ({ w, h, canEditH, onCommit, offset, onOffset }) => {
+  const [dw, setDw] = useState<string | null>(null);
+  const [dh, setDh] = useState<string | null>(null);
+  const done = (kind: 'w' | 'h') => {
+    const raw = kind === 'w' ? dw : dh;
+    if (raw !== null) { const n = Number(raw); if (Number.isFinite(n) && n > 0) onCommit(kind === 'w' ? { width: Math.round(n) } : { height: Math.round(n) }); }
+    if (kind === 'w') setDw(null); else setDh(null);
+  };
+  // se agarra por el asa de la izquierda y se mueve donde estorbe menos
+  const startMove = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    const x0 = e.clientX - offset.x, y0 = e.clientY - offset.y;
+    const move = (ev: PointerEvent) => onOffset({ x: ev.clientX - x0, y: ev.clientY - y0 });
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  };
+  const cls = 'w-10 bg-slate-800 text-sky-100 text-center rounded border border-slate-600 text-[9px] font-black outline-none focus:border-sky-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none';
+  return (
+    <div data-overlay className="flex items-center gap-0.5 select-none whitespace-nowrap rounded-md bg-slate-900/80 px-1 py-0.5 text-[9px] font-black text-sky-100" style={{ pointerEvents: 'auto', transform: `translate(${offset.x}px, ${offset.y}px)` }} onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+      <span onPointerDown={startMove} className="cursor-move px-0.5 text-slate-400" style={{ touchAction: 'none' }} title="Arrastra para mover la nota">⠿</span>
+      <input type="number" className={cls} value={dw ?? Math.round(w)} onChange={(e) => setDw(e.target.value)} onBlur={() => done('w')} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} title="Ancho (mm)" />
+      <span>×</span>
+      <input type="number" className={cls} value={dh ?? Math.round(h)} disabled={!canEditH} onChange={(e) => setDh(e.target.value)} onBlur={() => done('h')} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} title={canEditH ? 'Alto (mm)' : 'El alto de este cuerpo sale de la altura del Espacio'} />
+    </div>
   );
 };
 
@@ -1378,7 +1507,10 @@ const ClosetToggle: React.FC<{ label: string; on: boolean; onClick: () => void }
   </button>
 );
 
-const CLOSET_SECTION_TITLES: Record<string, string> = { torre: 'Torre de entrepaños', puertas: 'Puertas corredizas', muro: 'Muros del closet', taparriel: 'Tapa de riel', costado: 'Costado piso a techo', zocalo: 'Zócalo', base: 'Base (marco inferior)', cajonero: 'Cajonero', entrepanos: 'Entrepaños', maletero: 'Maletero' };
+const isFitBody = (n: string) => n.startsWith('Cuerpo ') || n.startsWith('Hueco ') || n === 'Cubo closet fit';
+const isClosetDoor = (n: string) => n.startsWith('Puerta corrediza') || n.startsWith('Puerta abatible');
+
+const CLOSET_SECTION_TITLES: Record<string, string> = { torre: 'Torre de entrepaños', puertas: 'Puertas closet', muro: 'Muros del closet', taparriel: 'Tapa de riel', costado: 'Costado piso a techo', zocalo: 'Zócalo', base: 'Base (marco inferior)', cajonero: 'Cajonero', entrepanos: 'Entrepaños', maletero: 'Maletero' };
 
 /** Arrastre de un formulario flotante: se agarra por su título y se mueve libremente (desplazamiento en píxeles) */
 function useDragOffset() {
@@ -1411,6 +1543,8 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
           <ClosetToggle label="Hasta el techo" on={c.torreToCeiling === true} onClick={() => onChange({ torreToCeiling: c.torreToCeiling !== true, torreShelves: undefined })} />
           {(() => { const side = api.torreIdx === 2 ? ((c.torrePos ?? 'left') === 'left' ? 'right' : 'left') : (c.torrePos ?? 'left'); const hasCostado = (side === 'left' && !api.leftWall) || (side === 'right' && !api.rightWall); return hasCostado ? <ClosetToggle label="Sin lateral junto al costado" on={c.torreSinLateral === true} onClick={() => onChange({ torreSinLateral: c.torreSinLateral !== true })} /> : null; })()}
           <ClosetNumber label="Ancho (mm)" value={d.torreWidth} hint={d.suggestedCajonero} onCommit={(n) => onChange({ torreWidth: Math.max(300, Math.min(1200, Math.round(n))) })} />
+          <ClosetToggle label="Con nariz" on={c.narizEntrepanos === true} onClick={() => onChange({ narizEntrepanos: c.narizEntrepanos !== true })} />
+          {c.narizEntrepanos === true && <ClosetNumber label="Alto de la nariz (mm)" value={c.narizAlto ?? 40} hint={40} onCommit={(n) => onChange({ narizAlto: Math.max(15, Math.min(100, Math.round(n))) })} />}
           <ClosetNumber label="Entrepaños por columna" value={d.torreShelves} hint={d.suggestedTorreShelves} onCommit={(n) => onChange({ torreShelves: Math.max(0, Math.min(20, Math.round(n))) })} />
           <ClosetNumber label="Divisiones" value={d.torreDivisions} hint={0} onCommit={(n) => onChange({ torreDivisions: Math.max(0, Math.min(5, Math.round(n))) })} />
           <ClosetNumber label="Fondo (mm)" value={c.torreDepth ?? 450} hint={450} onCommit={(n) => onChange({ torreDepth: Math.max(300, Math.min(500, Math.round(n))) })} />
@@ -1420,7 +1554,57 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
       )}
       {section === 'puertas' && (
         <>
+          <div className="grid grid-cols-2 gap-1">
+            {([['corredizas', 'Corredizas'], ['abatibles', 'Abatibles de parche']] as const).map(([val, label]) => (
+              <button key={val} onClick={() => (api.onRoot ?? onChange)({ doorType: val, doorCount: undefined, doorHeight: undefined })} className={`py-1 rounded-lg text-[10px] font-black border-2 leading-tight ${(c.doorType ?? 'corredizas') === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+            ))}
+          </div>
+          <ClosetNumber label="Cantidad de puertas" value={d.doorCount} hint={d.suggestedDoors} onCommit={(n) => (api.onRoot ?? onChange)({ doorCount: Math.max(2, Math.min(6, Math.round(n))) })} />
           <ClosetNumber label="Alto de las puertas (mm)" value={d.doorHeight} hint={d.suggestedDoorHeight} onCommit={(n) => onChange({ doorHeight: Math.max(500, Math.round(n)) })} />
+          {c.doorType === 'abatibles' && (
+            <>
+              {(() => {
+                const N = d.doorCount;
+                const edges = c.doorEdges ?? [];
+                const setEdge = (k: number, patch: { hinge?: 'izq' | 'der'; type?: 'costado' | 'marco' }) => {
+                  const arr = Array.from({ length: N }, (_, j) => ({ ...(edges[j] ?? {}) }));
+                  arr[k] = { ...arr[k], ...patch };
+                  onChange({ doorEdges: arr });
+                };
+                const btn = (on: boolean, label: string, onClick: () => void) => <button key={label} onClick={onClick} className={`py-1 rounded-lg text-[10px] font-black border-2 ${on ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>;
+                return Array.from({ length: N }, (_, k) => {
+                  const hinge = edges[k]?.hinge ?? (k % 2 === 0 ? 'izq' : 'der');
+                  const type = edges[k]?.type ?? 'costado';
+                  const extremo = (hinge === 'izq' && k === 0) || (hinge === 'der' && k === N - 1);
+                  const extName = hinge === 'izq' ? (api.leftWall ? 'marco' : 'costado') : (api.rightWall ? 'marco' : 'costado');
+                  return (
+                    <div key={k} className="rounded-lg border border-slate-200 p-1.5 space-y-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[10px] font-black text-slate-700">Puerta {k + 1}</span>
+                        <div className="grid grid-cols-2 gap-1 w-36">
+                          {btn(hinge === 'izq', 'Izquierda', () => setEdge(k, { hinge: 'izq' }))}
+                          {btn(hinge === 'der', 'Derecha', () => setEdge(k, { hinge: 'der' }))}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[9px] font-bold text-slate-500">{hinge === 'izq' ? 'Inicio' : 'Cierre'} (bisagra)</span>
+                        {extremo ? <span className="text-[10px] font-black text-indigo-600">{extName} (del Espacio)</span> : (
+                          <div className="grid grid-cols-2 gap-1 w-36">
+                            {btn(type === 'costado', 'Costado', () => setEdge(k, { type: 'costado' }))}
+                            {btn(type === 'marco', 'Marco', () => setEdge(k, { type: 'marco' }))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-[9px] font-bold text-slate-400">{hinge === 'izq' ? 'Cierre' : 'Inicio'}: libre</div>
+                    </div>
+                  );
+                });
+              })()}
+              <p className="text-[9px] font-bold text-slate-400">La bisagra define el lado con costado o marco propio; el otro lado queda libre. Una puerta izquierda y una derecha juntas dejan el centro libre.</p>
+              <ClosetNumber label="Luz entre puertas (mm)" value={c.doorGap ?? 2} hint={2} onCommit={(n) => onChange({ doorGap: Math.max(0, Math.min(10, Math.round(n))) })} />
+              <ClosetNumber label="Cubre del costado/marco (mm)" value={c.doorCover ?? 13} hint={13} onCommit={(n) => onChange({ doorCover: Math.max(0, Math.min(40, Math.round(n))) })} />
+            </>
+          )}
           <ClosetToggle label="Translúcidas" on={api.doorsGhost === true} onClick={() => api.onDoorsGhost?.(api.doorsGhost !== true)} />
           <p className="text-[9px] font-bold text-slate-400">Alto sugerido: espacio libre − 20 mm. Translúcidas para ver el interior sin ocultar las puertas.</p>
         </>
@@ -1517,6 +1701,8 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
         <>
           <ClosetToggle label="Lleva entrepaños" on={c.shelvesOn !== false} onClick={() => onChange({ shelvesOn: c.shelvesOn === false })} />
           <ClosetNumber label="Entrepaños" value={d.shelfCount} hint={d.suggestedShelves} onCommit={(n) => onChange({ shelfCount: Math.max(0, Math.min(12, Math.round(n))) })} />
+          <ClosetToggle label="Con nariz" on={c.narizEntrepanos === true} onClick={() => onChange({ narizEntrepanos: c.narizEntrepanos !== true })} />
+          {c.narizEntrepanos === true && <ClosetNumber label="Alto de la nariz (mm)" value={c.narizAlto ?? 40} hint={40} onCommit={(n) => onChange({ narizAlto: Math.max(15, Math.min(100, Math.round(n))) })} />}
           <p className="text-[9px] font-bold text-slate-400">Se reparten el espacio entre la tapa del cajonero y el maletero.</p>
           {c.cajoneroPos === 'left' && <ClosetToggle label={api.leftWall ? 'Costado junto al muro (izquierdo)' : 'Costado junto al costado (izquierdo)'} on={c.costadoLeft !== false && c.sideCostado !== false} onClick={() => onChange({ costadoLeft: !(c.costadoLeft !== false && c.sideCostado !== false), sideCostado: undefined })} />}
           {c.cajoneroPos === 'right' && <ClosetToggle label={api.rightWall ? 'Costado junto al muro (derecho)' : 'Costado junto al costado (derecho)'} on={c.costadoRight !== false && c.sideCostado !== false} onClick={() => onChange({ costadoRight: !(c.costadoRight !== false && c.sideCostado !== false), sideCostado: undefined })} />}
@@ -1525,6 +1711,8 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
       {section === 'maletero' && (
         <>
           <ClosetNumber label="Altura del tablero (mm del piso)" value={d.maleteroTop} hint={d.suggestedMaleteroTop} onCommit={(n) => onChange({ maleteroTop: Math.max(900, Math.min(2300, Math.round(n))) })} />
+          <ClosetToggle label="Con nariz (maletero a 470 mm)" on={c.narizMaletero === true} onClick={() => onChange({ narizMaletero: c.narizMaletero !== true })} />
+          {c.narizMaletero === true && <ClosetNumber label="Alto de la nariz (mm)" value={c.narizAlto ?? 40} hint={40} onCommit={(n) => onChange({ narizAlto: Math.max(15, Math.min(100, Math.round(n))) })} />}
           <p className="text-[9px] font-bold text-slate-400">Sugerido: la menor de 1900 mm o el techo menos 350 mm. Tubos: el primero 40 mm bajo el tablero y el segundo a 900 mm del piso.</p>
         </>
       )}
@@ -2196,6 +2384,7 @@ interface KitchenViewer3DProps {
   onEditIsland?: (id: string, patch: Partial<IslandItem>) => void;
   onEditWall?: (wall: 'A' | 'B' | 'C', value: number) => void;
   closetForm?: ClosetFormApi; // closet: doble clic en una de sus secciones abre su formulario
+  fitApi?: { fit: ClosetFit; onChange: (f: ClosetFit) => void }; // Closet fit: seleccionar un cuerpo, arrastrar sus bordes, dividirlo o eliminarlo
   onDeleteIsland?: (id: string) => void;
   viewMode: 'plan' | 'frontal' | 'isometric' | '3d';
   hasZocalo?: boolean;
@@ -2221,14 +2410,14 @@ interface KitchenViewer3DProps {
   onDragModule?: (id: string, newPositionX: number) => void;
   onResizeEdge?: (id: string, side: 'left' | 'right', deltaX: number, initialWidth: number, initialPositionX: number) => void;
   onMoveAppliance?: (type: ApplianceType, wall: WallName, distance: number) => void;
-  visibility?: { upper: boolean; lower: boolean; counter: boolean; appliances: boolean; doors?: boolean; shelves?: boolean; cajonero?: boolean; costado?: boolean };
+  visibility?: { upper: boolean; lower: boolean; counter: boolean; appliances: boolean; doors?: boolean; shelves?: boolean; cajonero?: boolean; costado?: boolean; dims?: boolean };
   collisions?: Box[]; // cajas que chocan: se marcan en rojo
   measureMode?: boolean; // cinta métrica activa: la escena solo se mira y se mide
   onResizeJunction?: (leftId: string, rightId: string, deltaX: number, initialLeftWidth: number, initialRightWidth: number, initialLeftPositionX: number, initialRightPositionX: number) => void;
 }
 
 export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
-  layout, lArm, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules, boxes, appliances, hasIsland, island, islands = [], onEditIsland, onEditWall, closetForm, onDeleteIsland, viewMode, hasZocalo, zocaloHeight = 100,
+  layout, lArm, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules, boxes, appliances, hasIsland, island, islands = [], onEditIsland, onEditWall, closetForm, fitApi, onDeleteIsland, viewMode, hasZocalo, zocaloHeight = 100,
   hasLeftClosure, hasRightClosure, counterExtras, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSetModuleFronts, onSplitHorizontal, onSplitDepth, onExtendFace, onJoinCorner, onSplitCorner, onEditCornerArm, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
 }) => {
   const controlsRef = useRef<any>(null);
@@ -2243,6 +2432,46 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
     setContextId(prev => (prev === id ? prev : null));
   };
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [fitSel, setFitSel] = useState<string | null>(null); // cuerpo del Closet fit seleccionado
+  const [fitLabelOff, setFitLabelOff] = useState<Record<string, { x: number; y: number }>>({}); // notas de medidas movidas a mano
+  // Editar las medidas de un cuerpo del Closet fit desde su nota: el ancho se reparte con el vecino y el alto con la celda vecina (o con el cuerpo de arriba / abajo)
+  const fitEdit = (id: string, patch: { width?: number; height?: number }) => {
+    if (!fitApi) return;
+    const f = fitApi.fit;
+    const rows = fitRows(f, wallA);
+    const cs = fitCells(f, wallA, spaceHeight);
+    const parts = id.split('-');
+    const lower = parts[1] === 'inf', i = Number(parts[2]), j = Number(parts[3]);
+    const wl = [...rows.lower], wu = [...rows.upper];
+    const row = lower ? wl : wu;
+    const lc = cs.lower.map(c => [...c]), uc = cs.upper.map(c => [...c]);
+    if (patch.width != null && row.length > 1) {
+      const k = i < row.length - 1 ? i : i - 1;
+      const total = row[k] + row[k + 1];
+      const wi = Math.min(Math.max(patch.width, 100), total - 100);
+      if (i === k) { row[k] = wi; row[k + 1] = total - wi; } else { row[k + 1] = wi; row[k] = total - wi; }
+    }
+    if (patch.height != null) {
+      const cells = lower ? lc : uc;
+      const c = cells[i];
+      if (c.length > 1) {
+        const nb = j < c.length - 1 ? j + 1 : j - 1;
+        const sj = c[j] < 0 ? -1 : 1, sn = c[nb] < 0 ? -1 : 1;
+        const total = Math.abs(c[j]) + Math.abs(c[nb]);
+        const nj = Math.min(Math.max(patch.height, 100), total - 100);
+        c[j] = sj * nj; c[nb] = sn * (total - nj);
+      } else if (!lower) {
+        c[0] = (c[0] < 0 ? -1 : 1) * Math.min(Math.max(patch.height, 100), cs.Hf - 300);
+      } else if (rows.upper.length > 0) {
+        // el alto de un cuerpo de abajo lo definen los cuerpos de arriba que le quedan encima
+        const a0 = rows.lower.slice(0, i).reduce((a, b) => a + b, 0), b0 = a0 + rows.lower[i];
+        let acc = 0;
+        const nh = Math.min(Math.max(cs.Hf - patch.height, 100), cs.Hf - 300);
+        rows.upper.forEach((w, k) => { if (Math.min(b0, acc + w) - Math.max(a0, acc) > 0.5) uc[k] = [(uc[k][0] < 0 ? -1 : 1) * nh]; acc += w; });
+      }
+    }
+    fitApi.onChange({ ...f, lowerW: wl, lowerBodies: wl.length, lowerCells: lc, upperW: wu, upperBodies: wu.length, upperCells: uc });
+  };
   const [doorsGhost, setDoorsGhost] = useState(true); // puertas del closet translúcidas
   const [cajoneroSel, setCajoneroSel] = useState<0 | 1 | 2>(0); // cajonero seleccionado con un clic: muestra la flecha para estirar su fondo
   const [closetSection, setClosetSection] = useState<{ section: string; idx?: 1 | 2; pos: [number, number, number] } | null>(null); // sección del closet con su formulario abierto
@@ -2280,7 +2509,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
       // piezas ocultas con los botones de vista (puertas, entrepaños, cajonero, costado) no cuentan
       if (b.kind === 'panel') {
         const sec = closetSectionOf(b.name);
-        if (b.name.startsWith('Puerta corrediza') && vis.doors === false) return;
+        if (isClosetDoor(b.name) && vis.doors === false) return;
         if (vis.shelves === false && (sec === 'entrepanos' || sec === 'torre')) return;
         if (vis.cajonero === false && sec === 'cajonero') return;
         if (vis.costado === false && sec === 'costado') return;
@@ -2369,6 +2598,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           setContextId(null);
           setClosetSection(null);
           setCajoneroSel(0);
+          setFitSel(null);
           setSelectedCounter(null);
           setEditingCounter(null);
           setPair([]);
@@ -2418,23 +2648,185 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         ))}
 
         {/* Piezas de los módulos convertidos: laterales, base, techo, puentes, amarres, espaldar y entrepaños */}
-        {boxes.filter(b => b.kind === 'panel' && !((vis.shelves === false && (closetSectionOf(b.name) === 'entrepanos' || closetSectionOf(b.name) === 'torre')) || (vis.cajonero === false && closetSectionOf(b.name) === 'cajonero') || (vis.costado === false && closetSectionOf(b.name) === 'costado')) && (b.name.startsWith('Puerta corrediza') ? vis.doors !== false : (b.id.startsWith('panel-upper-') ? vis.upper : vis.lower))).map(b => (
+        {boxes.filter(b => b.kind === 'panel' && !((vis.shelves === false && (closetSectionOf(b.name) === 'entrepanos' || closetSectionOf(b.name) === 'torre')) || (vis.cajonero === false && closetSectionOf(b.name) === 'cajonero') || (vis.costado === false && closetSectionOf(b.name) === 'costado')) && (isClosetDoor(b.name) ? vis.doors !== false : (b.id.startsWith('panel-upper-') ? vis.upper : vis.lower))).map(b => (
           <mesh
             key={b.id}
             position={boxCenter(b)}
             castShadow
+            {...(fitApi && !measureMode && (b.name.startsWith('Cuerpo ') || b.name.startsWith('Hueco ')) ? {
+              onClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setFitSel(b.id); },
+              onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; },
+              onPointerOut: () => { document.body.style.cursor = 'auto'; },
+            } : fitApi && b.name === 'Cubo closet fit' ? { raycast: () => null } : {})}
             {...(closetForm && !measureMode && closetSectionOf(b.name) ? {
               onDoubleClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setClosetSection({ section: closetSectionOf(b.name)!, idx: closetSectionOf(b.name) === 'torre' ? closetTorreIndex(b.name) : closetCajoneroIndex(b.name), pos: [boxCenter(b)[0], (closetSectionOf(b.name) === 'costado' || closetSectionOf(b.name) === 'puertas' || closetSectionOf(b.name) === 'torre') ? (b.z + b.sz * 0.5) / 1000 : (b.z + b.sz) / 1000 + 0.05, boxCenter(b)[2]] }); },
               onClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setCajoneroSel(closetSectionOf(b.name) === 'cajonero' ? closetCajoneroIndex(b.name) : 0); },
               onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; },
               onPointerOut: () => { document.body.style.cursor = 'auto'; },
-            } : closetForm ? {} : { raycast: () => null })}
+            } : closetForm ? {} : fitApi && (b.name.startsWith('Cuerpo ') || b.name.startsWith('Hueco ')) ? {} : { raycast: () => null })}
           >
             <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
-            <meshStandardMaterial color={b.name.startsWith('Espaldar') || b.name.includes('fondo') ? '#e5e7eb' : b.name.startsWith('Puerta corrediza') ? '#cdb592' : b.name.startsWith('Tubo') ? '#9ca3af' : b.name.startsWith('Entrepaño') ? '#f3e8d2' : (b.id.startsWith('panel-upper-') ? '#e8d3b0' : '#dcc5a0')} roughness={0.7} key={doorsGhost && b.name.startsWith('Puerta corrediza') ? 'ghost' : 'solid'} transparent={doorsGhost && b.name.startsWith('Puerta corrediza')} opacity={doorsGhost && b.name.startsWith('Puerta corrediza') ? 0.25 : 1} depthWrite={!(doorsGhost && b.name.startsWith('Puerta corrediza'))}  polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
-            <Edges color={cajoneroSel !== 0 && closetSectionOf(b.name) === 'cajonero' && closetCajoneroIndex(b.name) === cajoneroSel ? '#ef4444' : b.moduleId && b.moduleId === selectedId ? '#ef4444' : (b.moduleId && pair.includes(b.moduleId) ? '#f59e0b' : '#5b4630')} linewidth={b.moduleId && (b.moduleId === selectedId || pair.includes(b.moduleId)) ? 3 : 1} />
+            <meshStandardMaterial color={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? '#bfdbfe' : fitSel === b.id ? '#fb923c' : '#60a5fa') : b.name.startsWith('Espaldar') || b.name.includes('fondo') ? '#e5e7eb' : isClosetDoor(b.name) ? '#cdb592' : b.name.startsWith('Tubo') ? '#9ca3af' : b.name.startsWith('Entrepaño') ? '#f3e8d2' : (b.id.startsWith('panel-upper-') ? '#e8d3b0' : '#dcc5a0')} roughness={0.7} key={isFitBody(b.name) ? 'fit' : doorsGhost && isClosetDoor(b.name) ? 'ghost' : 'solid'} transparent={isFitBody(b.name) || (doorsGhost && isClosetDoor(b.name))} opacity={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? 0.08 : b.name.startsWith('Hueco ') ? (fitSel === b.id ? 0.25 : 0.02) : fitSel === b.id ? 0.4 : 0.22) : doorsGhost && isClosetDoor(b.name) ? 0.25 : 1} depthWrite={!(isFitBody(b.name) || (doorsGhost && isClosetDoor(b.name)))}  polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+            <Edges color={isFitBody(b.name) ? (fitSel === b.id ? '#f97316' : b.name.startsWith('Hueco ') ? '#cbd5e1' : '#2563eb') : cajoneroSel !== 0 && closetSectionOf(b.name) === 'cajonero' && closetCajoneroIndex(b.name) === cajoneroSel ? '#ef4444' : b.moduleId && b.moduleId === selectedId ? '#ef4444' : (b.moduleId && pair.includes(b.moduleId) ? '#f59e0b' : '#5b4630')} linewidth={b.moduleId && (b.moduleId === selectedId || pair.includes(b.moduleId)) ? 3 : 1} />
+            {b.name.startsWith('Cuerpo ') && viewMode === 'frontal' && fitApi && vis.dims !== false && (
+              <Html position={[0, 0, b.sy / 2000 + 0.01]} center occlude={false} zIndexRange={[60, 0]} style={{ pointerEvents: 'none' }}>
+                <FitDimLabel w={b.sx} h={b.sz} canEditH={b.id.startsWith('fit-sup') || b.name.includes('.') || fitApi.fit.upperBodies > 0} onCommit={(patch) => fitEdit(b.id, patch)} offset={fitLabelOff[b.id] ?? { x: 0, y: 0 }} onOffset={(o) => setFitLabelOff(prev => ({ ...prev, [b.id]: o }))} />
+              </Html>
+            )}
           </mesh>
         ))}
+
+        {fitApi && !measureMode && (() => {
+          const f = fitApi.fit;
+          const rows = fitRows(f, wallA);
+          const cs = fitCells(f, wallA, spaceHeight);
+          const dpt = Math.max(200, f.depth);
+          const frontZ = offsetZ + dpt / 1000 + 0.003; // pegados a la cara frontal del cubo, como un parche
+          const toX = (X: number) => (X - wallA / 2) / 1000;
+          const sum = (c: number[]) => c.reduce((a, b) => a + Math.abs(b), 0);
+          const sgn = (v: number) => (v < 0 ? -1 : 1);
+          const rowsAll = () => ({ lw: [...rows.lower], uw: [...rows.upper], lc: cs.lower.map(c => [...c]), uc: cs.upper.map(c => [...c]) });
+          const commit = (st: { lw: number[]; uw: number[]; lc: number[][]; uc: number[][] }) => fitApi.onChange({ ...f, lowerW: st.lw, lowerBodies: st.lw.length, lowerCells: st.lc, upperW: st.uw, upperBodies: st.uw.length, upperCells: st.uc });
+          // mover el borde entre el cuerpo k y el k + 1 de una fila: lo que gana uno lo pierde el otro (mínimo 100 mm)
+          // si la unión de la otra fila está en el mismo lugar, las dos se mueven juntas (así los cuerpos no chocan ni se sobreponen)
+          const beginEdge = (lower: boolean, k: number) => () => {
+            const base = [...(lower ? rows.lower : rows.upper)];
+            const other = [...(lower ? rows.upper : rows.lower)];
+            const pos = base.slice(0, k + 1).reduce((a, b) => a + b, 0);
+            let om = -1, acc2 = 0;
+            for (let m = 0; m < other.length - 1; m++) { acc2 += other[m]; if (Math.abs(acc2 - pos) < 1) om = m; }
+            return (d: number, exact?: boolean) => {
+              let lo = -(base[k] - 100), hi = base[k + 1] - 100;
+              if (om >= 0) { lo = Math.max(lo, -(other[om] - 100)); hi = Math.min(hi, other[om + 1] - 100); }
+              const dd = Math.max(lo, Math.min(hi, d));
+              const w = [...base]; w[k] = exact ? base[k] + dd : Math.round((base[k] + dd) / 5) * 5; w[k + 1] = base[k] + base[k + 1] - w[k];
+              const st = rowsAll();
+              if (lower) st.lw = w; else st.uw = w;
+              if (om >= 0) {
+                const ow = [...other]; ow[om] = other[om] + (w[k] - base[k]); ow[om + 1] = other[om] + other[om + 1] - ow[om];
+                if (lower) st.uw = ow; else st.lw = ow;
+              }
+              commit(st);
+            };
+          };
+          // mover la línea entre dos celdas apiladas del mismo cuerpo
+          const beginCell = (lower: boolean, i: number, j: number) => () => {
+            const base = [...(lower ? cs.lower[i] : cs.upper[i])];
+            return (d: number, exact?: boolean) => {
+              const aj = Math.abs(base[j]), an = Math.abs(base[j + 1]);
+              const dd = Math.max(-(an - 100), Math.min(aj - 100, d));
+              const nj = exact ? aj - dd : Math.round((aj - dd) / 5) * 5;
+              const c = [...base]; c[j] = sgn(base[j]) * nj; c[j + 1] = sgn(base[j + 1]) * (aj + an - nj);
+              const st = rowsAll(); (lower ? st.lc : st.uc)[i] = c;
+              commit(st);
+            };
+          };
+          // contacto de un cuerpo de arriba con el de abajo (mismo ancho): solo esos dos cambian de alto
+          const beginPair = (m: number) => () => {
+            const base = [...cs.upper[m]];
+            const total = sum(base);
+            return (d: number, exact?: boolean) => {
+              const last = base.length - 1;
+              const dd = Math.min(Math.max(d, -(cs.Hf - 300 - total)), Math.abs(base[last]) - 100);
+              const c = [...base]; c[last] = sgn(base[last]) * (exact ? Math.abs(base[last]) - dd : Math.round((Math.abs(base[last]) - dd) / 5) * 5);
+              const st = rowsAll(); st.uc[m] = c;
+              commit(st);
+            };
+          };
+          // sin pareja de igual ancho: la altura general de los superiores se mueve desde el borde izquierdo
+          const beginHeight = () => {
+            const baseUc = cs.upper.map(c => [...c]);
+            return (d: number, exact?: boolean) => {
+              const nh0 = cs.upH - d;
+              const nh = Math.max(100, Math.min(cs.Hf - 300, exact ? nh0 : Math.round(nh0 / 5) * 5));
+              const st = rowsAll();
+              st.uc = baseUc.map(cc => { const sm = sum(cc); return cc.map(x => (x * nh) / sm); });
+              fitApi.onChange({ ...f, upperHeight: nh, lowerW: st.lw, lowerBodies: st.lw.length, lowerCells: st.lc, upperW: st.uw, upperBodies: st.uw.length, upperCells: st.uc });
+            };
+          };
+          const nodes: React.ReactNode[] = [];
+          ([[true, rows.lower, cs.lower], [false, rows.upper, cs.upper]] as const).forEach(([lower, row, cells]) => {
+            let acc = 0;
+            for (let k = 0; k < row.length; k++) {
+              const bodyTop = lower ? cs.lowerHs[k] : cs.Hf;
+              const bodyH = sum(cells[k]);
+              // contacto entre cuerpos vecinos: flecha doble a media altura del cuerpo
+              if (k < row.length - 1) { acc += row[k]; nodes.push(<FitJunction key={`fj-${lower ? 'l' : 'u'}-${k}`} position={[toX(acc), (bodyTop - bodyH / 2) / 1000, frontZ]} axis={[1, 0, 0]} posMm={acc} group={lower ? 'l' : 'u'} begin={beginEdge(lower, k)} controlsRef={controlsRef} />); }
+              // contacto entre celdas apiladas del mismo cuerpo: flecha doble vertical
+              let top = bodyTop;
+              const cx = row.slice(0, k).reduce((a, b) => a + b, 0) + row[k] / 2;
+              for (let j = 0; j < cells[k].length - 1; j++) {
+                top -= Math.abs(cells[k][j]);
+                nodes.push(<FitJunction key={`fc-${lower ? 'l' : 'u'}-${k}-${j}`} position={[toX(cx), top / 1000, frontZ]} axis={[0, 1, 0]} vertical posMm={top} group={`${lower ? 'l' : 'u'}-${k}`} begin={beginCell(lower, k, j)} controlsRef={controlsRef} />);
+              }
+            }
+          });
+          if (rows.upper.length > 0) {
+            // un cuerpo de arriba con el mismo ancho y posición que uno de abajo: botón de unión; al arrastrarlo solo cambian de alto esos dos
+            let any = false, a = 0;
+            rows.lower.forEach((w, i) => {
+              const m = cs.match[i];
+              if (m >= 0) {
+                any = true;
+                nodes.push(<FitJunction key={`fj-h-${i}`} position={[toX(a + w / 2), cs.lowerHs[i] / 1000, frontZ]} axis={[0, 1, 0]} vertical posMm={cs.lowerHs[i]} group={`h-${i}`} begin={beginPair(m)} controlsRef={controlsRef} />);
+              }
+              a += w;
+            });
+            if (!any) nodes.push(<FitJunction key="fj-h" position={[toX(0), (cs.Hf - cs.upH) / 1000, frontZ]} axis={[0, 1, 0]} vertical posMm={cs.Hf - cs.upH} group="h" begin={beginHeight} controlsRef={controlsRef} />);
+          }
+          const sel = fitSel ? boxes.find(x => x.id === fitSel) : null;
+          if (sel) {
+            const parts = sel.id.split('-');
+            const lower = parts[1] === 'inf', i = Number(parts[2]), j = Number(parts[3]);
+            const row = lower ? rows.lower : rows.upper;
+            // dividir en dos cuerpos uno al lado del otro (botón de arriba a la derecha)
+            const splitSide = () => {
+              const st = rowsAll(); const w = lower ? st.lw : st.uw, cc = lower ? st.lc : st.uc;
+              const half = w[i] / 2; w.splice(i, 1, half, half); cc.splice(i, 1, [...cc[i]], [...cc[i]]);
+              commit(st);
+            };
+            // dividir la celda en dos, una sobre otra (botón de abajo a la izquierda)
+            const splitHorizontal = () => { const st = rowsAll(); const cc = lower ? st.lc : st.uc; cc[i].splice(j, 1, cc[i][j] / 2, cc[i][j] / 2); commit(st); };
+            const isGap = sel.name.startsWith('Hueco ');
+            // eliminar: el cuerpo desaparece y queda el espacio libre (un hueco); eliminar el hueco quita el espacio y lo suma al vecino
+            const remove = () => {
+              const st = rowsAll(); const w = lower ? st.lw : st.uw, cc = lower ? st.lc : st.uc;
+              if (!isGap) { cc[i][j] = -Math.abs(cc[i][j]); setFitSel(null); commit(st); return; }
+              if (cc[i].length > 1) { const gone = Math.abs(cc[i].splice(j, 1)[0]); const t = j > 0 ? j - 1 : 0; cc[i][t] = sgn(cc[i][t]) * (Math.abs(cc[i][t]) + gone); setFitSel(null); commit(st); return; }
+              if (row.length <= 1) return;
+              const gone = w.splice(i, 1)[0]; cc.splice(i, 1);
+              if (w.length) w[i > 0 ? i - 1 : 0] += gone;
+              setFitSel(null); commit(st);
+            };
+            // rellenar un hueco con un cuerpo otra vez
+            const restore = () => { const st = rowsAll(); (lower ? st.lc : st.uc)[i][j] = Math.abs((lower ? st.lc : st.uc)[i][j]); setFitSel(null); commit(st); };
+            const left = toX(sel.x) + 0.1, right = toX(sel.x + sel.sx) - 0.1, top = (sel.z + sel.sz) / 1000 - 0.1, bottom = sel.z / 1000 + 0.1;
+            const bigBtn = 'w-14 h-14 rounded-full text-white shadow-lg border-2 border-white flex items-center justify-center';
+            if (isGap) {
+              nodes.push(
+                <HtmlScaled key="fit-x" zoomScale position={[left, top, frontZ]} center distanceFactor={1} zIndexRange={[110, 0]}>
+                  <button data-overlay onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); remove(); }} className={`${bigBtn} bg-red-500 hover:bg-red-600`} title="Quitar este espacio"><X size={28} strokeWidth={3} /></button>
+                </HtmlScaled>,
+                <HtmlScaled key="fit-fill" zoomScale position={[(left + right) / 2, (top + bottom) / 2, frontZ]} center distanceFactor={1} zIndexRange={[110, 0]}>
+                  <button data-overlay onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); restore(); }} className={`${bigBtn} bg-green-600 hover:bg-green-700`} title="Poner un cuerpo en este espacio"><Plus size={28} strokeWidth={3} /></button>
+                </HtmlScaled>
+              );
+            } else {
+              nodes.push(
+                <HtmlScaled key="fit-x" zoomScale position={[left, top, frontZ]} center distanceFactor={1} zIndexRange={[110, 0]}>
+                  <button data-overlay onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); remove(); }} className={`${bigBtn} bg-red-500 hover:bg-red-600`} title="Eliminar (queda el espacio libre)"><X size={28} strokeWidth={3} /></button>
+                </HtmlScaled>,
+                <HtmlScaled key="fit-plus" zoomScale position={[right, top, frontZ]} center distanceFactor={1} zIndexRange={[110, 0]}>
+                  <button data-overlay onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); splitSide(); }} className={`${bigBtn} bg-green-600 hover:bg-green-700`} title="Dividir en dos cuerpos, uno al lado del otro"><Plus size={28} strokeWidth={3} /></button>
+                </HtmlScaled>,
+                <HtmlScaled key="fit-plus-h" zoomScale position={[left, bottom, frontZ]} center distanceFactor={1} zIndexRange={[110, 0]}>
+                  <button data-overlay onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); splitHorizontal(); }} className={`${bigBtn} bg-green-600 hover:bg-green-700`} title="Dividir en dos, uno sobre otro (horizontal)"><Plus size={28} strokeWidth={3} /></button>
+                </HtmlScaled>
+              );
+            }
+          }
+          return <>{nodes}</>;
+        })()}
 
         {closetForm && !measureMode && cajoneroSel !== 0 && (() => {
           const tapa = boxes.find(x => x.name === (cajoneroSel === 2 ? 'Tapa cajonero · 2' : 'Tapa cajonero'));

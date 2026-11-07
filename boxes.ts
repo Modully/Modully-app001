@@ -1,4 +1,4 @@
-import { KitchenModule, Appliance, LayoutType, WallName, IslandItem, ColumnItem, ClosetConfig } from './types';
+import { KitchenModule, Appliance, LayoutType, WallName, IslandItem, ColumnItem, ClosetConfig, ClosetFit } from './types';
 
 /**
  * LISTA ÚNICA DE CAJAS: fuente de verdad de la geometría de la cocina.
@@ -171,6 +171,7 @@ export interface BuildBoxesInput {
   counterExtras?: Record<string, CounterExtras>;
   islands?: IslandItem[];
   columns?: ColumnItem[]; // columnas o muros atravesados, pegados a un muro y de la altura del techo
+  fit?: ClosetFit;                                  // sección Closet fit: cubo por cuerpos
   closet?: ClosetConfig & { leftWall: boolean; rightWall: boolean }; // sección Closets: base/zócalo y lados (muro o costado) deducidos del Espacio
   lArm?: 'left' | 'right'; // cocina en L: de qué lado está el brazo (izquierda = muro B, derecha = muro C)
 }
@@ -899,6 +900,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   // (la función closetDerived está al final del archivo)
   // --- Estructura del closet sobre el muro A: lados (costado propio o marco lateral + dilatada contra el muro), marco horizontal, tapa de riel,
   // base (zócalo o marco inferior) y tablero del maletero. Las medidas salen de los planos (marcos de 80 x 15, dilatada de 15, fondo de 550) ---
+  let closetAlertsOut: string[] = [];
   if (closet) {
     type ClosetInput = NonNullable<typeof closet>;
     const E = PANEL_THICKNESS, D = CLOSET_DEPTH, FW = CLOSET_FRAME_WIDTH;
@@ -909,6 +911,15 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     const add = (name: string, x: number, y: number, z: number, sx: number, sy: number, sz: number) => {
       if (sx > 0 && sy > 0 && sz > 0) boxes.push({ id: `closet-${n++}`, name, kind: 'panel', wall: 'A', x, y, z, sx, sy, sz, facing: null });
     };
+    // Láminas de 2400 mm como máximo: una pieza más larga se divide en dos (la primera de 2400 por defecto y editable; la segunda es lo que falta)
+    const hinged = closet.doorType === 'abatibles';   // puertas abatibles de parche: sin riel ni tapa de riel; uniones con costado o marco
+    const MAX_SHEET = 2400;
+    const addLong = (name: string, x: number, y: number, z: number, sx: number, sy: number, sz: number) => {
+      if (sx <= MAX_SHEET) { add(name, x, y, z, sx, sy, sz); return; }
+      const first = Math.round(Math.min(MAX_SHEET, Math.max(sx - MAX_SHEET, closet.sheetSplit ?? MAX_SHEET)));
+      add(name + ' (1/2)', x, y, z, first, sy, sz);
+      add(name + ' (2/2)', x + first, y, z, sx - first, sy, sz);
+    };
     const side = (isLeft: boolean) => {
       const hasWall = isLeft ? closet.leftWall : closet.rightWall;
       if (!hasWall) { add('Costado closet', isLeft ? 0 : wallA - E, 0, 0, E, Db, Hc); return; } // costado propio: del piso al tope
@@ -917,44 +928,94 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     };
     side(true); side(false);
     const x0 = closet.leftWall ? 2 * E : E, x1 = wallA - (closet.rightWall ? 2 * E : E);          // entre lados: 30 por el lado del muro, 15 por el del costado
+    const dv = closetDerived(closet, wallA, spaceHeight, hasZocalo, zocaloHeight);
+    const topM = dv.maleteroTop;
+    const nH = hinged ? dv.doorCount : 0;
+    const elems: Array<{ x0: number; x1: number; type: 'costado' | 'marco'; name: string }> = [];
+    for (let k = 0; k < nH; k++) {
+      const h = closet.doorEdges?.[k]?.hinge ?? (k % 2 === 0 ? 'izq' : 'der'), t = closet.doorEdges?.[k]?.type ?? 'costado';
+      if (h === 'izq' && k > 0) elems.push({ x0: k * wallA / nH, x1: k * wallA / nH + E, type: t, name: `puerta ${k + 1} inicio` });
+      if (h === 'der' && k < nH - 1) elems.push({ x0: (k + 1) * wallA / nH - E, x1: (k + 1) * wallA / nH, type: t, name: `puerta ${k + 1} cierre` });
+    }
+    // Marco puerta (abatibles): costados y marcos de las puertas suben hasta el techo; con la base completa sobre zócalo arrancan sobre la base y con zócalo en T, marco base al piso
+    // o sin marco inferior arrancan del piso. Los marcos superior e inferior se dividen para quedar a tope de ellos
+    const baseComplete = hasZocalo && zocaloHeight > 0 && closet.bottomFrame;
+    const ceilingCase = hinged;                                   // siempre hasta el techo; con base completa arrancan sobre la base (la base queda entera) y en los demás casos del piso
+    const gapsAll: Array<[number, number]> = ceilingCase ? elems.map(u => [u.x0, u.x1] as [number, number]) : [];
+    const gapsCostado: Array<[number, number]> = elems.filter(u => u.type === 'costado').map(u => [u.x0, u.x1] as [number, number]);
+    const addSplit = (name: string, x: number, y: number, z: number, sx: number, sy: number, sz: number, gaps: Array<[number, number]>) => {
+      const segs: Array<[number, number]> = [];
+      let cur = x;
+      const end = x + sx;
+      [...gaps].sort((p, q) => p[0] - q[0]).forEach(([g0, g1]) => { if (g1 <= cur || g0 >= end) return; if (g0 - cur > 1) segs.push([cur, g0]); cur = Math.max(cur, g1); });
+      if (end - cur > 1) segs.push([cur, end]);
+      if (segs.length === 1 && Math.abs(segs[0][0] - x) < 0.5 && Math.abs(segs[0][1] - end) < 0.5) { addLong(name, x, y, z, sx, sy, sz); return; }
+      // el conjunto de la puerta se llama marco puerta (superior e inferior)
+      const nm = name === 'Marco hor closet' ? 'Marco puerta superior' : name === 'Base marco hor closet' ? 'Marco puerta inferior' : name;
+      segs.forEach(([a0, a1], i) => addLong(nm + ` [${i + 1}]`, a0, y, z, a1 - a0, sy, sz));
+    };
     // Marco horizontal: acostado (80 de ancho, 15 de espesor), al tope del marco: a ras con la parte de arriba de los marcos laterales y con su frente
-    add('Marco hor closet', x0, D - FW, Hc - E, x1 - x0, FW, E);
+    addSplit('Marco hor closet', x0, D - FW, Hc - E, x1 - x0, FW, E, gapsAll);
     // Tapa de riel (se activa o se desactiva y se pregunta su altura): siempre parada adelante del marco
     const tapaH = Math.max(20, closet.tapaRielHeight ?? CLOSET_RAIL_COVER);
-    if (closet.tapaRiel !== false) add('Tapa riel closet', 0, D, Hc - tapaH, wallA, E, tapaH);
+    if (closet.tapaRiel !== false && !hinged) addLong('Tapa riel closet', 0, D, Hc - tapaH, wallA, E, tapaH);
     // Base: entre el muro y el costado (sin pasar por el costado)
     const bx0 = closet.leftWall ? 0 : E, bx1 = closet.rightWall ? wallA : wallA - E;
     if (hasZocalo && zocaloHeight > 0) {
       // La base va encima del zócalo (sugerido de 80 mm): el zócalo es la pieza parada y sobre él va la base (o la pieza acostada de la T)
       if (closet.bottomFrame) {
         // Zócalo con marco inferior (base completa): el zócalo va al frente, a ras con el frente de la base
-        add('Zócalo closet', bx0, Db - E, 0, bx1 - bx0, E, zocaloHeight);
-        add('Base closet', bx0, 0, zocaloHeight, bx1 - bx0, Db, E);
+        addLong('Zócalo closet', bx0, Db - E, 0, bx1 - bx0, E, zocaloHeight);
+        addLong('Base closet', bx0, 0, zocaloHeight, bx1 - bx0, Db, E);
       } else {
         // Zócalo sin marco inferior (tipo T): la acostada queda corrida a 5 mm del frente y la pieza parada va centrada bajo ella
-        add('Zócalo closet', bx0, D - 5 - FW / 2 - E / 2, 0, bx1 - bx0, E, zocaloHeight);
-        add('Zócalo closet (horizontal)', bx0, D - 5 - FW, zocaloHeight, bx1 - bx0, FW, E);
+        addSplit('Zócalo closet', bx0, D - 5 - FW / 2 - E / 2, 0, bx1 - bx0, E, zocaloHeight, gapsAll);
+        addSplit('Zócalo closet (horizontal)', bx0, D - 5 - FW, zocaloHeight, bx1 - bx0, FW, E, gapsAll);
       }
     } else if (!hasZocalo && closet.bottomFrame) {
-      add('Base marco hor closet', bx0, 0, 0, bx1 - bx0, Db, E);
+      addSplit('Base marco hor closet', bx0, 0, 0, bx1 - bx0, Db, E, gapsAll);
     }
-    // Maletero: tablero de 455 de fondo; queda a la menor de 1.90 m o (techo - 350 mm)
-    const dv = closetDerived(closet, wallA, spaceHeight, hasZocalo, zocaloHeight);
-    const topM = dv.maleteroTop;
-    add('Maletero closet', closet.leftWall ? 0 : E, 0, topM - E, bx1 - bx0, CLOSET_MALETERO_DEPTH, E);
+    // Maletero: tablero de 455 de fondo; queda a la menor de 1.90 m o (techo - 350 mm); con puertas abatibles se corta alrededor de los costados
+    addSplit('Maletero closet', closet.leftWall ? 0 : E, 0, topM - E, bx1 - bx0, CLOSET_MALETERO_DEPTH, E, gapsCostado);
 
     // --- Interior (según los planos de cajoneros): cajonero con dos laterales de 430 de fondo, la tapa POR ENCIMA de los laterales (de todo el ancho y
     // 450 de fondo) y los cajones; sobre la tapa, dos costados y los entrepaños DENTRO de esos dos costados; tubos para colgar en las zonas libres ---
     const inner = x1 - x0;                                        // ancho entre los lados
+    // Puertas abatibles de parche: N puertas iguales. Cada puerta es izquierda o derecha (lado de la bisagra): ese lado lleva su propio costado o marco
+    // (no se comparte con otra puerta) y el otro lado queda libre; así una puerta izquierda y una derecha juntas dejan el centro libre.
+    // Los extremos del closet salen del Espacio (marco con muro, costado sin muro) y la puerta cubre 13 mm de ellos.
+    const CAJ_CLEAR = 40;                                         // junto a un costado el cajonero deja 4 cm por lado
+    const obstacles = elems.filter(u => u.type === 'costado').map(u => [u.x0 - CAJ_CLEAR, u.x1 + CAJ_CLEAR] as [number, number]);
+    const alerts: string[] = [];
+    const narizH = Math.max(15, closet.narizAlto ?? 40);          // nariz: tira de 15 de espesor y 40 de alto (sugerido) por debajo del tablero, con el canto del tablero a ras con su cara
+    closetAlertsOut = alerts;
     // Un cajonero con sus laterales, puentes, cajones, costados y entrepaños. Con dos cajoneros se arma una vez por cada uno (el segundo con sus propias medidas)
     const buildCajonero = (closet: ClosetInput, dv: ReturnType<typeof closetDerived>, sfx: string, xcFixed?: number, maxW?: number) => {
       const addC = (name: string, ...rest: [number, number, number, number, number, number]) => add(name + sfx, ...rest);
       // Cajonero al lado del marco (lado con muro): la tapa se alarga 45 mm hasta quedar al ras del marco y una dilatación tapa el hueco que se forma
       const dilW = (closet.cajoneroPos === 'left' && closet.leftWall) || (closet.cajoneroPos === 'right' && closet.rightWall) ? CLOSET_CAJONERO_DIL : 0;
-      const Wc = Math.min(Math.max(300, dv.cajoneroWidth), maxW ?? inner - dilW);
+      const Wc0 = Math.min(Math.max(300, dv.cajoneroWidth), maxW ?? inner - dilW);
       // El conjunto (dilatación + cajonero) arranca en el muro, detrás del marco (el marco solo enmarca el frente): al ras del muro
       const wallL = closet.leftWall ? x0 - 2 * E : x0, wallR = closet.rightWall ? x1 + 2 * E : x1;
-      const xc = xcFixed != null ? xcFixed : closet.cajoneroPos === 'left' ? (dilW ? wallL + dilW : x0) : closet.cajoneroPos === 'right' ? (dilW ? wallR - dilW - Wc : x1 - Wc) : Math.min(Math.max(wallA / 2 - Wc / 2, x0), x1 - Wc); // el centro es el del muro (y de la puerta central), no el del maletero ni el de lo que quede libre
+      const xc0 = xcFixed != null ? xcFixed : closet.cajoneroPos === 'left' ? (dilW ? wallL + dilW : x0) : closet.cajoneroPos === 'right' ? (dilW ? wallR - dilW - Wc0 : x1 - Wc0) : Math.min(Math.max(wallA / 2 - Wc0 / 2, x0), x1 - Wc0); // el centro es el del muro (y de la puerta central), no el del maletero ni el de lo que quede libre
+      let Wc = Wc0, xc = xc0;
+      if (obstacles.length) {
+        // el cajonero no puede quedar a menos de 4 cm de un costado: se corre y, si no cabe, se angosta (con aviso)
+        const sorted: Array<[number, number]> = [];
+        [...obstacles].sort((p, q) => p[0] - q[0]).forEach(([a0, a1]) => {  // los costados juntos (dos puertas) se funden en un solo obstáculo
+          const last = sorted[sorted.length - 1];
+          if (last && a0 <= last[1]) last[1] = Math.max(last[1], a1); else sorted.push([a0, a1]);
+        });
+        const bays: Array<[number, number]> = [];
+        let cur0 = x0;
+        sorted.forEach(([a0, a1]) => { bays.push([cur0, a0]); cur0 = a1; });
+        bays.push([cur0, x1]);
+        const mid = xc0 + Wc0 / 2;
+        const bay = bays.reduce((best, q) => (Math.abs((q[0] + q[1]) / 2 - mid) < Math.abs((best[0] + best[1]) / 2 - mid) ? q : best), bays[0]);
+        Wc = Math.max(200, Math.min(Wc0, bay[1] - bay[0]));
+        xc = Math.min(Math.max(xc0, bay[0]), Math.max(bay[0], bay[1] - Wc));
+        if (Math.abs(xc - xc0) > 0.5 || Math.abs(Wc - Wc0) > 0.5) alerts.push(`El cajonero${sfx ? ' 2' : ''} se corrió o se angostó para dejar 4 cm junto a un costado de las puertas`);
+      }
       const Dc = Math.max(300, Math.min(500, closet.cajoneroDepth ?? CLOSET_INTERIOR_DEPTH));                             // la tapa y los costados de arriba: 450 de fondo (adelante quedan los rieles de las puertas)
       const Dl0 = Dc - 20;                        // entrepaños y laterales del cajonero: 430
       const embebido = closet.cajonFront === 'embebido';           // frente embebido: el lateral se alarga 15 mm y su canto queda al ras del frente
@@ -1032,7 +1093,12 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         const shX1 = dropR || !latR ? tapaX1 : xc + Wc - E;
         // Los entrepaños (cantidad que se pregunta) se reparten el espacio entre la tapa del cajonero y el maletero: los huecos quedan iguales
         const nSh = dv.shelfCount, gapS = (colTop - zt - nSh * E) / (nSh + 1);
-        for (let i = 0; i < nSh; i++) addC('Entrepaño closet', shX0, 0, zt + gapS * (i + 1) + E * i, shX1 - shX0, embebido ? Dl0 : Dl - 20, E); // de parche: los entrepaños quedan 2 cm detrás del frente de los laterales
+        for (let i = 0; i < nSh; i++) {
+          const dSh = embebido ? Dl0 : Dl - 20, zSh = zt + gapS * (i + 1) + E * i;
+          // con nariz: la nariz va por debajo del entrepaño y el canto del entrepaño queda a ras con su cara (el entrepaño se alarga 15 mm)
+          addC('Entrepaño closet', shX0, 0, zSh, shX1 - shX0, dSh + (closet.narizEntrepanos ? E : 0), E);
+          if (closet.narizEntrepanos) addC('Nariz entrepaño closet', shX0, dSh, zSh - narizH, shX1 - shX0, E, narizH);
+        } // de parche: los entrepaños quedan 2 cm detrás del frente de los laterales
       }
       return { xc, Wc, Dc, dilW, Hcj, z0, Dl, embebido };
     };
@@ -1111,7 +1177,11 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         const nD = dvT.torreDivisions, colW = (Wt - eL - eR - nD * E) / (nD + 1);
         for (let k = 0; k < nD; k++) add('División torre' + sfx, xT + eL + (k + 1) * colW + k * E, 0, zbT, E, Dst, topT - zbT);
         const nS = dvT.torreShelves, gapT = (topT - baseS - nS * E) / (nS + 1);
-        for (let k = 0; k <= nD; k++) for (let i = 0; i < nS; i++) add('Entrepaño torre' + sfx, xT + eL + k * (colW + E), 0, baseS + gapT * (i + 1) + E * i, colW, Dst, E);
+        for (let k = 0; k <= nD; k++) for (let i = 0; i < nS; i++) {
+          const zSh = baseS + gapT * (i + 1) + E * i;
+          add('Entrepaño torre' + sfx, xT + eL + k * (colW + E), 0, zSh, colW, Dst + (closet.narizEntrepanos ? E : 0), E);
+          if (closet.narizEntrepanos) add('Nariz entrepaño torre' + sfx, xT + eL + k * (colW + E), Dst, zSh - narizH, colW, E, narizH);
+        }
         placed.push({ xc: xT, Wc: Wt, Dc: Dct });
         // Hasta el techo: la torre atraviesa el maletero, que se corta en su ancho
         if (cl.torreToCeiling) {
@@ -1150,13 +1220,27 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     const dilTop = topM - E;
     // --- Puertas corredizas: ancho = (marco horizontal + (n - 1) x traslape) / n, alto = espacio libre - 20; van en dos rieles (adelante y atrás) y se alternan ---
     const nDoors = dv.doorCount, dw = dv.doorWidth, DT = 18;
-    for (let i = 0; i < nDoors; i++) {
+    if (hinged) {
+      // Abatibles de parche: puertas iguales entre los bordes del closet; las uniones llevan costado o marco; cada puerta cubre el borde de los extremos y deja 2 mm con la vecina
+      const g = closet.doorGap ?? 2, cov = closet.doorCover ?? 13;
+      for (let k = 0; k < nDoors; k++) {
+        const l = k === 0 ? x0 - cov : k * wallA / nDoors + g / 2, r = k === nDoors - 1 ? x1 + cov : (k + 1) * wallA / nDoors - g / 2;
+        add(`Puerta abatible ${k + 1}`, l, D, bb, r - l, DT, dv.doorHeight);
+      }
+      elems.forEach(u => {
+        // Marco puerta: entre la base y el marco superior (base completa) o del piso al techo (T, marco al piso o sin marco inferior)
+        const zC = baseComplete ? bb : 0, hC = Hc - zC;
+        if (u.type === 'costado') add(`Costado ${u.name}`, u.x0, 0, zC, u.x1 - u.x0, D, hC);
+        else add(`Marco ${u.name}`, u.x0, D - FW, zC, u.x1 - u.x0, FW, hC);
+      });
+    }
+    for (let i = 0; i < (hinged ? 0 : nDoors); i++) {
       // 3 puertas: una adelante (la del centro) y dos atrás; con cantidad par se alternan empezando por la de adelante
       const front = nDoors % 2 === 1 ? i % 2 === 1 : i % 2 === 0;
       add(`Puerta corrediza ${i + 1}`, x0 + i * (dw - closet.overlap), front ? D - 28 : D - 53, bb + 10, dw, DT, dv.doorHeight);
     }
     // Tubos para colgar en las zonas libres (entre y alrededor de los cajoneros): el primero 40 mm bajo el maletero y el segundo a 900 mm del piso
-    const spans = placed.map(r => [r.xc, r.xc + r.Wc] as const).sort((p, q) => p[0] - q[0]);
+    const spans = [...placed.map(r => [r.xc, r.xc + r.Wc] as const), ...elems.filter(u => u.type === 'costado').map(u => [u.x0, u.x1] as const)].sort((p, q) => p[0] - q[0]);
     const zones: Array<[number, number]> = [];
     let cur = x0;
     spans.forEach(([s0, s1]) => { zones.push([cur, s0]); cur = s1; });
@@ -1168,6 +1252,36 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     });
   }
 
+  // Nariz del maletero: el tablero (455) llega a 470 con la nariz al frente
+  if (closet && closet.narizMaletero) {
+    const nh = Math.max(15, closet.narizAlto ?? 40);
+    // la nariz va por debajo del tablero y el canto del tablero queda a ras con su cara: el tablero se alarga 15 mm (455 a 470)
+    boxes.filter(m => m.name.startsWith('Maletero closet')).forEach(m => { boxes.push({ id: `${m.id}-nariz`, name: 'Nariz maletero', kind: 'panel', wall: 'A', x: m.x, y: m.y + m.sy, z: m.z - nh, sx: m.sx, sy: PANEL_THICKNESS, sz: nh, facing: null }); m.sy += PANEL_THICKNESS; });
+  }
+  // Closet fit: un cubo que cubre el área y, dentro, los cuerpos inferiores (uno al lado del otro) y los superiores
+  if (input.fit) {
+    const f = input.fit;
+    const Hf = spaceHeight - CLOSET_TOP_MARGIN, dpt = Math.max(200, f.depth);
+    const nLow = Math.max(1, Math.round(f.lowerBodies)), nUp = Math.max(0, Math.round(f.upperBodies));
+    const upH = nUp > 0 ? Math.min(Math.max(100, f.upperHeight), Hf - 300) : 0;
+    const put = (id: string, name: string, x: number, z: number, sx: number, sz: number) => boxes.push({ id, name, kind: 'panel', wall: 'A', x, y: 0, z, sx, sy: dpt, sz, facing: null });
+    put('fit-cubo', 'Cubo closet fit', 0, 0, wallA, Hf);
+    const rows = fitRows(f, wallA);
+    const cells = fitCells(f, wallA, spaceHeight);
+    let xa = 0;
+    rows.lower.forEach((w, i) => {
+      let top = cells.lowerHs[i];
+      cells.lower[i].forEach((hh, j) => { const h = Math.abs(hh); top -= h; put(`fit-inf-${i}-${j}`, `${hh < 0 ? 'Hueco' : 'Cuerpo'} inferior ${i + 1}${cells.lower[i].length > 1 ? '.' + (j + 1) : ''}`, xa, top, w, h); });
+      xa += w;
+    });
+    xa = 0;
+    rows.upper.forEach((w, i) => {
+      let top = cells.Hf;
+      cells.upper[i].forEach((hh, j) => { const h = Math.abs(hh); top -= h; put(`fit-sup-${i}-${j}`, `${hh < 0 ? 'Hueco' : 'Cuerpo'} superior ${i + 1}${cells.upper[i].length > 1 ? '.' + (j + 1) : ''}`, xa, top, w, h); });
+      xa += w;
+    });
+  }
+  (boxes as Box[] & { closetAlerts?: string[] }).closetAlerts = closetAlertsOut;
   return boxes;
 }
 
@@ -1187,7 +1301,7 @@ export function closetDerived(cfg: ClosetConfig & { leftWall: boolean; rightWall
   const cajBase = tZocalo ? 0 : baseH;
   const drawerBottom = tZocalo ? zocaloHeight + E + 30 : CLOSET_DRAWER_BOTTOM_GAP;
   const opening = wallA - (cfg.leftWall ? 2 * E : E) - (cfg.rightWall ? 2 * E : E);        // largo del marco horizontal
-  const suggestedDoors = cfg.twoCajoneros ? (cfg.twoPlacement === 'extremos' ? 3 : 4) : cfg.cajoneroPos === 'center' ? 3 : 2; // dos cajoneros: 4 puertas con el traslape en la dilatada central, 3 si van a los extremos
+  const suggestedDoors = cfg.doorType === 'abatibles' ? Math.max(2, Math.round(wallA / 600)) : cfg.twoCajoneros ? (cfg.twoPlacement === 'extremos' ? 3 : 4) : cfg.cajoneroPos === 'center' ? 3 : 2; // dos cajoneros: 4 puertas con el traslape en la dilatada central, 3 si van a los extremos
   const doorCount = Math.max(1, Math.round(cfg.doorCount ?? suggestedDoors));
   const doorWidth = (opening + (doorCount - 1) * cfg.overlap) / doorCount;
   const suggestedCajonero = Math.max(300, Math.round((doorWidth - 200) / 5) * 5);
@@ -1213,7 +1327,7 @@ export function closetDerived(cfg: ClosetConfig & { leftWall: boolean; rightWall
   const torreShelves = Math.max(0, Math.min(20, Math.round(cfg.torreShelves ?? suggestedTorreShelves)));
   const torreDivisions = Math.max(0, Math.min(5, Math.round(cfg.torreDivisions ?? 0)));
   const freeHeight = (Hc - E) - baseH; // de la cara de arriba de la base a la cara de abajo del marco horizontal (acostado, de 15)
-  const suggestedDoorHeight = freeHeight - 20;
+  const suggestedDoorHeight = cfg.doorType === 'abatibles' ? Hc - baseH : freeHeight - 20; // abatibles: del piso o la base hasta el techo
   return {
     Hc, baseH, cajBase, drawerBottom, torreWidth, torreTop, suggestedTorreShelves, torreShelves, torreDivisions, opening, suggestedDoors, doorCount, doorWidth, suggestedCajonero, cajoneroWidth: cfg.cajoneroWidth ?? suggestedCajonero,
     freeHeight, suggestedDoorHeight, doorHeight: cfg.doorHeight ?? suggestedDoorHeight,
@@ -1230,17 +1344,56 @@ export function closetCajoneroIndex(name: string): 1 | 2 { return name.endsWith(
 /** Cuál torre es una pieza: 2 si lleva el sufijo de la segunda torre */
 export function closetTorreIndex(name: string): 1 | 2 { return name.endsWith(' · T2') ? 2 : 1; }
 
+/** Anchos de los cuerpos del Closet fit (inferiores y superiores): los guardados (ajustados al muro) o iguales */
+export function fitRows(fit: ClosetFit, wallA: number) {
+  const norm = (w: number[] | undefined, n: number) => {
+    if (w && w.length === n && n > 0) { const sum = w.reduce((a, b) => a + b, 0); return w.map(x => (x * wallA) / sum); }
+    return Array.from({ length: n }, () => wallA / n);
+  };
+  const nl = Math.max(1, Math.round(fit.lowerBodies)), nu = Math.max(0, Math.round(fit.upperBodies));
+  return { lower: norm(fit.lowerW, nl), upper: nu > 0 ? norm(fit.upperW, nu) : [] as number[] };
+}
+
+/**
+ * Celdas de cada cuerpo del Closet fit (alturas de arriba hacia abajo). Cada cuerpo de arriba tiene su propia altura (la suma de sus celdas);
+ * el cuerpo de abajo que está justo debajo (mismo ancho y posición) llega hasta él. Los demás de abajo usan la altura general de los superiores.
+ */
+export function fitCells(fit: ClosetFit, wallA: number, spaceHeight: number) {
+  const Hf = spaceHeight - CLOSET_TOP_MARGIN;
+  const rows = fitRows(fit, wallA);
+  const baseUp = rows.upper.length > 0 ? Math.min(Math.max(100, fit.upperHeight), Hf - 300) : 0;
+  // un alto negativo marca un hueco (espacio libre que dejó un cuerpo eliminado); para las medidas se usa su valor absoluto
+  const sum = (c: number[]) => c.reduce((a, b) => a + Math.abs(b), 0);
+  const upper = rows.upper.map((_, i) => {
+    const c = fit.upperCells?.[i];
+    if (c && c.length > 0) { const t = Math.min(Math.max(100, sum(c)), Hf - 300); const k = t / sum(c); return c.map(x => x * k); }
+    return [baseUp];
+  });
+  const upTotals = upper.map(sum);
+  const ranges = (row: number[]) => { let a = 0; return row.map(w => { const r: [number, number] = [a, a + w]; a += w; return r; }); };
+  const lr = ranges(rows.lower), ur = ranges(rows.upper);
+  const match = lr.map(([a, b]) => ur.findIndex(([c, d]) => Math.abs(a - c) < 1 && Math.abs(b - d) < 1));
+  // sin choques: cada cuerpo de abajo llega hasta el más bajo de los cuerpos de arriba que le quedan encima (nunca se sobreponen)
+  const lowerHs = lr.map(([a, b]) => { let t = 0, any = false; ur.forEach(([c, d], k) => { if (Math.min(b, d) - Math.max(a, c) > 0.5) { any = true; t = Math.max(t, upTotals[k]); } }); return Hf - (any ? t : baseUp); });
+  const lower = rows.lower.map((_, i) => {
+    const c = fit.lowerCells?.[i], h = lowerHs[i];
+    if (c && c.length > 0) { const k = h / sum(c); return c.map(x => x * k); }
+    return [h];
+  });
+  return { lower, upper, Hf, upH: baseUp, lowerHs, upTotals, match };
+}
+
 export function closetSectionOf(rawName: string): 'torre' | 'puertas' | 'taparriel' | 'costado' | 'zocalo' | 'base' | 'cajonero' | 'entrepanos' | 'maletero' | null {
-  const name = rawName.replace(/ · (2|T2)$/, '');
+  const name = rawName.replace(/ \[\d+\]$/, '').replace(/ \([12]\/2\)$/, '').replace(/ · (2|T2)$/, '');
   if (name === 'Costado closet') return 'costado';
   if (name === 'Tapa riel closet') return 'taparriel';
-  if (name.startsWith('Puerta corrediza')) return 'puertas';
+  if (name.startsWith('Puerta corrediza') || name.startsWith('Puerta abatible')) return 'puertas';
   if (name.startsWith('Zócalo closet')) return 'zocalo';
-  if (name === 'Base closet' || name === 'Base marco hor closet') return 'base';
+  if (name === 'Base closet' || name === 'Base marco hor closet' || name === 'Marco puerta inferior') return 'base';
   if (name.startsWith('Lateral cajonero') || name === 'Tapa cajonero' || name.startsWith('Frente cajón') || name.startsWith('Cajón ') || name.startsWith('Puente') && name.endsWith('cajonero') || name === 'Dilatación lateral cajonero' || name === 'Dilatada central cajonero') return 'cajonero';
-  if (name === 'Entrepaño closet' || name.startsWith('Costado entrepaños')) return 'entrepanos';
-  if (name.startsWith('Maletero closet')) return 'maletero';
-  if (name.startsWith('Lateral torre') || name === 'División torre' || name === 'Entrepaño torre') return 'torre';
+  if (name === 'Entrepaño closet' || name === 'Nariz entrepaño closet' || name.startsWith('Costado entrepaños')) return 'entrepanos';
+  if (name.startsWith('Maletero closet') || name === 'Nariz maletero') return 'maletero';
+  if (name.startsWith('Lateral torre') || name === 'División torre' || name === 'Entrepaño torre' || name === 'Nariz entrepaño torre') return 'torre';
   return null;
 }
 

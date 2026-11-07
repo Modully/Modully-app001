@@ -23,9 +23,10 @@ import { resizeSymmetric, snapToNeighbors } from './moduleResize';
 import type { CounterExtras, Box as BoxData } from './boxes';
 import { closetDerived } from './boxes';
 import type { IslandItem, ColumnItem, ClosetConfig } from './types';
-import { DEFAULT_CLOSET } from './types';
+import { DEFAULT_CLOSET, DEFAULT_FIT } from './types';
+import type { ClosetFit } from './types';
 import { SECTIONS, SECTION_ORDER, SectionId } from './sections';
-import { buildBoxes, boxesToJSON, armUpperOrigin, findCollisions, LOWER_DEPTH, UPPER_DEPTH, CORNER_BLIND_OFFSET, TOP_MARGIN, MAX_MODULE_WIDTH, SPLASH_HEIGHT_DEFAULT, COUNTER_THICKNESS_DEFAULT, COUNTER_OVERHANG_DEFAULT, FRIDGE_CLEARANCE, OVER_FRIDGE_DEPTH, DILATATION_GAP_DEFAULT, DILATATION_DEPTH_DEFAULT } from './boxes';
+import { buildBoxes, fitRows, boxesToJSON, armUpperOrigin, findCollisions, LOWER_DEPTH, UPPER_DEPTH, CORNER_BLIND_OFFSET, TOP_MARGIN, MAX_MODULE_WIDTH, SPLASH_HEIGHT_DEFAULT, COUNTER_THICKNESS_DEFAULT, COUNTER_OVERHANG_DEFAULT, FRIDGE_CLEARANCE, OVER_FRIDGE_DEPTH, DILATATION_GAP_DEFAULT, DILATATION_DEPTH_DEFAULT } from './boxes';
 
 // Constantes de diseño técnico
 const HOOD_GAP = 650;       // Espacio específico para la campana (65cm)
@@ -61,7 +62,7 @@ const KitchenShapeIcon: React.FC<{ shape: LayoutType; size?: number }> = ({ shap
 
 /** Isla y península vistas desde arriba: la cocina en L (muros y mueble) con una península pegada al brazo y una isla suelta */
 const SECTION_ICONS: Record<SectionId, React.ReactNode> = {
-  cocinas: <Utensils size={16} />, closets: <Shirt size={16} />, walking: <Warehouse size={16} />, puertas: <DoorOpen size={16} />, bano: <Bath size={16} />, tv: <Tv size={16} />,
+  cocinas: <Utensils size={16} />, closets: <Shirt size={16} />, closetfit: <Archive size={16} />, walking: <Warehouse size={16} />, puertas: <DoorOpen size={16} />, bano: <Bath size={16} />, tv: <Tv size={16} />,
 };
 
 const IslandIcon: React.FC<{ size?: number }> = ({ size = 28 }) => (
@@ -488,6 +489,15 @@ export default function App() {
   const [floorLength, setFloorLength] = useState(4000);
   
   const wallsDrag = useDragOffset();
+  // En closets, al pedir L o U los brazos (muros B y C) se sugieren de 600 mm; después se pueden editar
+  const chooseLayout = (l: LayoutType) => {
+    if (isClosetSection || isFitSection) {
+      if (l !== 'STRAIGHT' && layout === 'STRAIGHT') setWallB(600);
+      if (l === 'U_SHAPE' && layout !== 'U_SHAPE') setWallC(600);
+    }
+    setLayout(l);
+  };
+  const [wallsHidden, setWallsHidden] = useState(false); // la tarjeta de muros se oculta del todo (queda un botón para volver a abrirla)
   const [wallsCardOpen, setWallsCardOpen] = useState(true); // formulario básico de muros del closet (recto, L o U con sus medidas y la altura)
   const [wallA, setWallA] = useState(3600);
   const [wallB, setWallB] = useState(2400);
@@ -512,7 +522,7 @@ export default function App() {
   const [dilatationGap, setDilatationGap] = useState(DILATATION_GAP_DEFAULT);
   const [dilatationDepth, setDilatationDepth] = useState(DILATATION_DEPTH_DEFAULT);
   // Qué se ve en la escena (solo visual: no cambia el diseño, el despiece ni la exportación)
-  const [visibility, setVisibility] = useState({ upper: true, lower: true, counter: true, appliances: true, doors: true, shelves: true, cajonero: true, costado: true });
+  const [visibility, setVisibility] = useState({ upper: true, lower: true, counter: true, appliances: true, doors: true, shelves: true, cajonero: true, costado: true, dims: true });
   const [hasLeftClosure, setHasLeftClosure] = useState(false);
   const [hasRightClosure, setHasRightClosure] = useState(false);
 
@@ -565,6 +575,9 @@ export default function App() {
   const [islands, setIslands] = useState<IslandItem[]>([]);
   const [columns, setColumns] = useState<ColumnItem[]>([]); // columnas o muros atravesados del espacio
   const [closet, setCloset] = useState<ClosetConfig>(DEFAULT_CLOSET); // formulario del closet
+  const [fit, setFit] = useState<ClosetFit>(DEFAULT_FIT); // Closet fit: cubo por cuerpos
+  const fitDrag = useDragOffset();
+  const [fitHidden, setFitHidden] = useState(false); // tarjeta de cuerpos del Closet fit oculta (queda un botón para volver a abrirla)
   // Cocina en L: el brazo va a la izquierda (muro B) o a la derecha (muro C); se pregunta al elegir la forma
   const [lArm, setLArm] = useState<'left' | 'right'>('left');
   // Borrado con confirmación dentro de la app (isla o tarjeta especial pendiente de confirmar)
@@ -579,11 +592,11 @@ export default function App() {
   // largo o varias teclas seguidas cuentan como un solo paso.
   const designSnapshot = useMemo(() => ({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, closet, lArm, hasLeftClosure, hasRightClosure,
+    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, closet, fit, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
     modules, specialModules, appliances, hasIsland, lineType, faceColor,
   }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, closet, lArm, hasLeftClosure, hasRightClosure,
+    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, closet, fit, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
     modules, specialModules, appliances, hasIsland, lineType, faceColor]);
   type DesignSnapshot = typeof designSnapshot;
@@ -650,7 +663,7 @@ export default function App() {
     setLayout(snap.layout); setWallA(snap.wallA); setWallB(snap.wallB); setWallC(snap.wallC);
     setSpaceHeight(snap.spaceHeight); setHasZocalo(snap.hasZocalo); setZocaloHeight(snap.zocaloHeight);
     setZocaloDepth(snap.zocaloDepth); setHasCounter(snap.hasCounter); setCounterThickness(snap.counterThickness);
-    setCounterOverhang(snap.counterOverhang); setHasSplash(snap.hasSplash); setSplashHeight(snap.splashHeight); setCounterExtras(snap.counterExtras); setIslands(snap.islands); setColumns(snap.columns ?? []); setCloset({ ...DEFAULT_CLOSET, ...(snap.closet ?? {}) }); setLArm(snap.lArm); setHasLeftClosure(snap.hasLeftClosure); setHasRightClosure(snap.hasRightClosure);
+    setCounterOverhang(snap.counterOverhang); setHasSplash(snap.hasSplash); setSplashHeight(snap.splashHeight); setCounterExtras(snap.counterExtras); setIslands(snap.islands); setColumns(snap.columns ?? []); setFit({ ...DEFAULT_FIT, ...(snap.fit ?? {}) }); setCloset({ ...DEFAULT_CLOSET, ...(snap.closet ?? {}) }); setLArm(snap.lArm); setHasLeftClosure(snap.hasLeftClosure); setHasRightClosure(snap.hasRightClosure);
     setHasDilatation(snap.hasDilatation); setDilatationGap(snap.dilatationGap); setDilatationDepth(snap.dilatationDepth);
     setModules(snap.modules); setSpecialModules(snap.specialModules); setAppliances(snap.appliances);
     setHasIsland(snap.hasIsland); setLineType(snap.lineType); setFaceColor(snap.faceColor);
@@ -665,7 +678,7 @@ export default function App() {
     const first = initialDesign.current!;
     return {
       ...first, ...c.defaults,
-      modules: [], islands: [], columns: [], closet: { ...DEFAULT_CLOSET }, counterExtras: {}, hasLeftClosure: false, hasRightClosure: false, hasIsland: false, lArm: 'left',
+      modules: [], islands: [], columns: [], closet: { ...DEFAULT_CLOSET }, fit: { ...DEFAULT_FIT }, counterExtras: {}, hasLeftClosure: false, hasRightClosure: false, hasIsland: false, lArm: 'left',
       specialModules: first.specialModules.map((sm, i) => ({ ...sm, active: false, name: c.specials[i] ?? sm.name })),
       appliances: first.appliances.map(ap => ({ ...ap, active: false })),
     } as DesignSnapshot;
@@ -712,7 +725,7 @@ export default function App() {
     if (h.timer) { clearTimeout(h.timer); h.timer = null; }
     h.past = []; h.future = []; h.committed = null; h.committedKey = '';
     setSection(next);
-    if (next === 'closets' || next === 'walking') { setActiveView('frontal'); setWallsCardOpen(true); } // al entrar a closets: vista frontal con las puertas translúcidas y el formulario de muros
+    if (next === 'closets' || next === 'walking' || next === 'closetfit') { setFitHidden(false); setActiveView('frontal'); setWallsCardOpen(true); setWallsHidden(false); } // al entrar a closets: vista frontal con las puertas translúcidas y el formulario de muros
     applySnapshot(sectionStore.current[next] ?? makeSectionDefaults(next));
     setIsElementsPanelOpen(false); setIsAccessoriesPanelOpen(false); setIsViewsPanelOpen(false); setIsSpecialModulesPanelOpen(false); setIsWorkspaceModalOpen(false);
     bumpHistory();
@@ -890,6 +903,7 @@ export default function App() {
   // la forma queda guardada pero no se dibuja
   // Closet: los lados con muro o con costado salen del Espacio (muros auxiliares, L o U); el lado sin muro lleva costado propio
   const isClosetSection = cfg.id === 'closets' || cfg.id === 'walking';
+  const isFitSection = cfg.id === 'closetfit';
   const closetInput = useMemo(() => (isClosetSection ? {
     ...closet,
     leftWall: layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left') || hasLeftClosure,
@@ -909,9 +923,9 @@ export default function App() {
   // Lista única de cajas: la escena 3D, el BOM y la exportación a Fusion leen la geometría de aquí
   const boxes = useMemo(() => buildBoxes({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    modules: labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, closet: closetInput, lArm, hasLeftClosure, hasRightClosure,
+    modules: labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, closet: closetInput, fit: isFitSection ? fit : undefined, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
-  }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, closetInput, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
+  }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, closetInput, fit, isFitSection, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
 
   // Regla: ningún módulo puede ocupar el mismo espacio que un electrodoméstico (ni otro módulo)
   const collisions = useMemo(() => findCollisions(boxes), [boxes]);
@@ -1504,6 +1518,10 @@ export default function App() {
 
   const handleMathematicalSuggestion = async (strategy: OptimizationStrategy) => {
     setIsOptMenuOpen(false);
+    if (isFitSection) {
+      window.alert('Closet fit: el cubo se arma por cuerpos con el formulario de la derecha, paso a paso.');
+      return;
+    }
     if (isClosetSection) {
       window.alert('En el closet la estructura y el interior (cajonero, entrepaños, tubos) se arman solos con las respuestas del formulario de Espacio. Las puertas corredizas se agregan en el siguiente paso.');
       return;
@@ -1765,7 +1783,7 @@ export default function App() {
   // o con un electrodoméstico. Los choques que ya existían no bloquean.
   const collisionKeys = (mods: KitchenModule[]) => new Set(findCollisions(buildBoxes({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    modules: mods, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, closet: closetInput, lArm, hasLeftClosure, hasRightClosure,
+    modules: mods, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, closet: closetInput, fit: isFitSection ? fit : undefined, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
   })).map(([p, q]) => `${p.id}|${q.id}`));
   const setModulesNoCollision = (update: (prev: KitchenModule[]) => KitchenModule[]) => {
@@ -3953,7 +3971,7 @@ export default function App() {
                     </div>
                   )}
                   <div className="space-y-4">
-                    {(isClosetSection ? [] : ['tall-pantry', 'tall-oven'] as const).map(kind => {
+                    {(isClosetSection || isFitSection ? [] : ['tall-pantry', 'tall-oven'] as const).map(kind => {
                       const items = specialModules.filter(sm => sm.kind === kind);
                       const anyActive = items.some(sm => sm.active);
                       const title = kind === 'tall-pantry' ? 'Alacena Alta' : 'Torre de Hornos';
@@ -4039,7 +4057,7 @@ export default function App() {
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Tipo de {cfg.singular}</label>
                     <div className="grid grid-cols-3 gap-3">
                       {(['STRAIGHT', 'L_SHAPE', 'U_SHAPE'] as LayoutType[]).filter(l => cfg.layouts.includes(l)).map((l) => (
-                        <button key={l} onClick={() => setLayout(l)} className={`flex flex-col items-center justify-center p-4 rounded-3xl border-2 transition-all gap-2 ${layout === l ? 'bg-indigo-50 border-indigo-600 text-indigo-600 shadow-md' : 'bg-white border-slate-100 text-slate-400 hover:bg-slate-50'}`}>
+                        <button key={l} onClick={() => chooseLayout(l)} className={`flex flex-col items-center justify-center p-4 rounded-3xl border-2 transition-all gap-2 ${layout === l ? 'bg-indigo-50 border-indigo-600 text-indigo-600 shadow-md' : 'bg-white border-slate-100 text-slate-400 hover:bg-slate-50'}`}>
                           <KitchenShapeIcon shape={l} size={30} />
                           <span className="text-[10px] font-black uppercase tracking-tighter">{l === 'STRAIGHT' ? 'Recta' : l === 'L_SHAPE' ? 'En L' : 'En U'}</span>
                         </button>
@@ -4073,7 +4091,7 @@ export default function App() {
                     )}
                   </div>
                   
-                  {!isClosetSection && (
+                  {!isClosetSection && !isFitSection && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
                       <div>
@@ -4514,6 +4532,7 @@ export default function App() {
                   islands={activeIslands}
                   lArm={lArm}
                   onEditIsland={updateIsland}
+                  fitApi={isFitSection ? { fit, onChange: setFit } : undefined}
                   closetForm={isClosetSection && closetDerivedValues ? {
                     config: closet.twoCajoneros ? { ...closet, cajoneroPos: closet.twoPlacement === 'extremos' ? 'left' : 'center' } : closet,
                     config2: closet.twoCajoneros ? { ...closet, ...closet.cajonero2, cajoneroPos: closetPos2 } : undefined,
@@ -4592,17 +4611,47 @@ export default function App() {
                 </div>
               )}
               
-              {isClosetSection && (
+              {isFitSection && fitHidden && (
+                <button onClick={() => setFitHidden(false)} className="absolute right-4 bottom-4 z-30 pointer-events-auto px-3 py-2 rounded-xl bg-white/95 shadow-xl border border-slate-200 text-[10px] font-black text-slate-700 uppercase tracking-tight">Closet fit · cuerpos</button>
+              )}
+              {isFitSection && !fitHidden && (
+                <div className="absolute right-4 bottom-4 z-30 pointer-events-auto w-64 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 p-4 space-y-3" style={fitDrag.style}>
+                  <div className="flex items-center justify-between">
+                    <span {...fitDrag.handle} className="flex-1 text-[11px] font-black text-slate-800 uppercase tracking-tight select-none" title="Arrastra para mover la tarjeta">⠿ Closet fit · cuerpos</span>
+                    <button onClick={() => setFitHidden(true)} className="p-1 text-slate-400 hover:text-red-500" title="Ocultar la tarjeta"><X size={16} /></button>
+                  </div>
+                  <p className="text-[9px] font-bold text-slate-400">Paso 1: el cubo cubre el área del Espacio; se pide el fondo y los cuerpos.</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      ['Fondo (mm)', fit.depth, (n: number) => setFit(f => ({ ...f, depth: Math.max(200, Math.min(900, Math.round(n))) }))],
+                      ['Cuerpos inferiores', fit.lowerBodies, (n: number) => setFit(f => ({ ...f, lowerBodies: Math.max(1, Math.min(10, Math.round(n))), lowerW: undefined, lowerCells: undefined }))],
+                      ['Cuerpos superiores', fit.upperBodies, (n: number) => setFit(f => ({ ...f, upperBodies: Math.max(0, Math.min(10, Math.round(n))), upperW: undefined, upperCells: undefined }))],
+                      ['Alto superior (mm)', fit.upperHeight, (n: number) => setFit(f => ({ ...f, upperHeight: Math.max(100, Math.min(1200, Math.round(n))), upperCells: undefined }))],
+                    ] as Array<[string, number, (n: number) => void]>).map(([label, value, onCommit]) => (
+                      <div key={label} className="space-y-1">
+                        <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
+                        <DeferredNumber value={value} onCommit={onCommit} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[9px] font-bold text-slate-500">Inferiores: {fitRows(fit, wallA).lower.map(w => Math.round(w)).join(' · ')} mm{fit.upperBodies > 0 ? ` — Superiores: ${fitRows(fit, wallA).upper.map(w => Math.round(w)).join(' · ')} mm` : ''}</p>
+                </div>
+              )}
+              {(isClosetSection || isFitSection) && wallsHidden && (
+                <button onClick={() => setWallsHidden(false)} className="absolute left-4 bottom-4 z-30 pointer-events-auto px-3 py-2 rounded-xl bg-white/95 shadow-xl border border-slate-200 text-[10px] font-black text-slate-700 uppercase tracking-tight">Muros del {cfg.singular}</button>
+              )}
+              {(isClosetSection || isFitSection) && !wallsHidden && (
                 <div className="absolute left-4 bottom-4 z-30 pointer-events-auto w-64 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200" style={wallsDrag.style}>
                   <div className="w-full flex items-center justify-between px-4 py-2.5">
                     <span {...wallsDrag.handle} className="flex-1 text-[11px] font-black text-slate-800 uppercase tracking-tight select-none" title="Arrastra para mover la tarjeta">⠿ Muros del {cfg.singular}</span>
                     <button onClick={() => setWallsCardOpen(o => !o)} className="p-1"><ChevronDown size={16} className={`text-slate-400 transition-transform ${wallsCardOpen ? '' : 'rotate-180'}`} /></button>
+                    <button onClick={() => setWallsHidden(true)} className="p-1 ml-1 text-slate-400 hover:text-red-500" title="Ocultar la tarjeta"><X size={16} /></button>
                   </div>
                   {wallsCardOpen && (
                     <div className="px-4 pb-4 space-y-3">
                       <div className="grid grid-cols-3 gap-1.5">
                         {(['STRAIGHT', 'L_SHAPE', 'U_SHAPE'] as LayoutType[]).filter(l => cfg.layouts.includes(l)).map(l => (
-                          <button key={l} onClick={() => setLayout(l)} className={`py-1.5 rounded-lg text-[10px] font-black border-2 ${layout === l ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{l === 'STRAIGHT' ? 'Recto' : l === 'L_SHAPE' ? 'En L' : 'En U'}</button>
+                          <button key={l} onClick={() => chooseLayout(l)} className={`py-1.5 rounded-lg text-[10px] font-black border-2 ${layout === l ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{l === 'STRAIGHT' ? 'Recto' : l === 'L_SHAPE' ? 'En L' : 'En U'}</button>
                         ))}
                       </div>
                       {layout === 'L_SHAPE' && (
@@ -4625,6 +4674,26 @@ export default function App() {
                           </div>
                         ))}
                       </div>
+                      {((boxes as unknown as { closetAlerts?: string[] }).closetAlerts ?? []).map((m, i) => (
+                        <div key={i} className="rounded-xl border-2 border-amber-300 bg-amber-50 p-2 text-[9px] font-bold text-amber-700">{m}</div>
+                      ))}
+                      {wallA > 2400 && (
+                        <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-2.5 space-y-2">
+                          <p className="text-[10px] font-black text-amber-700 uppercase tracking-tight">Alarma: lámina de máximo 2400 mm</p>
+                          <p className="text-[9px] font-bold text-amber-700">El muro mide {wallA} mm: el maletero, los marcos, la tapa de riel, la base y el zócalo se dividen en dos láminas. Lo que sumes a una se le resta a la otra.</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[8px] font-black text-amber-700 uppercase tracking-widest px-1">Primera (mm)</label>
+                              <DeferredNumber value={Math.round(Math.min(2400, Math.max(wallA - 2400, closet.sheetSplit ?? 2400)))} onCommit={n => setCloset(c => ({ ...c, sheetSplit: Math.round(Math.min(2400, Math.max(wallA - 2400, n))) }))} className="w-full bg-white border border-amber-300 rounded-xl p-2 text-xs font-black text-slate-800 outline-none" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[8px] font-black text-amber-700 uppercase tracking-widest px-1">Segunda (mm)</label>
+                              <div className="w-full bg-white/60 border border-amber-200 rounded-xl p-2 text-xs font-black text-slate-500">{wallA - Math.round(Math.min(2400, Math.max(wallA - 2400, closet.sheetSplit ?? 2400)))}</div>
+                            </div>
+                          </div>
+                          <p className="text-[8px] font-bold text-amber-600">Valores de la tapa de riel (largo del muro); en las otras piezas la primera es igual y la segunda es lo que falte.</p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -4658,7 +4727,7 @@ export default function App() {
                   )}
                   <div className="w-px h-6 bg-slate-200" />
                   <div className="flex gap-1">
-                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos'], ['doors', 'Puertas', 'las puertas corredizas'], ['shelves', 'Entrepaños', 'los entrepaños'], ['cajonero', 'Cajonero', 'el cajonero'], ['costado', 'Costado', 'el costado piso a techo']] as const).filter(([key]) => ((key !== 'doors' && key !== 'shelves' && key !== 'cajonero' && key !== 'costado') || isClosetSection) && (key !== 'upper' || (cfg.hasUpper && !isClosetSection)) && (key !== 'lower' || !isClosetSection) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
+                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos'], ['doors', 'Puertas', 'las puertas corredizas'], ['shelves', 'Entrepaños', 'los entrepaños'], ['cajonero', 'Cajonero', 'el cajonero'], ['costado', 'Costado', 'el costado piso a techo'], ['dims', 'Dimensiones', 'las notas de dimensiones']] as const).filter(([key]) => (key !== 'dims' || isFitSection) && ((key !== 'doors' && key !== 'shelves' && key !== 'cajonero' && key !== 'costado') || isClosetSection || (key as string) === 'dims') && (key !== 'upper' || (cfg.hasUpper && !isClosetSection && !isFitSection)) && (key !== 'lower' || !(isClosetSection || isFitSection)) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
                       <button
                         key={key}
                         onClick={() => setVisibility(v => ({ ...v, [key]: !v[key] }))}
