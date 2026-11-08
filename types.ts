@@ -218,7 +218,30 @@ export interface IslandItem {
 }
 
 /** Closet fit (closet personalizado): un cubo que cubre el área y se arma por cuerpos (inferiores y superiores), paso a paso */
+/** Configuración de un cuerpo del Closet fit (doble clic): marco puerta o surrón, con sus puertas, entrepaños y cajones */
+export interface FitBodyCfg {
+  kind: 'marco' | 'surron';
+  zocalo?: boolean;                       // zócalo de 80 abajo (si el cuerpo va al piso)
+  base?: 'base' | 'puentes';              // surrón: base completa o puentes inferiores
+  top?: 'tapa' | 'puente' | 'puenteL';    // surrón: arriba va tapa, puente o puente en L (dos piezas de 65: una vertical y otra horizontal)
+  doors?: number;                         // cantidad de puertas de parche (0 = sin puertas)
+  doorType?: 'parche' | 'corredizas';     // marco puerta: puertas de parche (por defecto) o corredizas en dos rieles
+  doorDir?: 'vertical' | 'horizontal';    // vertical = una a la izquierda y otra a la derecha; horizontal = una sobre otra
+  hinge?: 'izq' | 'der';                  // con una sola puerta vertical: de qué lado está la bisagra (por defecto izquierda)
+  divider?: 'puentes' | 'costado';        // con más de 3 puertas: pieza vertical entre base y tapa (dos puentes verticales pegados, o puente + costado)
+  shelves?: number;                       // entrepaños (fondo = fondo del módulo − 70)
+  maletero?: number;                      // marco puerta: distancia desde la parte superior del cuerpo hacia abajo hasta la cara de arriba del maletero (mm); sin valor = sin maletero
+  tubes?: 'camisero' | 'pantalonero' | 'ambos'; // marco puerta: tubos para colgar (camisero 40 mm bajo el maletero, pantalonero a 900 mm del piso)
+  drawers?: number;                       // cajones (0 = sin cajones)
+  drawerKind?: 'manija' | 'puenteL';      // manija: 2 mm entre frentes; puente en L: 30 mm
+}
 export interface ClosetFit {
+  cubes?: { A?: boolean; B?: boolean; C?: boolean }; // cubos activos por muro (por defecto los tres; B y C solo si el espacio tiene esos muros)
+  armB?: ClosetFit;       // cubo del muro B (se gira desde el marco del muro A): fondo, cuerpos, zócalo...
+  armC?: ClosetFit;       // cubo del muro C
+  zocalo?: { on: boolean; alto: number; fondo: number; travesanos: number }; // zócalo del cubo: subensamble en forma de escalera (largueros delante y detrás con travesaños)
+  bodies?: Record<string, FitBodyCfg>;    // configuración por cuerpo (clave = id del cuerpo, p. ej. fit-inf-0-0)
+  converted?: boolean;                    // "Convertir a módulos": las placas representativas pasan a ser las piezas reales
   depth: number;          // fondo del cubo (mm)
   lowerBodies: number;    // cuerpos inferiores, uno al lado del otro
   upperBodies: number;    // cuerpos superiores (0 = ninguno)
@@ -232,3 +255,4 @@ export interface ClosetFit {
   upperCells?: number[][]; // lo mismo para los cuerpos superiores
 }
 export const DEFAULT_FIT: ClosetFit = { depth: 550, lowerBodies: 3, upperBodies: 1, upperHeight: 350 };
+export const DEFAULT_ARM: ClosetFit = { depth: 550, lowerBodies: 2, upperBodies: 1, upperHeight: 350 };

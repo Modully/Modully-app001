@@ -23,7 +23,7 @@ import { resizeSymmetric, snapToNeighbors } from './moduleResize';
 import type { CounterExtras, Box as BoxData } from './boxes';
 import { closetDerived } from './boxes';
 import type { IslandItem, ColumnItem, ClosetConfig } from './types';
-import { DEFAULT_CLOSET, DEFAULT_FIT } from './types';
+import { DEFAULT_CLOSET, DEFAULT_FIT, DEFAULT_ARM } from './types';
 import type { ClosetFit } from './types';
 import { SECTIONS, SECTION_ORDER, SectionId } from './sections';
 import { buildBoxes, fitRows, boxesToJSON, armUpperOrigin, findCollisions, LOWER_DEPTH, UPPER_DEPTH, CORNER_BLIND_OFFSET, TOP_MARGIN, MAX_MODULE_WIDTH, SPLASH_HEIGHT_DEFAULT, COUNTER_THICKNESS_DEFAULT, COUNTER_OVERHANG_DEFAULT, FRIDGE_CLEARANCE, OVER_FRIDGE_DEPTH, DILATATION_GAP_DEFAULT, DILATATION_DEPTH_DEFAULT } from './boxes';
@@ -285,15 +285,15 @@ const MeasureInput: React.FC<{ label: string; value: number; onCommit: (value: n
   );
 };
 
-const BottomNavItem: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string }> = ({ active, onClick, icon, label }) => (
+const BottomNavItem: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string; badge?: string }> = ({ active, onClick, icon, label, badge }) => (
   <button
     onClick={onClick}
     className={`flex flex-col items-center justify-center flex-1 h-full gap-1 transition-all ${active ? 'text-indigo-600' : 'text-gray-400'}`}
   >
     <div className={`p-1 rounded-lg transition-colors ${active ? 'bg-indigo-50' : ''}`}>
-      {React.cloneElement(icon as React.ReactElement, { size: 22, strokeWidth: active ? 2.5 : 2 })}
+      {React.cloneElement(icon as React.ReactElement<any>, { size: 22, strokeWidth: active ? 2.5 : 2 })}
     </div>
-    <span className="text-[10px] font-bold uppercase tracking-tighter">{label}</span>
+    <span className="text-[10px] font-bold uppercase tracking-tighter">{label}{badge ? <span className="ml-1 px-1 rounded-full bg-indigo-600 text-white text-[8px] align-middle">{badge}</span> : null}</span>
   </button>
 );
 
@@ -578,6 +578,7 @@ export default function App() {
   const [columns, setColumns] = useState<ColumnItem[]>([]); // columnas o muros atravesados del espacio
   const [closet, setCloset] = useState<ClosetConfig>(DEFAULT_CLOSET); // formulario del closet
   const [fit, setFit] = useState<ClosetFit>(DEFAULT_FIT); // Closet fit: cubo por cuerpos
+  const [fitWall, setFitWall] = useState<'A' | 'B' | 'C'>('A'); // muro cuyo cubo se edita en la tarjeta
   const fitDrag = useDragOffset();
   const [fitHidden, setFitHidden] = useState(false); // tarjeta de cuerpos del Closet fit oculta (queda un botón para volver a abrirla)
   // Cocina en L: el brazo va a la izquierda (muro B) o a la derecha (muro C); se pregunta al elegir la forma
@@ -689,6 +690,8 @@ export default function App() {
   // y sus puertas. Sugerencia inicial: todos con puertas verticales (una si el módulo es angosto, dos si es ancho); después se indica
   // cómo acomodarlos (cajones, otras puertas)
   const convertToModules = () => {
+    // Closet fit: las placas representativas de los cuerpos configurados pasan a ser las piezas reales (y al revés)
+    if (isFitSection) { setFit(f => ({ ...f, converted: !f.converted })); return; }
     setModules(prev => {
       const allDone = prev.length > 0 && prev.every(m => m.detailed || m.cornerArm);
       if (allDone) return prev.map(m => ({ ...m, detailed: false })); // vuelve a cubos
@@ -904,8 +907,8 @@ export default function App() {
   // La península solo existe en cocinas en L (va pegada al muro perpendicular: B a la izquierda o C a la derecha); si cambia
   // la forma queda guardada pero no se dibuja
   // Closet: los lados con muro o con costado salen del Espacio (muros auxiliares, L o U); el lado sin muro lleva costado propio
-  const isClosetSection = cfg.id === 'closets' || cfg.id === 'walking';
-  const isFitSection = cfg.id === 'closetfit';
+  const isClosetSection = cfg.id === 'closets';
+  const isFitSection = cfg.id === 'closetfit' || cfg.id === 'walking'; // el walking closet arranca como el Closet fit: cubos por cuerpos en cada muro
   const closetInput = useMemo(() => (isClosetSection ? {
     ...closet,
     leftWall: layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left') || hasLeftClosure,
@@ -3929,7 +3932,7 @@ export default function App() {
                               ['Fondo (mm)', closet.torreDepth ?? 450, 450, (n: number) => setCloset(c => ({ ...c, torreDepth: Math.max(300, Math.min(500, Math.round(n))) }))],
                             ] as Array<[string, number, number, (n: number) => void]>).map(([label, value, suggested, onCommit]) => (
                               <div key={label} className="space-y-1">
-                                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label} · sugerido {Math.round(suggested)}</label>
+                                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
                                 <DeferredNumber value={Math.round(value)} onCommit={onCommit} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
                               </div>
                             ))}
@@ -3967,7 +3970,7 @@ export default function App() {
                               ['Fondo (mm)', closetTorre2Cfg.torreDepth ?? 450, 450, (n: number) => setCloset(c => ({ ...c, torre2: { ...c.torre2, torreDepth: Math.max(300, Math.min(500, Math.round(n))) } }))],
                             ] as Array<[string, number, number, (n: number) => void]>).map(([label, value, suggested, onCommit]) => (
                               <div key={label} className="space-y-1">
-                                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label} · sugerido {Math.round(suggested)}</label>
+                                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
                                 <DeferredNumber value={Math.round(value)} onCommit={onCommit} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
                               </div>
                             ))}
@@ -4146,7 +4149,7 @@ export default function App() {
                     <div className="p-4 rounded-3xl border-2 border-slate-100 bg-white space-y-4">
                       <div>
                         <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">Formulario del closet</p>
-                        <p className="text-[9px] font-bold text-slate-400 mt-0.5">Los lados salen del Espacio: el lado con muro lleva marco lateral y dilatada de 15 mm; el lado sin muro lleva costado propio. Lo sugerido se puede editar.</p>
+                        <p className="text-[9px] font-bold text-slate-400 mt-0.5">Los lados salen del Espacio: el lado con muro lleva marco lateral y dilatada de 15 mm; el lado sin muro lleva costado propio.</p>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-[10px] font-black uppercase tracking-wide">
                         {([['Izquierdo', closetInput?.leftWall], ['Derecho', closetInput?.rightWall]] as const).map(([lado, hasWall]) => (
@@ -4165,7 +4168,7 @@ export default function App() {
                       </div>
                       {hasZocalo && (
                         <div className="space-y-1">
-                          <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Altura del zócalo (mm) · sugerido 80</label>
+                          <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Altura del zócalo (mm)</label>
                           <DeferredNumber value={zocaloHeight} onCommit={n => setZocaloHeight(Math.max(30, Math.min(200, Math.round(n))))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
                         </div>
                       )}
@@ -4190,7 +4193,7 @@ export default function App() {
                       </div>
                       {closet.tapaRiel && (
                         <div className="space-y-1">
-                          <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Altura de la tapa de riel (mm) · sugerido 110</label>
+                          <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Altura de la tapa de riel (mm)</label>
                           <DeferredNumber value={closet.tapaRielHeight} onCommit={n => setCloset(c => ({ ...c, tapaRielHeight: Math.max(30, Math.min(300, Math.round(n))) }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
                         </div>
                       )}
@@ -4213,7 +4216,7 @@ export default function App() {
 
                       {closet.twoCajoneros !== true && (
                       <div className="space-y-1">
-                        <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Cajonero: dónde va (sugerido: {wallA >= 2300 ? 'al centro' : 'a un extremo'})</label>
+                        <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Cajonero: dónde va</label>
                         <div className="grid grid-cols-4 gap-2">
                           {([['left', 'Izquierda'], ['center', 'Centro'], ['right', 'Derecha']] as const).map(([val, label]) => (
                             <button key={val} onClick={() => setCloset(c => ({ ...c, cajoneroPos: val, cajoneroX: undefined }))} className={`py-2 rounded-xl text-[10px] font-black border-2 ${closet.cajoneroX == null && closet.cajoneroPos === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
@@ -4272,7 +4275,7 @@ export default function App() {
                           ['Alto de las puertas (mm)', closetDerivedValues.doorHeight, closetDerivedValues.suggestedDoorHeight, (n: number) => setCloset(c => ({ ...c, doorHeight: Math.max(500, Math.round(n)) }))],
                         ] as Array<[string, number, number, (n: number) => void]>).map(([label, value, suggested, onCommit]) => (
                           <div key={label} className="space-y-1">
-                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label} · sugerido {Math.round(suggested)}</label>
+                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
                             <DeferredNumber value={Math.round(value)} onCommit={onCommit} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
                           </div>
                         ))}
@@ -4286,7 +4289,7 @@ export default function App() {
                         <p>Espacio libre para las puertas: {Math.round(closetDerivedValues.freeHeight)} mm (de la cara de arriba de la base a la cara de abajo del marco horizontal).</p>
                         <p>Maletero: tablero a {Math.round(closetDerivedValues.maleteroTop)} mm; primer tubo 40 mm más abajo y el segundo a 900 mm del piso.</p>
                       </div>
-                      <button onClick={() => setCloset({ ...DEFAULT_CLOSET, bottomFrame: closet.bottomFrame })} className="w-full py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 text-[10px] font-black uppercase tracking-wide">Volver a lo sugerido</button>
+                      <button onClick={() => setCloset({ ...DEFAULT_CLOSET, bottomFrame: closet.bottomFrame })} className="w-full py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 text-[10px] font-black uppercase tracking-wide">Restablecer valores</button>
                     </div>
                   )}
 
@@ -4628,21 +4631,65 @@ export default function App() {
                     <span className="flex-1 text-[11px] font-black text-slate-800 uppercase tracking-tight select-none" title="Arrastra para mover la tarjeta">⠿ Closet fit · cuerpos</span>
                     <button onClick={() => setFitHidden(true)} className="p-1 text-slate-400 hover:text-red-500" title="Ocultar la tarjeta"><X size={16} /></button>
                   </div>
-                  <p className="text-[9px] font-bold text-slate-400">Paso 1: el cubo cubre el área del Espacio; se pide el fondo y los cuerpos.</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {([
-                      ['Fondo (mm)', fit.depth, (n: number) => setFit(f => ({ ...f, depth: Math.max(200, Math.min(900, Math.round(n))) }))],
-                      ['Cuerpos inferiores', fit.lowerBodies, (n: number) => setFit(f => ({ ...f, lowerBodies: Math.max(1, Math.min(10, Math.round(n))), lowerW: undefined, lowerCells: undefined }))],
-                      ['Cuerpos superiores', fit.upperBodies, (n: number) => setFit(f => ({ ...f, upperBodies: Math.max(0, Math.min(10, Math.round(n))), upperW: undefined, upperCells: undefined }))],
-                      ['Alto superior (mm)', fit.upperHeight, (n: number) => setFit(f => ({ ...f, upperHeight: Math.max(100, Math.min(1200, Math.round(n))), upperCells: undefined }))],
-                    ] as Array<[string, number, (n: number) => void]>).map(([label, value, onCommit]) => (
-                      <div key={label} className="space-y-1">
-                        <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
-                        <DeferredNumber value={value} onCommit={onCommit} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-[9px] font-bold text-slate-500">Inferiores: {fitRows(fitInput ?? fit, wallA).lower.map(w => Math.round(w)).join(' · ')} mm{fit.upperBodies > 0 ? ` — Superiores: ${fitRows(fitInput ?? fit, wallA).upper.map(w => Math.round(w)).join(' · ')} mm` : ''}</p>
+                  {(() => {
+                    // muros con cubo: A siempre; B y C según la forma del espacio (L o U)
+                    const hasB = layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left'), hasC = layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right');
+                    const walls = (['A', ...(hasB ? ['B'] : []), ...(hasC ? ['C'] : [])] as Array<'A' | 'B' | 'C'>);
+                    const sel = walls.includes(fitWall) ? fitWall : 'A';
+                    const cubesOn = { A: true, B: true, C: true, ...(fit.cubes ?? {}) };
+                    const cur: ClosetFit = sel === 'A' ? fit : { ...DEFAULT_ARM, ...((sel === 'B' ? fit.armB : fit.armC) ?? {}) };
+                    const fixZ = (o: ClosetFit): ClosetFit => (o.zocalo && o.zocalo.fondo > o.depth - 30 ? { ...o, zocalo: { ...o.zocalo, fondo: Math.max(60, o.depth - 30) } } : o); // el zócalo siempre menos profundo que el fondo
+                    const patchCur = (p: Partial<ClosetFit>) => setFit(f => sel === 'A' ? fixZ({ ...f, ...p }) : sel === 'B' ? { ...f, armB: fixZ({ ...DEFAULT_ARM, ...(f.armB ?? {}), ...p }) } : { ...f, armC: fixZ({ ...DEFAULT_ARM, ...(f.armC ?? {}), ...p }) });
+                    const armLen = sel === 'A' ? wallA : (sel === 'B' ? wallB : wallC) - (cubesOn.A ? Math.max(200, fit.depth) : 0);
+                    const rowsOf = fitRows(sel === 'A' ? (fitInput ?? fit) : { ...cur, leftWall: false, rightWall: false }, armLen);
+                    return (
+                      <>
+                        {walls.length > 1 && (
+                          <div className="flex gap-1">
+                            {walls.map(k => (
+                              <div key={k} className={`flex-1 flex items-center justify-between gap-1 px-1.5 py-1 rounded-full border text-[10px] font-black uppercase ${sel === k ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-300'}`}>
+                                <button type="button" className="flex-1 text-left pl-1" onClick={() => setFitWall(k)}>Muro {k}</button>
+                                <button type="button" title={cubesOn[k] ? 'Cubos activados: clic para desactivarlos' : 'Cubos desactivados: clic para activarlos'} onClick={() => setFit(f => ({ ...f, cubes: { ...(f.cubes ?? {}), [k]: !cubesOn[k] } }))} className={`flex items-center w-7 h-4 rounded-full p-0.5 ${cubesOn[k] ? (sel === k ? 'bg-white/40' : 'bg-indigo-500') + ' justify-end' : 'bg-slate-300 justify-start'}`}><span className="w-3 h-3 rounded-full bg-white shadow" /></button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="grid grid-cols-2 gap-2">
+                          {([
+                            ['Fondo (mm)', cur.depth, (n: number) => patchCur({ depth: Math.max(200, Math.min(900, Math.round(n))) })],
+                            ['Cuerpos inferiores', cur.lowerBodies, (n: number) => patchCur({ lowerBodies: Math.max(1, Math.min(10, Math.round(n))), lowerW: undefined, lowerCells: undefined })],
+                            ['Cuerpos superiores', cur.upperBodies, (n: number) => patchCur({ upperBodies: Math.max(0, Math.min(10, Math.round(n))), upperW: undefined, upperCells: undefined })],
+                            ['Alto superior (mm)', cur.upperHeight, (n: number) => patchCur({ upperHeight: Math.max(100, Math.min(1200, Math.round(n))), upperCells: undefined })],
+                          ] as Array<[string, number, (n: number) => void]>).map(([label, value, onCommit]) => (
+                            <div key={label} className="space-y-1">
+                              <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
+                              <DeferredNumber value={value} onCommit={onCommit} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                            </div>
+                          ))}
+                        </div>
+                        {/* Zócalo del cubo: subensamble en forma de escalera (largueros delante y detrás con travesaños) */}
+                        <button type="button" onClick={() => patchCur({ zocalo: cur.zocalo?.on ? { ...cur.zocalo, on: false } : { alto: 80, fondo: Math.max(60, cur.depth - 100), travesanos: 3, ...(cur.zocalo ?? {}), on: true } })} className={`w-full flex items-center justify-between px-3 py-1.5 rounded-full border text-[10px] font-black uppercase transition-colors ${cur.zocalo?.on ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                          <span>Zócalo</span>
+                          <span className={`flex items-center w-8 h-4 rounded-full p-0.5 ${cur.zocalo?.on ? 'bg-white/40 justify-end' : 'bg-slate-200 justify-start'}`}><span className="w-3 h-3 rounded-full bg-white shadow" /></span>
+                        </button>
+                        {cur.zocalo?.on && (
+                          <div className="grid grid-cols-3 gap-2">
+                            {([
+                              ['Altura (mm)', cur.zocalo.alto, (n: number) => patchCur({ zocalo: { ...cur.zocalo!, alto: Math.max(30, Math.min(300, Math.round(n))) } })],
+                              ['Profundidad (mm)', cur.zocalo.fondo, (n: number) => patchCur({ zocalo: { ...cur.zocalo!, fondo: Math.max(60, Math.min(cur.depth - 30, Math.round(n))) } })],
+                              ['Travesaños', cur.zocalo.travesanos, (n: number) => patchCur({ zocalo: { ...cur.zocalo!, travesanos: Math.max(0, Math.min(20, Math.round(n))) } })],
+                            ] as Array<[string, number, (n: number) => void]>).map(([label, value, onCommit]) => (
+                              <div key={label} className="space-y-1">
+                                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
+                                <DeferredNumber value={value} onCommit={onCommit} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-[9px] font-bold text-slate-500">Inferiores: {rowsOf.lower.map(w => Math.round(w)).join(' · ')} mm{cur.upperBodies > 0 ? ` — Superiores: ${rowsOf.upper.map(w => Math.round(w)).join(' · ')} mm` : ''}</p>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
               {(isClosetSection || isFitSection) && wallsHidden && (
@@ -4696,7 +4743,7 @@ export default function App() {
                       {((boxes as unknown as { closetAlerts?: string[] }).closetAlerts ?? []).map((m, i) => (
                         <div key={i} className="rounded-xl border-2 border-amber-300 bg-amber-50 p-2 text-[9px] font-bold text-amber-700">{m}</div>
                       ))}
-                      {wallA > 2400 && (
+                      {isClosetSection && wallA > 2400 && (
                         <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-2.5 space-y-2">
                           <p className="text-[10px] font-black text-amber-700 uppercase tracking-tight">Alarma: lámina de máximo 2400 mm</p>
                           <p className="text-[9px] font-bold text-amber-700">El muro mide {wallA} mm: el maletero, los marcos, la tapa de riel, la base y el zócalo se dividen en dos láminas. Lo que sumes a una se le resta a la otra.</p>
@@ -4773,12 +4820,12 @@ export default function App() {
 
                   <button
                     onClick={convertToModules}
-                    disabled={isSuggesting || modules.length === 0}
+                    disabled={isSuggesting || (modules.length === 0 && !isFitSection)}
                     className="bg-white text-indigo-700 px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2 active:scale-95 transition-all border-b-4 border-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Convierte los cubos en módulos con sus puertas y frentes de cajón"
                   >
                     <Box size={18} />
-                    <span className="text-xs font-black uppercase tracking-tight">{modules.length > 0 && modules.every(m => m.detailed) ? 'Volver a cubos' : 'Convertir a módulos'}</span>
+                    <span className="text-xs font-black uppercase tracking-tight">{isFitSection ? (fit.converted ? 'Volver a cubos' : 'Convertir a módulos') : (modules.length > 0 && modules.every(m => m.detailed) ? 'Volver a cubos' : 'Convertir a módulos')}</span>
                   </button>
 
                   {isOptMenuOpen && (
