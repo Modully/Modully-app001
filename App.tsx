@@ -524,7 +524,7 @@ export default function App() {
   const [dilatationGap, setDilatationGap] = useState(DILATATION_GAP_DEFAULT);
   const [dilatationDepth, setDilatationDepth] = useState(DILATATION_DEPTH_DEFAULT);
   // Qué se ve en la escena (solo visual: no cambia el diseño, el despiece ni la exportación)
-  const [visibility, setVisibility] = useState({ upper: true, lower: true, counter: true, appliances: true, doors: true, shelves: true, cajonero: true, costado: true, dims: true });
+  const [visibility, setVisibility] = useState({ upper: true, lower: true, counter: true, appliances: true, doors: true, shelves: true, cajonero: true, costado: true, dims: true, wallA: true, wallB: true, wallC: true });
   const [hasLeftClosure, setHasLeftClosure] = useState(false);
   const [hasRightClosure, setHasRightClosure] = useState(false);
 
@@ -4686,6 +4686,12 @@ export default function App() {
                             ))}
                           </div>
                         )}
+                        {walls.length > 1 && (
+                          <button type="button" title="Alarga los zócalos de los muros B y C hasta tocar el zócalo transversal del muro A" onClick={() => setFit(f => ({ ...f, unirZocalos: f.unirZocalos === false }))} className={`w-full flex items-center justify-between px-3 py-1.5 rounded-full border text-[10px] font-black uppercase transition-colors ${fit.unirZocalos !== false ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                            <span>Unir zócalos</span>
+                            <span className={`flex items-center w-8 h-4 rounded-full p-0.5 ${fit.unirZocalos !== false ? 'bg-white/40 justify-end' : 'bg-slate-200 justify-start'}`}><span className="w-3 h-3 rounded-full bg-white shadow" /></span>
+                          </button>
+                        )}
                         <p className="text-[9px] font-bold text-slate-500">Inferiores: {rowsOf.lower.map(w => Math.round(w)).join(' · ')} mm{cur.upperBodies > 0 ? ` — Superiores: ${rowsOf.upper.map(w => Math.round(w)).join(' · ')} mm` : ''}</p>
                       </>
                     );
@@ -4793,7 +4799,7 @@ export default function App() {
                   )}
                   <div className="w-px h-6 bg-slate-200" />
                   <div className="flex gap-1">
-                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos'], ['doors', 'Puertas', 'las puertas corredizas'], ['shelves', 'Entrepaños', 'los entrepaños'], ['cajonero', 'Cajonero', 'el cajonero'], ['costado', 'Costado', 'el costado piso a techo'], ['dims', 'Dimensiones', 'las notas de dimensiones']] as const).filter(([key]) => (key !== 'dims' || isFitSection) && ((key !== 'doors' && key !== 'shelves' && key !== 'cajonero' && key !== 'costado') || isClosetSection || (key as string) === 'dims') && (key !== 'upper' || (cfg.hasUpper && !isClosetSection && !isFitSection)) && (key !== 'lower' || !(isClosetSection || isFitSection)) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
+                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos'], ['doors', 'Puertas', 'las puertas corredizas'], ['shelves', 'Entrepaños', 'los entrepaños'], ['cajonero', 'Cajonero', 'el cajonero'], ['costado', 'Costado', 'el costado piso a techo'], ['dims', 'Dimensiones', 'las notas de dimensiones'], ['wallA', 'A', 'el muro A con sus cubos'], ['wallB', 'B', 'el muro B con sus cubos'], ['wallC', 'C', 'el muro C con sus cubos']] as const).filter(([key]) => (key !== 'dims' || isFitSection) && (key !== 'wallA' || (isFitSection && layout !== 'STRAIGHT')) && (key !== 'wallB' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')))) && (key !== 'wallC' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')))) && ((key !== 'doors' && key !== 'shelves' && key !== 'cajonero' && key !== 'costado') || isClosetSection || (key as string) === 'dims' || (key as string).startsWith('wall')) && (key !== 'upper' || (cfg.hasUpper && !isClosetSection && !isFitSection)) && (key !== 'lower' || !(isClosetSection || isFitSection)) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
                       <button
                         key={key}
                         onClick={() => setVisibility(v => ({ ...v, [key]: !v[key] }))}

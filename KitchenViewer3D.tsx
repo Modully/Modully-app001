@@ -2528,7 +2528,7 @@ interface KitchenViewer3DProps {
   onDragModule?: (id: string, newPositionX: number) => void;
   onResizeEdge?: (id: string, side: 'left' | 'right', deltaX: number, initialWidth: number, initialPositionX: number) => void;
   onMoveAppliance?: (type: ApplianceType, wall: WallName, distance: number) => void;
-  visibility?: { upper: boolean; lower: boolean; counter: boolean; appliances: boolean; doors?: boolean; shelves?: boolean; cajonero?: boolean; costado?: boolean; dims?: boolean };
+  visibility?: { upper: boolean; lower: boolean; counter: boolean; appliances: boolean; doors?: boolean; shelves?: boolean; cajonero?: boolean; costado?: boolean; dims?: boolean; wallA?: boolean; wallB?: boolean; wallC?: boolean };
   collisions?: Box[]; // cajas que chocan: se marcan en rojo
   measureMode?: boolean; // cinta métrica activa: la escena solo se mira y se mide
   onResizeJunction?: (leftId: string, rightId: string, deltaX: number, initialLeftWidth: number, initialRightWidth: number, initialLeftPositionX: number, initialRightPositionX: number) => void;
@@ -2669,14 +2669,15 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   // Qué se dibuja. Lo que se oculta se lleva sus herramientas: etiquetas de medida, botones X y +, flechas dobles y cotas.
   const vis = visibility ?? { upper: true, lower: true, counter: true, appliances: true };
   // Aislamiento de un módulo del Closet fit: solo se dibujan los muros, el cuerpo y sus piezas reales
+  const wallHidden = (w: string | undefined) => (w === 'A' && vis.wallA === false) || (w === 'B' && vis.wallB === false) || (w === 'C' && vis.wallC === false);
   const vBoxes = useMemo(() => {
-    if (!fitIsolate || !fitApi) return boxes;
+    if (!fitIsolate || !fitApi) return fitApi && (vis.wallA === false || vis.wallB === false || vis.wallC === false) ? boxes.filter(x => !wallHidden(x.wall)) : boxes;
     const body = boxes.find(x => x.id === fitIsolate);
     if (!body) return boxes;
     const cfgI = fitApi.fit.bodies?.[fitIsolate];
     const parts = cfgI ? fitBodyParts(cfgI, fitIsolate, body.x, body.z, body.sx, body.sz, body.sy, true) : [];
     return [body, ...parts.filter(p => !isoHidden.includes(p.id))]; // sin muros: solo el cuerpo y sus piezas
-  }, [boxes, fitIsolate, fitApi, isoHidden]);
+  }, [boxes, fitIsolate, fitApi, isoHidden, vis.wallA, vis.wallB, vis.wallC]);
   useEffect(() => {
     if (!fitIsolate) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setFitIsolate(null); setFitForm(null); setIsoHidden([]); } };
@@ -2995,7 +2996,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         ))}
 
         {/* al convertir a módulos se ocultan las flechas de arrastre y los botones de eliminar y dividir cubos */}
-        {fitApi && !measureMode && !fitApi.fit.converted && !fitIsolate && (() => {
+        {fitApi && !measureMode && !fitApi.fit.converted && !fitIsolate && vis.wallA !== false && (() => {
           const f = fitApi.fit;
           const rows = fitRows(f, wallA);
           const cs = fitCells(f, wallA, spaceHeight);

@@ -1261,7 +1261,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   }
   // Closet fit: un cubo que cubre el área y, dentro, los cuerpos inferiores (uno al lado del otro) y los superiores.
   // Se arma en un marco local (x a lo largo del muro, y fondo desde el muro) con el prefijo `pre`; los muros B y C se giran después
-  const buildFitCube = (f: ClosetFit, wallA: number, pre: string, boxes: Box[]) => {
+  const buildFitCube = (f: ClosetFit, wallA: number, pre: string, boxes: Box[], zExt = 0) => {
     const Hf = spaceHeight - CLOSET_TOP_MARGIN, dpt = Math.max(200, f.depth);
     const nLow = Math.max(1, Math.round(f.lowerBodies)), nUp = Math.max(0, Math.round(f.upperBodies));
     const upH = nUp > 0 ? Math.min(Math.max(100, f.upperHeight), Hf - 1) : 0;
@@ -1281,11 +1281,11 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       const yBack = 0;                                              // el zócalo va siempre pegado al muro
       const yFront = yBack + depthZ - E2;
       const zp = (id: string, name: string, x: number, y: number, sx: number, sy: number) => boxes.push({ id, name, kind: 'panel', wall: 'A', x, y, z: 0, sx, sy, sz: zc.alto, facing: null } as Box);
-      zp(`${pre}zoc-lf`, 'Zócalo largero fit', ins.left, yFront, cw, E2);
-      zp(`${pre}zoc-lb`, 'Zócalo largero fit', ins.left, yBack, cw, E2);
+      zp(`${pre}zoc-lf`, 'Zócalo largero fit', ins.left - zExt, yFront, cw + zExt, E2);
+      zp(`${pre}zoc-lb`, 'Zócalo largero fit', ins.left - zExt, yBack, cw + zExt, E2);
       const nT = Math.max(0, Math.round(zc.travesanos));
       for (let k = 0; k < nT; k++) {
-        const tx = nT === 1 ? ins.left + (cw - E2) / 2 : ins.left + ((cw - E2) * k) / (nT - 1);
+        const tx = nT === 1 ? ins.left - zExt + (cw + zExt - E2) / 2 : ins.left - zExt + ((cw + zExt - E2) * k) / (nT - 1);
         zp(`${pre}zoc-t${k}`, 'Zócalo travesaño fit', tx, yBack + E2, E2, depthZ - 2 * E2);
       }
     }
@@ -1323,7 +1323,10 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       const a0 = key === 'B' ? f0.armB : f0.armC;
       const fa: ClosetFit = { ...DEFAULT_ARM, ...(a0 ?? {}), bodies: f0.bodies, converted: f0.converted, leftWall: false, rightWall: false };
       const local: Box[] = [];
-      buildFitCube(fa, Math.max(300, len - dptA), `fit${key}-`, local);
+      // unir zócalos: el zócalo del brazo se alarga hacia el muro A hasta tocar el zócalo transversal
+      const zA = f0.zocalo?.on && cubesOn.A ? Math.max(45, Math.min(f0.zocalo.fondo, dptA - 30)) : 0;
+      const zExt = f0.unirZocalos !== false && zA > 0 && fa.zocalo?.on ? Math.max(0, dptA - zA) : 0;
+      buildFitCube(fa, Math.max(300, len - dptA), `fit${key}-`, local, zExt);
       local.forEach(bx => boxes.push({
         ...bx, wall: key,
         x: key === 'B' ? bx.y : wallA - bx.y - bx.sy,

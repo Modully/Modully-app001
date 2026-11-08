@@ -236,6 +236,7 @@ export interface FitBodyCfg {
   drawerKind?: 'manija' | 'puenteL';      // manija: 2 mm entre frentes; puente en L: 30 mm
 }
 export interface ClosetFit {
+  unirZocalos?: boolean;  // une los zócalos: los de los muros B y C se alargan hasta tocar el zócalo transversal del muro A (por defecto sí)
   cubes?: { A?: boolean; B?: boolean; C?: boolean }; // cubos activos por muro (por defecto los tres; B y C solo si el espacio tiene esos muros)
   armB?: ClosetFit;       // cubo del muro B (se gira desde el marco del muro A): fondo, cuerpos, zócalo...
   armC?: ClosetFit;       // cubo del muro C

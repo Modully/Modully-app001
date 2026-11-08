@@ -49,7 +49,7 @@ Surrón de puertas 728 × 905 × 532: 2 puertas de parche, entrepaños a 298 y 6
 - Marco puerta: cápsulas de Entrepaños, Maletero (medida desde la parte superior hacia abajo) y Tubos (camisero a 40 mm bajo el maletero, pantalonero a 900 mm del piso; se pueden elegir los dos). Entrepaños, maletero y tubos van de muro a módulo, de módulo a muro o de muro a muro. Puertas de parche o corredizas (traslape 25).
 - Surrón: puente en L = vertical de 65 de canto + horizontal de 65 debajo (al ras del frente del lateral, la vertical a 15 mm del borde); arriba puente en L, puente o tapa; con puente en L arriba el frente del cajón y la puerta pierden 30 mm; atrás, de canto y de cara al muro, abajo (puentes o base) y arriba (más un puente acostado). Cajones: mismo alto en todo el surrón, hasta 240, con 1 cm libre arriba y abajo.
 - Zócalo del cubo (escalera): altura, profundidad (menor que el fondo, 30 mm como mínimo) y travesaños; va pegado al muro; los cuerpos de abajo arrancan sobre él.
-- Walking closet: arranca como el Closet fit en U con cubos en A, B y C (cápsula por muro).
+- Walking closet: arranca como el Closet fit en U con cubos en A, B y C (cápsula por muro). Zócalos unibles: los de B y C se alargan hasta tocar el transversal de A. Chips A, B y C para ocultar o mostrar cada muro con sus cubos.
 
 ## Preguntas abiertas
 - Con 3 puertas, ¿se pregunta por la pieza vertical o solo con 4 o más?
