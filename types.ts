@@ -107,6 +107,7 @@ export interface ClosetConfig {
   narizEntrepanos?: boolean;  // entrepaños (del cajonero y de la torre) con nariz: tira al frente de 15 mm de espesor; sin nariz por defecto
   narizMaletero?: boolean;    // maletero con nariz: el tablero llega a 470 mm de fondo con la nariz
   narizAlto?: number;         // alto de la nariz (sugerido 40 mm)
+  dilatacion?: boolean;       // dilatación de 15 x 15 de piso a techo junto al muro (activa por defecto)
   shelvesOn?: boolean;        // sección de entrepaños (costados y entrepaños sobre el cajonero): activa por defecto
   costadoDepth?: number;      // fondo del costado piso-techo; la base toma el mismo fondo (sin valor = 550)
   costadoLeft?: boolean;      // costado izquierdo de los entrepaños: lleva (por defecto) o no; sin costado los entrepaños se alargan
@@ -222,6 +223,9 @@ export interface ClosetFit {
   lowerBodies: number;    // cuerpos inferiores, uno al lado del otro
   upperBodies: number;    // cuerpos superiores (0 = ninguno)
   upperHeight: number;    // alto de los cuerpos superiores (mm)
+  dilatacion?: boolean;   // dilatación de 15 x 15 de piso a techo junto al muro (activa por defecto)
+  leftWall?: boolean;     // (se deduce del Espacio) hay muro a la izquierda
+  rightWall?: boolean;    // (se deduce del Espacio) hay muro a la derecha
   lowerW?: number[];      // anchos de los cuerpos inferiores (mm); sin valor = iguales
   upperW?: number[];      // anchos de los cuerpos superiores (mm); sin valor = iguales
   lowerCells?: number[][]; // por cuerpo inferior: alturas de sus celdas de arriba hacia abajo (mm); sin valor = una sola celda

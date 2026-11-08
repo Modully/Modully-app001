@@ -923,7 +923,8 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     const side = (isLeft: boolean) => {
       const hasWall = isLeft ? closet.leftWall : closet.rightWall;
       if (!hasWall) { add('Costado closet', isLeft ? 0 : wallA - E, 0, 0, E, Db, Hc); return; } // costado propio: del piso al tope
-      add('Dilatada marco lateral', isLeft ? 0 : wallA - E, D - E, bb, E, E, Hc - bb);          // 15 x 15 contra el muro
+      // dilatación de 15 x 15 de piso a techo contra el muro (activa por defecto; si se desactiva la holgura queda sin pieza)
+      if (closet.dilatacion !== false) add('Dilatada marco lateral', isLeft ? 0 : wallA - E, D - E, 0, E, E, Hc);
       add('Marco lateral closet', isLeft ? E : wallA - 2 * E, D - FW, bb, E, FW, Hc - bb);       // 80 x 15
     };
     side(true); side(false);
@@ -1263,18 +1264,23 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     const f = input.fit;
     const Hf = spaceHeight - CLOSET_TOP_MARGIN, dpt = Math.max(200, f.depth);
     const nLow = Math.max(1, Math.round(f.lowerBodies)), nUp = Math.max(0, Math.round(f.upperBodies));
-    const upH = nUp > 0 ? Math.min(Math.max(100, f.upperHeight), Hf - 300) : 0;
+    const upH = nUp > 0 ? Math.min(Math.max(100, f.upperHeight), Hf - 1) : 0;
     const put = (id: string, name: string, x: number, z: number, sx: number, sz: number) => boxes.push({ id, name, kind: 'panel', wall: 'A', x, y: 0, z, sx, sy: dpt, sz, facing: null });
-    put('fit-cubo', 'Cubo closet fit', 0, 0, wallA, Hf);
+    const ins = fitInsets(f);
+    put('fit-cubo', 'Cubo closet fit', ins.left, 0, wallA - ins.left - ins.right, Hf);
+    // dilatación de 15 x 15 de piso a techo junto a cada muro (al frente del cubo)
+    const dilPut = (id: string, x: number) => boxes.push({ id, name: 'Dilatación closet fit', kind: 'panel', wall: 'A', x, y: dpt - PANEL_THICKNESS, z: 0, sx: PANEL_THICKNESS, sy: PANEL_THICKNESS, sz: Hf, facing: null });
+    if (ins.left > 0) dilPut('fit-dil-izq', 0);
+    if (ins.right > 0) dilPut('fit-dil-der', wallA - PANEL_THICKNESS);
     const rows = fitRows(f, wallA);
     const cells = fitCells(f, wallA, spaceHeight);
-    let xa = 0;
+    let xa = ins.left;
     rows.lower.forEach((w, i) => {
       let top = cells.lowerHs[i];
       cells.lower[i].forEach((hh, j) => { const h = Math.abs(hh); top -= h; put(`fit-inf-${i}-${j}`, `${hh < 0 ? 'Hueco' : 'Cuerpo'} inferior ${i + 1}${cells.lower[i].length > 1 ? '.' + (j + 1) : ''}`, xa, top, w, h); });
       xa += w;
     });
-    xa = 0;
+    xa = ins.left;
     rows.upper.forEach((w, i) => {
       let top = cells.Hf;
       cells.upper[i].forEach((hh, j) => { const h = Math.abs(hh); top -= h; put(`fit-sup-${i}-${j}`, `${hh < 0 ? 'Hueco' : 'Cuerpo'} superior ${i + 1}${cells.upper[i].length > 1 ? '.' + (j + 1) : ''}`, xa, top, w, h); });
@@ -1345,7 +1351,15 @@ export function closetCajoneroIndex(name: string): 1 | 2 { return name.endsWith(
 export function closetTorreIndex(name: string): 1 | 2 { return name.endsWith(' · T2') ? 2 : 1; }
 
 /** Anchos de los cuerpos del Closet fit (inferiores y superiores): los guardados (ajustados al muro) o iguales */
-export function fitRows(fit: ClosetFit, wallA: number) {
+/** Descuento por la dilatación (15 mm) en cada lado con muro: el cubo y los cuerpos quedan entre las dilataciones */
+export function fitInsets(fit: ClosetFit) {
+  const on = fit.dilatacion !== false;
+  return { left: on && fit.leftWall ? PANEL_THICKNESS : 0, right: on && fit.rightWall ? PANEL_THICKNESS : 0 };
+}
+
+export function fitRows(fit: ClosetFit, wallAll: number) {
+  const ins = fitInsets(fit);
+  const wallA = wallAll - ins.left - ins.right;
   const norm = (w: number[] | undefined, n: number) => {
     if (w && w.length === n && n > 0) { const sum = w.reduce((a, b) => a + b, 0); return w.map(x => (x * wallA) / sum); }
     return Array.from({ length: n }, () => wallA / n);
@@ -1361,12 +1375,12 @@ export function fitRows(fit: ClosetFit, wallA: number) {
 export function fitCells(fit: ClosetFit, wallA: number, spaceHeight: number) {
   const Hf = spaceHeight - CLOSET_TOP_MARGIN;
   const rows = fitRows(fit, wallA);
-  const baseUp = rows.upper.length > 0 ? Math.min(Math.max(100, fit.upperHeight), Hf - 300) : 0;
+  const baseUp = rows.upper.length > 0 ? Math.min(Math.max(100, fit.upperHeight), Hf - 1) : 0; // el límite real (300 mm para un cuerpo de abajo) lo pone el arrastre; si abajo hay espacio libre puede llegar casi al piso
   // un alto negativo marca un hueco (espacio libre que dejó un cuerpo eliminado); para las medidas se usa su valor absoluto
   const sum = (c: number[]) => c.reduce((a, b) => a + Math.abs(b), 0);
   const upper = rows.upper.map((_, i) => {
     const c = fit.upperCells?.[i];
-    if (c && c.length > 0) { const t = Math.min(Math.max(100, sum(c)), Hf - 300); const k = t / sum(c); return c.map(x => x * k); }
+    if (c && c.length > 0) { const t = Math.min(Math.max(100, sum(c)), Hf - 1); const k = t / sum(c); return c.map(x => x * k); }
     return [baseUp];
   });
   const upTotals = upper.map(sum);

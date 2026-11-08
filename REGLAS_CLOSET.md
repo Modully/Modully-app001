@@ -64,6 +64,12 @@ Fuente: planos de Inventor del usuario (closets corredizos de 1450 a 2800 mm y u
 - Se puede pedir otra torre al extremo opuesto con medidas propias. Pegada a un muro queda al ras del muro (detrás del marco); junto a un costado del closet se puede quitar su lateral.
 - Puertas: 3 puertas = una adelante (la del centro) y dos atrás. Techo del closet a 5 mm (cocinas 20 mm).
 
+## Dilatación de piso a techo (2026-11-08)
+- Siempre que un mueble de closet quede junto a un muro se coloca una dilatación de 15 × 15 de piso a techo (activa por defecto, con interruptor en la tarjeta de muros). En Closet fit el cubo y los cuerpos quedan entre las dilataciones (15 mm menos por lado con muro).
+
+## Closet fit: medidas con candado e igualar (2026-11-08)
+- Las medidas de los cuerpos se mantienen en múltiplos de 5 mm. Al igualar dos o tres cuerpos (shift + clic) el sobrante de la división lo absorbe otro cuerpo sin candado; una medida con candado no cambia al editar otras.
+
 ## Pendiente de definir
 - Puertas batientes (plano Bellavista: 3 módulos de 728 + 385, 8 cajones, puertas de maletero separadas).
 - Zapateros: la torre de entrepaños ya existe; falta su regla de medidas definitiva y qué lleva cada columna.

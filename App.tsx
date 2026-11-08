@@ -80,6 +80,8 @@ const IslandIcon: React.FC<{ size?: number }> = ({ size = 28 }) => (
 function useDragOffset() {
   const [off, setOff] = useState({ x: 0, y: 0 });
   const start = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest('input,button,select,textarea,label,a,[data-nodrag]')) return; // los campos y botones siguen funcionando
+    (e.currentTarget as HTMLElement).style.zIndex = String(++(window as any).__floatZ || ((window as any).__floatZ = 60)); // la tarjeta que se toca pasa al frente
     const x0 = e.clientX - off.x, y0 = e.clientY - off.y;
     const move = (ev: PointerEvent) => setOff({ x: ev.clientX - x0, y: ev.clientY - y0 });
     const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); };
@@ -910,6 +912,12 @@ export default function App() {
     rightWall: layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right') || hasRightClosure,
   } : undefined), [isClosetSection, closet, layout, lArm, hasLeftClosure, hasRightClosure]);
 
+  // Closet fit: muros a los lados (como en el closet) para la dilatación de 15 x 15 junto a ellos
+  const fitInput = useMemo(() => (isFitSection ? {
+    ...fit,
+    leftWall: layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left') || hasLeftClosure,
+    rightWall: layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right') || hasRightClosure,
+  } : undefined), [isFitSection, fit, layout, lArm, hasLeftClosure, hasRightClosure]);
   const closetPos2 = closet.twoPlacement === 'extremos' ? 'right' as const : 'center' as const;
   const closetDerived2 = useMemo(() => (closetInput && closet.twoCajoneros ? closetDerived({ ...closetInput, ...closet.cajonero2, cajoneroPos: closetPos2 }, wallA, spaceHeight, hasZocalo, zocaloHeight) : null), [closetInput, closet, closetPos2, wallA, spaceHeight, hasZocalo, zocaloHeight]);
   const closetTorre2Cfg = useMemo(() => ({ ...closet, ...(closet.torre2 ?? {}) }), [closet]);
@@ -923,9 +931,9 @@ export default function App() {
   // Lista única de cajas: la escena 3D, el BOM y la exportación a Fusion leen la geometría de aquí
   const boxes = useMemo(() => buildBoxes({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    modules: labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, closet: closetInput, fit: isFitSection ? fit : undefined, lArm, hasLeftClosure, hasRightClosure,
+    modules: labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, closet: closetInput, fit: fitInput, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
-  }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, closetInput, fit, isFitSection, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
+  }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, closetInput, fitInput, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
 
   // Regla: ningún módulo puede ocupar el mismo espacio que un electrodoméstico (ni otro módulo)
   const collisions = useMemo(() => findCollisions(boxes), [boxes]);
@@ -1783,7 +1791,7 @@ export default function App() {
   // o con un electrodoméstico. Los choques que ya existían no bloquean.
   const collisionKeys = (mods: KitchenModule[]) => new Set(findCollisions(buildBoxes({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    modules: mods, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, closet: closetInput, fit: isFitSection ? fit : undefined, lArm, hasLeftClosure, hasRightClosure,
+    modules: mods, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, closet: closetInput, fit: fitInput, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
   })).map(([p, q]) => `${p.id}|${q.id}`));
   const setModulesNoCollision = (update: (prev: KitchenModule[]) => KitchenModule[]) => {
@@ -4532,7 +4540,7 @@ export default function App() {
                   islands={activeIslands}
                   lArm={lArm}
                   onEditIsland={updateIsland}
-                  fitApi={isFitSection ? { fit, onChange: setFit } : undefined}
+                  fitApi={isFitSection && fitInput ? { fit: fitInput, onChange: setFit } : undefined}
                   closetForm={isClosetSection && closetDerivedValues ? {
                     config: closet.twoCajoneros ? { ...closet, cajoneroPos: closet.twoPlacement === 'extremos' ? 'left' : 'center' } : closet,
                     config2: closet.twoCajoneros ? { ...closet, ...closet.cajonero2, cajoneroPos: closetPos2 } : undefined,
@@ -4615,9 +4623,9 @@ export default function App() {
                 <button onClick={() => setFitHidden(false)} className="absolute right-4 bottom-4 z-30 pointer-events-auto px-3 py-2 rounded-xl bg-white/95 shadow-xl border border-slate-200 text-[10px] font-black text-slate-700 uppercase tracking-tight">Closet fit · cuerpos</button>
               )}
               {isFitSection && !fitHidden && (
-                <div className="absolute right-4 bottom-4 z-30 pointer-events-auto w-64 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 p-4 space-y-3" style={fitDrag.style}>
+                <div {...fitDrag.handle} className="absolute right-4 bottom-4 z-30 pointer-events-auto w-64 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 p-4 space-y-3" style={{ ...fitDrag.handle.style, ...fitDrag.style }}>
                   <div className="flex items-center justify-between">
-                    <span {...fitDrag.handle} className="flex-1 text-[11px] font-black text-slate-800 uppercase tracking-tight select-none" title="Arrastra para mover la tarjeta">⠿ Closet fit · cuerpos</span>
+                    <span className="flex-1 text-[11px] font-black text-slate-800 uppercase tracking-tight select-none" title="Arrastra para mover la tarjeta">⠿ Closet fit · cuerpos</span>
                     <button onClick={() => setFitHidden(true)} className="p-1 text-slate-400 hover:text-red-500" title="Ocultar la tarjeta"><X size={16} /></button>
                   </div>
                   <p className="text-[9px] font-bold text-slate-400">Paso 1: el cubo cubre el área del Espacio; se pide el fondo y los cuerpos.</p>
@@ -4634,16 +4642,16 @@ export default function App() {
                       </div>
                     ))}
                   </div>
-                  <p className="text-[9px] font-bold text-slate-500">Inferiores: {fitRows(fit, wallA).lower.map(w => Math.round(w)).join(' · ')} mm{fit.upperBodies > 0 ? ` — Superiores: ${fitRows(fit, wallA).upper.map(w => Math.round(w)).join(' · ')} mm` : ''}</p>
+                  <p className="text-[9px] font-bold text-slate-500">Inferiores: {fitRows(fitInput ?? fit, wallA).lower.map(w => Math.round(w)).join(' · ')} mm{fit.upperBodies > 0 ? ` — Superiores: ${fitRows(fitInput ?? fit, wallA).upper.map(w => Math.round(w)).join(' · ')} mm` : ''}</p>
                 </div>
               )}
               {(isClosetSection || isFitSection) && wallsHidden && (
                 <button onClick={() => setWallsHidden(false)} className="absolute left-4 bottom-4 z-30 pointer-events-auto px-3 py-2 rounded-xl bg-white/95 shadow-xl border border-slate-200 text-[10px] font-black text-slate-700 uppercase tracking-tight">Muros del {cfg.singular}</button>
               )}
               {(isClosetSection || isFitSection) && !wallsHidden && (
-                <div className="absolute left-4 bottom-4 z-30 pointer-events-auto w-64 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200" style={wallsDrag.style}>
+                <div {...wallsDrag.handle} className="absolute left-4 bottom-4 z-30 pointer-events-auto w-64 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200" style={{ ...wallsDrag.handle.style, ...wallsDrag.style }}>
                   <div className="w-full flex items-center justify-between px-4 py-2.5">
-                    <span {...wallsDrag.handle} className="flex-1 text-[11px] font-black text-slate-800 uppercase tracking-tight select-none" title="Arrastra para mover la tarjeta">⠿ Muros del {cfg.singular}</span>
+                    <span className="flex-1 text-[11px] font-black text-slate-800 uppercase tracking-tight select-none" title="Arrastra para mover la tarjeta">⠿ Muros del {cfg.singular}</span>
                     <button onClick={() => setWallsCardOpen(o => !o)} className="p-1"><ChevronDown size={16} className={`text-slate-400 transition-transform ${wallsCardOpen ? '' : 'rotate-180'}`} /></button>
                     <button onClick={() => setWallsHidden(true)} className="p-1 ml-1 text-slate-400 hover:text-red-500" title="Ocultar la tarjeta"><X size={16} /></button>
                   </div>
@@ -4674,6 +4682,17 @@ export default function App() {
                           </div>
                         ))}
                       </div>
+                      {(isFitSection ? (fitInput?.leftWall || fitInput?.rightWall) : (closetInput?.leftWall || closetInput?.rightWall)) && (
+                        <div className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl">
+                          <div>
+                            <label className="text-[10px] font-black text-slate-700 uppercase tracking-tight">Dilatación 15 × 15</label>
+                            <p className="text-[9px] font-bold text-slate-400">De piso a techo junto al muro</p>
+                          </div>
+                          <button onClick={() => (isFitSection ? setFit(f => ({ ...f, dilatacion: f.dilatacion === false })) : setCloset(c => ({ ...c, dilatacion: c.dilatacion === false })))} className={`w-10 h-5 rounded-full transition-all relative shrink-0 ${(isFitSection ? fit.dilatacion : closet.dilatacion) !== false ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+                            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${(isFitSection ? fit.dilatacion : closet.dilatacion) !== false ? 'left-5.5' : 'left-0.5'}`} />
+                          </button>
+                        </div>
+                      )}
                       {((boxes as unknown as { closetAlerts?: string[] }).closetAlerts ?? []).map((m, i) => (
                         <div key={i} className="rounded-xl border-2 border-amber-300 bg-amber-50 p-2 text-[9px] font-bold text-amber-700">{m}</div>
                       ))}

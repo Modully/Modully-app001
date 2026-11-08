@@ -5,7 +5,7 @@ import { OrbitControls, Grid, Environment, Text, Edges, PerspectiveCamera, Ortho
 import * as THREE from 'three';
 import { IslandItem, KitchenModule, Appliance, ApplianceType, LayoutType, WallName } from './types';
 import type { CounterEdge, CounterExtras, closetDerived } from './boxes';
-import { closetSectionOf, closetCajoneroIndex, closetTorreIndex, fitRows, fitCells } from './boxes';
+import { closetSectionOf, closetCajoneroIndex, closetTorreIndex, fitRows, fitCells, fitInsets } from './boxes';
 import type { ClosetConfig, ClosetFit } from './types';
 import { Box, findModuleBox, boxesBounds, applianceCenter, counterTopZ, CORNER_BLIND_OFFSET, WALL_THICKNESS } from './boxes';
 import { COLORS } from './constants';
@@ -249,7 +249,7 @@ const FitEdgeHandle: React.FC<{ position: [number, number, number]; normal: [num
 
 
 /** Flecha doble en el contacto entre dos cuerpos del Closet fit (como la unión de las cocinas): arrastrarla mueve la cara compartida */
-const FitJunction: React.FC<{ position: [number, number, number]; axis: [number, number, number]; vertical?: boolean; posMm: number; group: string; begin: () => (deltaMm: number, exact?: boolean) => void; controlsRef?: React.RefObject<any> }> = ({ position, axis, vertical, posMm, group, begin, controlsRef }) => {
+const FitJunction: React.FC<{ position: [number, number, number]; axis: [number, number, number]; vertical?: boolean; locked?: boolean; single?: 1 | -1; limit?: { at: number; from: number; to: number }; posMm: number; group: string; begin: () => (deltaMm: number, exact?: boolean) => void; controlsRef?: React.RefObject<any> }> = ({ position, axis, vertical, locked, single, limit, posMm, group, begin, controlsRef }) => {
   const { camera, size } = useThree();
   const [isResizing, setIsResizing] = useState(false);
   const [matched, setMatched] = useState(false);
@@ -285,10 +285,15 @@ const FitJunction: React.FC<{ position: [number, number, number]; axis: [number,
     () => { highlight(null); st.current = null; setIsResizing(false); if (controlsRef?.current) controlsRef.current.enabled = true; document.body.style.cursor = 'auto'; }
   );
   return (
+    <>
+    {/* cuando la cara se acerca al límite del espacio libre (a menos de 20 mm), esa línea se marca en naranja oscuro; al llegar (queda menos de 3 mm) la flecha y la línea desaparecen porque el cuerpo ya toca el otro */}
+    {limit && Math.abs((vertical ? position[1] : position[0]) - limit.at) < 0.02 && (
+      <Line points={vertical ? [[limit.from, limit.at, position[2]], [limit.to, limit.at, position[2]]] : [[limit.at, limit.from, position[2]], [limit.at, limit.to, position[2]]]} color="#c2410c" lineWidth={3} />
+    )}
     <HtmlScaled zoomScale position={position} center distanceFactor={1} zIndexRange={[100, 0]}>
       <div
-        className={`w-14 h-14 rounded-full ${isResizing ? 'bg-green-200 border-green-600' : 'bg-purple-100 border-purple-600'} border-[3px] shadow-xl flex items-center justify-center backdrop-blur-sm ${vertical ? 'cursor-ns-resize' : 'cursor-ew-resize'}`}
-        title="Contacto con la cara interna del otro cuerpo: arrastra para mover la unión (si tocas otra flecha doble, quedan alineadas)"
+        className={`w-14 h-14 rounded-full ${isResizing ? 'bg-green-200 border-green-600' : single ? 'bg-blue-50 border-blue-600' : 'bg-purple-100 border-purple-600'} border-[3px] shadow-xl flex items-center justify-center backdrop-blur-sm ${locked ? 'cursor-not-allowed opacity-80' : vertical ? 'cursor-ns-resize' : 'cursor-ew-resize'} relative`}
+        title={locked ? 'Bloqueada: una de las medidas tiene candado. Desbloquéala en su nota para mover esta línea' : single ? 'Espacio libre: arrastra para mover esta cara del cuerpo (si tocas otra flecha, quedan alineadas)' : 'Contacto con la cara interna del otro cuerpo: arrastra para mover la unión (si tocas otra flecha doble, quedan alineadas)'}
         data-fit-pos={posMm}
         data-fit-axis={vertical ? 'y' : 'x'}
         data-fit-group={group}
@@ -296,6 +301,7 @@ const FitJunction: React.FC<{ position: [number, number, number]; axis: [number,
         onMouseDown={(e) => {
           e.stopPropagation();
           e.preventDefault();
+          if (locked) return;
           const { sx, sy } = screenPixelsPerMeter(camera, size, new THREE.Vector3(...position), new THREE.Vector3(...axis));
           st.current = { sx, sy, startPos: posMm, apply: begin() };
           setIsResizing(true);
@@ -304,22 +310,37 @@ const FitJunction: React.FC<{ position: [number, number, number]; axis: [number,
           startDrag(e);
         }}
       >
+        {single ? (
+          // una sola flecha: no hay otro cuerpo al otro lado, solo se arrastra esta cara hacia el espacio libre
+          <div className="flex items-center gap-0" style={{ transform: `rotate(${vertical ? (single > 0 ? 90 : -90) : (single > 0 ? 0 : 180)}deg)` }}>
+            <div className="w-4 h-[4px] bg-blue-600 rounded"></div>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M9 18L15 12L9 6" stroke="#2563eb" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </div>
+        ) : (
         <div className="flex items-center gap-0" style={{ transform: `rotate(${vertical ? 90 : 0}deg)` }}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M15 18L9 12L15 6" stroke="#7c3aed" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" /></svg>
           <div className="w-[3px] h-4 bg-purple-600 rounded"></div>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M9 18L15 12L9 6" stroke="#7c3aed" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </div>
+        )}
+        {locked && (
+          // candado: la línea no se puede arrastrar porque una de las medidas que toca está bloqueada
+          <span className="absolute top-1/2 -translate-y-1/2 left-full ml-1 flex items-center justify-center w-10 h-10 rounded-full bg-amber-500 border-[3px] border-white shadow-lg">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+          </span>
+        )}
       </div>
       {isResizing && (
-        <div className="absolute top-full mt-2 px-3 py-1 bg-green-600 text-white text-lg font-black rounded-lg shadow-2xl border-2 border-white whitespace-nowrap">{matched ? '✓ IGUALADA' : '↔ UNIÓN'}</div>
+        <div className="absolute top-full mt-2 px-3 py-1 bg-green-600 text-white text-lg font-black rounded-lg shadow-2xl border-2 border-white whitespace-nowrap">{matched ? '✓ IGUALADA' : single ? (vertical ? '↕ CARA' : '↔ CARA') : (vertical ? '↕ UNIÓN' : '↔ UNIÓN')}</div>
       )}
     </HtmlScaled>
+    </>
   );
 };
 
 
 /** Nota con las medidas de un cuerpo del Closet fit: ancho y alto se pueden escribir (Enter o salir del campo para aplicar) */
-const FitDimLabel: React.FC<{ w: number; h: number; canEditH: boolean; onCommit: (patch: { width?: number; height?: number }) => void; offset: { x: number; y: number }; onOffset: (o: { x: number; y: number }) => void }> = ({ w, h, canEditH, onCommit, offset, onOffset }) => {
+const FitDimLabel: React.FC<{ onHold?: (on: boolean) => void; w: number; h: number; canEditH: boolean; lockW: boolean; lockH: boolean; onLock: (k: 'w' | 'h') => void; onCommit: (patch: { width?: number; height?: number }) => void; offset: { x: number; y: number }; onOffset: (o: { x: number; y: number }) => void }> = ({ onHold, w, h, canEditH, lockW, lockH, onLock, onCommit, offset, onOffset }) => {
   const [dw, setDw] = useState<string | null>(null);
   const [dh, setDh] = useState<string | null>(null);
   const done = (kind: 'w' | 'h') => {
@@ -336,13 +357,21 @@ const FitDimLabel: React.FC<{ w: number; h: number; canEditH: boolean; onCommit:
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
   };
-  const cls = 'w-10 bg-slate-800 text-sky-100 text-center rounded border border-slate-600 text-[9px] font-black outline-none focus:border-sky-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none';
+  const cls = (locked: boolean) => `w-9 px-0 h-3.5 text-center rounded-sm border text-[8px] leading-none font-bold outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none ${locked ? 'bg-amber-100 text-amber-800 border-amber-400' : 'bg-white/90 text-slate-700 border-slate-300 focus:border-sky-500'}`;
+  // candado: bloquea esa medida para que no cambie al editar otra
+  const lock = (k: 'w' | 'h', on: boolean) => (
+    <button type="button" onClick={() => onLock(k)} className={`flex items-center justify-center w-3 h-3 rounded-sm ${on ? 'text-amber-600' : 'text-slate-400 hover:text-slate-600'}`} title={on ? 'Medida bloqueada: clic para desbloquear' : 'Clic para bloquear esta medida'}>
+      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">{on ? <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></> : <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 7.5-2" /></>}</svg>
+    </button>
+  );
   return (
-    <div data-overlay className="flex items-center gap-0.5 select-none whitespace-nowrap rounded-md bg-slate-900/80 px-1 py-0.5 text-[9px] font-black text-sky-100" style={{ pointerEvents: 'auto', transform: `translate(${offset.x}px, ${offset.y}px)` }} onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-      <span onPointerDown={startMove} className="cursor-move px-0.5 text-slate-400" style={{ touchAction: 'none' }} title="Arrastra para mover la nota">⠿</span>
-      <input type="number" className={cls} value={dw ?? Math.round(w)} onChange={(e) => setDw(e.target.value)} onBlur={() => done('w')} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} title="Ancho (mm)" />
-      <span>×</span>
-      <input type="number" className={cls} value={dh ?? Math.round(h)} disabled={!canEditH} onChange={(e) => setDh(e.target.value)} onBlur={() => done('h')} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} title={canEditH ? 'Alto (mm)' : 'El alto de este cuerpo sale de la altura del Espacio'} />
+    <div data-overlay onMouseEnter={() => onHold?.(true)} onMouseLeave={() => onHold?.(false)} onFocus={() => onHold?.(true)} onBlur={() => onHold?.(false)} className="flex items-center gap-px select-none whitespace-nowrap rounded bg-white/70 hover:bg-white/95 focus-within:bg-white/95 shadow-sm border border-slate-300/70 px-0.5 py-px opacity-70 hover:opacity-100 focus-within:opacity-100 transition-opacity" style={{ pointerEvents: 'auto', transform: `translate(${offset.x}px, ${offset.y}px)` }} onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+      <span onPointerDown={startMove} className="cursor-move text-[8px] leading-none text-slate-400 px-px" style={{ touchAction: 'none' }} title="Arrastra para mover la nota">⠿</span>
+      <input type="number" className={cls(lockW)} value={dw ?? Math.round(w)} disabled={lockW} onChange={(e) => setDw(e.target.value)} onBlur={() => done('w')} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} title="Ancho (mm)" />
+      {lock('w', lockW)}
+      <span className="text-[8px] leading-none text-slate-400">×</span>
+      <input type="number" className={cls(lockH)} value={dh ?? Math.round(h)} disabled={!canEditH || lockH} onChange={(e) => setDh(e.target.value)} onBlur={() => done('h')} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} title={canEditH ? 'Alto (mm)' : 'El alto de este cuerpo sale de la altura del Espacio'} />
+      {lock('h', lockH)}
     </div>
   );
 };
@@ -1516,6 +1545,8 @@ const CLOSET_SECTION_TITLES: Record<string, string> = { torre: 'Torre de entrepa
 function useDragOffset() {
   const [off, setOff] = useState({ x: 0, y: 0 });
   const start = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest('input,button,select,textarea,label,a,[data-nodrag]')) return; // los campos y botones siguen funcionando
+    (e.currentTarget as HTMLElement).style.zIndex = String(++(window as any).__floatZ || ((window as any).__floatZ = 60)); // la tarjeta que se toca pasa al frente
     e.stopPropagation();
     const x0 = e.clientX - off.x, y0 = e.clientY - off.y;
     const move = (ev: PointerEvent) => setOff({ x: ev.clientX - x0, y: ev.clientY - y0 });
@@ -1531,8 +1562,8 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
   const { config: c, derived: d, onChange } = api;
   const drag = useDragOffset();
   return (
-    <div data-overlay data-module-editor className="pointer-events-auto w-60 p-3 space-y-2 rounded-xl bg-white border border-slate-300 shadow-xl" style={drag.style} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
-      <div {...drag.handle} className="text-[10px] font-black uppercase tracking-wide text-slate-500 flex items-center justify-between select-none" title="Arrastra para mover el formulario">{CLOSET_SECTION_TITLES[section]}<span className="text-slate-300">⠿</span></div>
+    <div data-overlay data-module-editor {...drag.handle} className="pointer-events-auto w-60 p-3 space-y-2 rounded-xl bg-white border border-slate-300 shadow-xl" style={{ ...drag.handle.style, ...drag.style }} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
+      <div className="text-[10px] font-black uppercase tracking-wide text-slate-500 flex items-center justify-between select-none" title="Arrastra para mover el formulario">{CLOSET_SECTION_TITLES[section]}<span className="text-slate-300">⠿</span></div>
       {section === 'torre' && (
         <>
           <div className="grid grid-cols-3 gap-1">
@@ -2347,6 +2378,7 @@ const CameraController: React.FC<{ viewMode: 'plan' | 'frontal' | 'isometric' | 
       else camera.position.set(target.x + d * 0.8, target.y + d * 0.55, target.z + d * 1.1);
     }
 
+    camera.up.set(0, 1, 0);
     camera.lookAt(target);
     if (camera.updateProjectionMatrix) camera.updateProjectionMatrix();
 
@@ -2434,6 +2466,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [fitSel, setFitSel] = useState<string | null>(null); // cuerpo del Closet fit seleccionado
   const [fitLabelOff, setFitLabelOff] = useState<Record<string, { x: number; y: number }>>({}); // notas de medidas movidas a mano
+  const [fitLocks, setFitLocks] = useState<Record<string, { w?: boolean; h?: boolean }>>({}); // candados: medidas que no deben cambiar al editar otras
+  const fitLocked = (id: string, kind: 'w' | 'h') => !!fitLocks[id]?.[kind];
   // Editar las medidas de un cuerpo del Closet fit desde su nota: el ancho se reparte con el vecino y el alto con la celda vecina (o con el cuerpo de arriba / abajo)
   const fitEdit = (id: string, patch: { width?: number; height?: number }) => {
     if (!fitApi) return;
@@ -2445,17 +2479,22 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
     const wl = [...rows.lower], wu = [...rows.upper];
     const row = lower ? wl : wu;
     const lc = cs.lower.map(c => [...c]), uc = cs.upper.map(c => [...c]);
+    const idOf = (low: boolean, a: number, b: number) => `fit-${low ? 'inf' : 'sup'}-${a}-${b}`;
     if (patch.width != null && row.length > 1) {
-      const k = i < row.length - 1 ? i : i - 1;
-      const total = row[k] + row[k + 1];
+      // el ancho se reparte con el vecino que no tenga candado; si el cuerpo o todos sus vecinos están bloqueados, no cambia
+      const nb = [i + 1, i - 1].find(n => n >= 0 && n < row.length && !fitLocked(idOf(lower, n, 0), 'w'));
+      if (nb === undefined || fitLocked(idOf(lower, i, 0), 'w')) return;
+      const total = row[i] + row[nb];
       const wi = Math.min(Math.max(patch.width, 100), total - 100);
-      if (i === k) { row[k] = wi; row[k + 1] = total - wi; } else { row[k + 1] = wi; row[k] = total - wi; }
+      row[i] = wi; row[nb] = total - wi;
     }
     if (patch.height != null) {
       const cells = lower ? lc : uc;
       const c = cells[i];
+      if (fitLocked(idOf(lower, i, j), 'h')) return;
       if (c.length > 1) {
-        const nb = j < c.length - 1 ? j + 1 : j - 1;
+        const nb = [j + 1, j - 1].find(n => n >= 0 && n < c.length && !fitLocked(idOf(lower, i, n), 'h'));
+        if (nb === undefined) return;
         const sj = c[j] < 0 ? -1 : 1, sn = c[nb] < 0 ? -1 : 1;
         const total = Math.abs(c[j]) + Math.abs(c[nb]);
         const nj = Math.min(Math.max(patch.height, 100), total - 100);
@@ -2472,6 +2511,53 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
     }
     fitApi.onChange({ ...f, lowerW: wl, lowerBodies: wl.length, lowerCells: lc, upperW: wu, upperBodies: wu.length, upperCells: uc });
   };
+  // Igualar dos o tres cuerpos (shift + clic en cada uno): en la misma fila quedan del mismo ancho y en la misma columna de la misma altura.
+  // Las medidas se mantienen en múltiplos de 5 mm: si no se puede quedar exacto, la diferencia la absorbe otro cuerpo sin candado que no esté elegido, o si no hay, los elegidos se ajustan de 5 en 5 mm.
+  const fitEqualizeMany = (ids: string[]): string => {
+    if (!fitApi || ids.length < 2) return '';
+    const f = fitApi.fit;
+    const rows = fitRows(f, wallA);
+    const cs = fitCells(f, wallA, spaceHeight);
+    const parts = ids.map(i => i.split('-'));
+    if (parts.some(p => p[1] !== parts[0][1])) return 'Deben estar en la misma fila o columna';
+    const lower = parts[0][1] === 'inf';
+    const wl = [...rows.lower], wu = [...rows.upper];
+    const lc = cs.lower.map(c => [...c]), uc = cs.upper.map(c => [...c]);
+    const idOf = (a: number, b: number) => `fit-${lower ? 'inf' : 'sup'}-${a}-${b}`;
+    const floor5 = (v: number) => Math.floor(v / 5) * 5;
+    const cols = parts.map(p => Number(p[2])), cellsJ = parts.map(p => Number(p[3]));
+    const sameRow = new Set(cols).size === ids.length;
+    const sameCol = new Set(cols).size === 1 && new Set(cellsJ).size === ids.length;
+    if (sameRow) {
+      const row = lower ? wl : wu;
+      if (cols.some(c => fitLocked(idOf(c, 0), 'w'))) return 'Una de las medidas tiene candado';
+      const S = cols.reduce((a, c) => a + row[c], 0);
+      const t = floor5(S / cols.length);
+      let r = S - t * cols.length;
+      cols.forEach(c => { row[c] = t; });
+      const mid = cols.reduce((a, c) => a + c, 0) / cols.length;
+      const third = row.map((_, k) => k).filter(k => !cols.includes(k) && !fitLocked(idOf(k, 0), 'w')).sort((x, y) => Math.abs(x - mid) - Math.abs(y - mid))[0];
+      if (third !== undefined) row[third] += r;
+      else { for (let n = cols.length - 1; n >= 0 && r >= 5; n--) { row[cols[n]] += 5; r -= 5; } row[cols[cols.length - 1]] += r; }
+    } else if (sameCol) {
+      const c = (lower ? lc : uc)[cols[0]];
+      if (cellsJ.some(j => fitLocked(idOf(cols[0], j), 'h'))) return 'Una de las medidas tiene candado';
+      const S = cellsJ.reduce((a, j) => a + Math.abs(c[j]), 0);
+      const t = floor5(S / cellsJ.length);
+      let r = S - t * cellsJ.length;
+      const sg = cellsJ.map(j => (c[j] < 0 ? -1 : 1));
+      cellsJ.forEach((j, n) => { c[j] = sg[n] * t; });
+      const mid = cellsJ.reduce((a, j) => a + j, 0) / cellsJ.length;
+      const third = c.map((_, k) => k).filter(k => !cellsJ.includes(k) && !fitLocked(idOf(cols[0], k), 'h')).sort((x, y) => Math.abs(x - mid) - Math.abs(y - mid))[0];
+      if (third !== undefined) c[third] = (c[third] < 0 ? -1 : 1) * (Math.abs(c[third]) + r);
+      else { for (let n = cellsJ.length - 1; n >= 0 && r >= 5; n--) { c[cellsJ[n]] += sg[n] * 5; r -= 5; } const lj = cellsJ[cellsJ.length - 1]; c[lj] += sg[sg.length - 1] * r; }
+    } else return 'Deben estar en la misma fila o columna';
+    fitApi.onChange({ ...f, lowerW: wl, lowerBodies: wl.length, lowerCells: lc, upperW: wu, upperBodies: wu.length, upperCells: uc });
+    return 'Cuerpos igualados';
+  };
+  const [fitMulti, setFitMulti] = useState<string[]>([]); // cuerpos elegidos con shift + clic para igualarlos (se pintan como el seleccionado)
+  const [fitAsk, setFitAsk] = useState<{ ids: string[]; dim: 'ancho' | 'alto' } | null>(null); // pregunta antes de igualar
+  const [fitMsg, setFitMsg] = useState<Record<string, string>>({}); // letreros pequeños sobre los cuerpos al igualar
   const [doorsGhost, setDoorsGhost] = useState(true); // puertas del closet translúcidas
   const [cajoneroSel, setCajoneroSel] = useState<0 | 1 | 2>(0); // cajonero seleccionado con un clic: muestra la flecha para estirar su fondo
   const [closetSection, setClosetSection] = useState<{ section: string; idx?: 1 | 2; pos: [number, number, number] } | null>(null); // sección del closet con su formulario abierto
@@ -2488,6 +2574,24 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   }, [measureMode]);
   // Qué se dibuja. Lo que se oculta se lleva sus herramientas: etiquetas de medida, botones X y +, flechas dobles y cotas.
   const vis = visibility ?? { upper: true, lower: true, counter: true, appliances: true };
+  // Con las dimensiones ocultas, al arrastrar una flecha aparecen 2 segundos las notas de los cuerpos que cambian de medida (por si se quieren editar)
+  const [dimFlash, setDimFlash] = useState<string[]>([]);
+  const prevSizes = useRef<Record<string, string>>({});
+  const dimTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideDimsSoon = () => { if (dimTimer.current) clearTimeout(dimTimer.current); dimTimer.current = setTimeout(() => setDimFlash([]), 2000); };
+  useEffect(() => {
+    if (!fitApi) return;
+    const cur: Record<string, string> = {};
+    const changed: string[] = [];
+    boxes.forEach(b => {
+      if (!b.name.startsWith('Cuerpo ')) return;
+      const k = `${Math.round(b.sx)}x${Math.round(b.sz)}`;
+      cur[b.id] = k;
+      if (prevSizes.current[b.id] && prevSizes.current[b.id] !== k) changed.push(b.id);
+    });
+    prevSizes.current = cur;
+    if (changed.length && vis.dims === false) { setDimFlash(prev => Array.from(new Set([...prev, ...changed]))); hideDimsSoon(); }
+  }, [boxes]);
   modules = modules.filter(m => (m.type === 'UPPER' ? vis.upper : m.type === 'LOWER' ? vis.lower : true));
   // Electrodoméstico que se está arrastrando (datos del momento en que se agarró)
   const [dragApp, setDragApp] = useState<ApplianceDrag | null>(null);
@@ -2623,14 +2727,16 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             <mesh position={[slabX, -0.06, slabZ]} receiveShadow>
               <boxGeometry args={[slabW, 0.12, slabD]} />
               <meshStandardMaterial color="#f1f5f9" roughness={0.8} />
-              <Edges color="#cbd5e1" />
+              {viewMode !== 'frontal' && <Edges color="#cbd5e1" />}
             </mesh>
-            {/* El techo es translúcido: no tapa las herramientas y medidas (no cuenta al ocultar lo que no se ve) */}
-            <mesh position={[slabX, spaceHeight / 1000 + 0.06, slabZ]} raycast={() => null}>
-              <boxGeometry args={[slabW, 0.12, slabD]} />
-              <meshStandardMaterial color="#ffffff" transparent opacity={0.3} />
-              <Edges color="#cbd5e1" />
-            </mesh>
+            {/* El techo es translúcido: no tapa las herramientas y medidas (no cuenta al ocultar lo que no se ve). En la vista frontal no se dibuja: solo sumaba líneas */}
+            {viewMode !== 'frontal' && (
+              <mesh position={[slabX, spaceHeight / 1000 + 0.06, slabZ]} raycast={() => null}>
+                <boxGeometry args={[slabW, 0.12, slabD]} />
+                <meshStandardMaterial color="#ffffff" transparent opacity={0.3} />
+                <Edges color="#cbd5e1" />
+              </mesh>
+            )}
           </>
         )}
 
@@ -2643,18 +2749,38 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               opacity={viewMode === 'plan' ? 0.6 : 1}
               transparent={viewMode === 'plan'}
             />
-            <Edges color={viewMode === 'plan' ? '#1e293b' : '#94a3b8'} linewidth={viewMode === 'plan' ? 2 : 1} />
+            {viewMode !== 'frontal' && <Edges color={viewMode === 'plan' ? '#1e293b' : '#94a3b8'} linewidth={viewMode === 'plan' ? 2 : 1} />}
           </mesh>
         ))}
 
         {/* Piezas de los módulos convertidos: laterales, base, techo, puentes, amarres, espaldar y entrepaños */}
-        {boxes.filter(b => b.kind === 'panel' && !((vis.shelves === false && (closetSectionOf(b.name) === 'entrepanos' || closetSectionOf(b.name) === 'torre')) || (vis.cajonero === false && closetSectionOf(b.name) === 'cajonero') || (vis.costado === false && closetSectionOf(b.name) === 'costado')) && (isClosetDoor(b.name) ? vis.doors !== false : (b.id.startsWith('panel-upper-') ? vis.upper : vis.lower))).map(b => (
+        {boxes.filter(b => b.kind === 'panel' && !(viewMode === 'frontal' && (b.name.startsWith('Cajón ') || b.name.startsWith('Puente'))) && !((vis.shelves === false && (closetSectionOf(b.name) === 'entrepanos' || closetSectionOf(b.name) === 'torre')) || (vis.cajonero === false && closetSectionOf(b.name) === 'cajonero') || (vis.costado === false && closetSectionOf(b.name) === 'costado')) && (isClosetDoor(b.name) ? vis.doors !== false : (b.id.startsWith('panel-upper-') ? vis.upper : vis.lower))).map(b => (
           <mesh
             key={b.id}
             position={boxCenter(b)}
             castShadow
             {...(fitApi && !measureMode && (b.name.startsWith('Cuerpo ') || b.name.startsWith('Hueco ')) ? {
-              onClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setFitSel(b.id); },
+              onClick: (e: ThreeEvent<MouseEvent>) => {
+                e.stopPropagation();
+                const shift = (e as any).shiftKey || (e.nativeEvent as MouseEvent | undefined)?.shiftKey;
+                if (shift && b.name.startsWith('Cuerpo ')) {
+                  // shift + clic en dos o tres cuerpos: se pintan como el seleccionado y se pregunta si se igualan
+                  const next = fitMulti.includes(b.id) ? fitMulti.filter(i => i !== b.id) : [...fitMulti, b.id].slice(-3);
+                  setFitMulti(next); setFitAsk(null);
+                  if (next.length >= 2) {
+                    const ps = next.map(i => i.split('-'));
+                    const bs = next.map(i => boxes.find(x => x.id === i)!);
+                    const flash = (m: string) => { setFitMsg({ [b.id]: m }); setTimeout(() => setFitMsg({}), 2500); };
+                    if (ps.some(q => q[1] !== ps[0][1])) flash('Deben estar en la misma fila o columna');
+                    else if (new Set(ps.map(q => q[2])).size === next.length) {
+                      if (bs.every(x => Math.abs(x.sx - bs[0].sx) < 1)) flash('El ancho ya es igual'); else setFitAsk({ ids: next, dim: 'ancho' });
+                    } else if (new Set(ps.map(q => q[2])).size === 1 && new Set(ps.map(q => q[3])).size === next.length) {
+                      if (bs.every(x => Math.abs(x.sz - bs[0].sz) < 1)) flash('El alto ya es igual'); else setFitAsk({ ids: next, dim: 'alto' });
+                    } else flash('Deben estar en la misma fila o columna');
+                  }
+                } else { setFitMulti([]); setFitAsk(null); }
+                setFitSel(b.id);
+              },
               onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; },
               onPointerOut: () => { document.body.style.cursor = 'auto'; },
             } : fitApi && b.name === 'Cubo closet fit' ? { raycast: () => null } : {})}
@@ -2666,11 +2792,32 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             } : closetForm ? {} : fitApi && (b.name.startsWith('Cuerpo ') || b.name.startsWith('Hueco ')) ? {} : { raycast: () => null })}
           >
             <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
-            <meshStandardMaterial color={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? '#bfdbfe' : fitSel === b.id ? '#fb923c' : '#60a5fa') : b.name.startsWith('Espaldar') || b.name.includes('fondo') ? '#e5e7eb' : isClosetDoor(b.name) ? '#cdb592' : b.name.startsWith('Tubo') ? '#9ca3af' : b.name.startsWith('Entrepaño') ? '#f3e8d2' : (b.id.startsWith('panel-upper-') ? '#e8d3b0' : '#dcc5a0')} roughness={0.7} key={isFitBody(b.name) ? 'fit' : doorsGhost && isClosetDoor(b.name) ? 'ghost' : 'solid'} transparent={isFitBody(b.name) || (doorsGhost && isClosetDoor(b.name))} opacity={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? 0.08 : b.name.startsWith('Hueco ') ? (fitSel === b.id ? 0.25 : 0.02) : fitSel === b.id ? 0.4 : 0.22) : doorsGhost && isClosetDoor(b.name) ? 0.25 : 1} depthWrite={!(isFitBody(b.name) || (doorsGhost && isClosetDoor(b.name)))}  polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
-            <Edges color={isFitBody(b.name) ? (fitSel === b.id ? '#f97316' : b.name.startsWith('Hueco ') ? '#cbd5e1' : '#2563eb') : cajoneroSel !== 0 && closetSectionOf(b.name) === 'cajonero' && closetCajoneroIndex(b.name) === cajoneroSel ? '#ef4444' : b.moduleId && b.moduleId === selectedId ? '#ef4444' : (b.moduleId && pair.includes(b.moduleId) ? '#f59e0b' : '#5b4630')} linewidth={b.moduleId && (b.moduleId === selectedId || pair.includes(b.moduleId)) ? 3 : 1} />
-            {b.name.startsWith('Cuerpo ') && viewMode === 'frontal' && fitApi && vis.dims !== false && (
+            <meshStandardMaterial color={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? '#bfdbfe' : (fitSel === b.id || fitMulti.includes(b.id)) ? '#fb923c' : '#60a5fa') : b.name.startsWith('Espaldar') || b.name.includes('fondo') ? '#e5e7eb' : isClosetDoor(b.name) ? '#cdb592' : b.name.startsWith('Tubo') ? '#9ca3af' : b.name.startsWith('Entrepaño') ? '#f3e8d2' : (b.id.startsWith('panel-upper-') ? '#e8d3b0' : '#dcc5a0')} roughness={0.7} key={isFitBody(b.name) ? 'fit' : doorsGhost && isClosetDoor(b.name) ? 'ghost' : 'solid'} transparent={isFitBody(b.name) || (doorsGhost && isClosetDoor(b.name))} opacity={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? 0.08 : b.name.startsWith('Hueco ') ? ((fitSel === b.id || fitMulti.includes(b.id)) ? 0.25 : 0.02) : (fitSel === b.id || fitMulti.includes(b.id)) ? 0.4 : 0.22) : doorsGhost && isClosetDoor(b.name) ? 0.25 : 1} depthWrite={!(isFitBody(b.name) || (doorsGhost && isClosetDoor(b.name)))}  polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+            {isFitBody(b.name) && viewMode === 'frontal' ? (
+              // En frontal solo se dibuja el contorno de la cara frontal (una línea), sin las aristas de profundidad que se ven dobles
+              b.name !== 'Cubo closet fit' && (() => { const hw = b.sx / 2000, hh = b.sz / 2000, zf = b.sy / 2000 + 0.002; return (
+                <Line points={[[-hw, -hh, zf], [hw, -hh, zf], [hw, hh, zf], [-hw, hh, zf], [-hw, -hh, zf]]} color={(fitSel === b.id || fitMulti.includes(b.id)) ? '#f97316' : b.name.startsWith('Hueco ') ? '#cbd5e1' : '#2563eb'} lineWidth={1} />
+              ); })()
+            ) : (
+            <Edges color={isFitBody(b.name) ? ((fitSel === b.id || fitMulti.includes(b.id)) ? '#f97316' : b.name.startsWith('Hueco ') ? '#cbd5e1' : '#2563eb') : cajoneroSel !== 0 && closetSectionOf(b.name) === 'cajonero' && closetCajoneroIndex(b.name) === cajoneroSel ? '#ef4444' : b.moduleId && b.moduleId === selectedId ? '#ef4444' : (b.moduleId && pair.includes(b.moduleId) ? '#f59e0b' : '#5b4630')} linewidth={b.moduleId && (b.moduleId === selectedId || pair.includes(b.moduleId)) ? 3 : 1} />
+            )}
+            {fitAsk && fitAsk.ids[fitAsk.ids.length - 1] === b.id && viewMode === 'frontal' && (
+              <Html position={[0, b.sz / 2000 - 0.04, b.sy / 2000 + 0.01]} center occlude={false} zIndexRange={[80, 0]} style={{ pointerEvents: 'none' }}>
+                <div data-overlay className="flex items-center gap-1 select-none whitespace-nowrap rounded bg-amber-500 px-1.5 py-0.5 text-[9px] font-black text-white shadow" style={{ pointerEvents: 'auto' }} onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+                  <span>¿Igualar {fitAsk.dim}?</span>
+                  <button type="button" className="rounded bg-white/90 px-1 text-amber-700" onClick={() => { const ids = fitAsk.ids; const m = fitEqualizeMany(ids); const ok = m === 'Cuerpos igualados'; setFitMsg(Object.fromEntries((ok ? ids : [b.id]).map(i => [i, ok ? '= Igualados' : m]))); setTimeout(() => setFitMsg({}), 2500); setFitAsk(null); setFitMulti([]); }}>Sí</button>
+                  <button type="button" className="rounded bg-amber-700/60 px-1" onClick={() => { setFitAsk(null); setFitMulti([]); }}>No</button>
+                </div>
+              </Html>
+            )}
+            {((fitMulti.includes(b.id) && !fitAsk) || fitMsg[b.id]) && viewMode === 'frontal' && (
+              <Html position={[0, b.sz / 2000 - 0.04, b.sy / 2000 + 0.01]} center occlude={false} zIndexRange={[70, 0]} style={{ pointerEvents: 'none' }}>
+                <div className="select-none whitespace-nowrap rounded bg-amber-500 px-1.5 py-px text-[9px] font-black text-white shadow">{fitMsg[b.id] ?? '= igualar'}</div>
+              </Html>
+            )}
+            {b.name.startsWith('Cuerpo ') && viewMode === 'frontal' && fitApi && (vis.dims !== false || dimFlash.includes(b.id)) && (
               <Html position={[0, 0, b.sy / 2000 + 0.01]} center occlude={false} zIndexRange={[60, 0]} style={{ pointerEvents: 'none' }}>
-                <FitDimLabel w={b.sx} h={b.sz} canEditH={b.id.startsWith('fit-sup') || b.name.includes('.') || fitApi.fit.upperBodies > 0} onCommit={(patch) => fitEdit(b.id, patch)} offset={fitLabelOff[b.id] ?? { x: 0, y: 0 }} onOffset={(o) => setFitLabelOff(prev => ({ ...prev, [b.id]: o }))} />
+                <FitDimLabel onHold={(on) => { if (on) { if (dimTimer.current) clearTimeout(dimTimer.current); } else if (vis.dims === false) hideDimsSoon(); }} w={b.sx} h={b.sz} lockW={fitLocked(b.id.replace(/-\d+$/, '-0'), 'w')} lockH={fitLocked(b.id, 'h')} onLock={(k) => { const key = k === 'w' ? b.id.replace(/-\d+$/, '-0') : b.id; setFitLocks(prev => ({ ...prev, [key]: { ...prev[key], [k]: !prev[key]?.[k] } })); }} canEditH={b.id.startsWith('fit-sup') || b.name.includes('.') || fitApi.fit.upperBodies > 0} onCommit={(patch) => fitEdit(b.id, patch)} offset={fitLabelOff[b.id] ?? { x: 0, y: 0 }} onOffset={(o) => setFitLabelOff(prev => ({ ...prev, [b.id]: o }))} />
               </Html>
             )}
           </mesh>
@@ -2683,22 +2830,45 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           const dpt = Math.max(200, f.depth);
           const frontZ = offsetZ + dpt / 1000 + 0.003; // pegados a la cara frontal del cubo, como un parche
           const toX = (X: number) => (X - wallA / 2) / 1000;
+          const fo = fitInsets(f).left; // descuento por la dilatación al lado del muro izquierdo
           const sum = (c: number[]) => c.reduce((a, b) => a + Math.abs(b), 0);
           const sgn = (v: number) => (v < 0 ? -1 : 1);
           const rowsAll = () => ({ lw: [...rows.lower], uw: [...rows.upper], lc: cs.lower.map(c => [...c]), uc: cs.upper.map(c => [...c]) });
-          const commit = (st: { lw: number[]; uw: number[]; lc: number[][]; uc: number[][] }) => fitApi.onChange({ ...f, lowerW: st.lw, lowerBodies: st.lw.length, lowerCells: st.lc, upperW: st.uw, upperBodies: st.uw.length, upperCells: st.uc });
+          const commit = (st: { lw: number[]; uw: number[]; lc: number[][]; uc: number[][] }) => {
+            // un hueco al pie de un cuerpo de arriba, sobre un cuerpo de abajo que también es espacio libre, es un solo espacio libre: se funde con el de abajo
+            let a0 = fo;
+            const lr: [number, number][] = st.lw.map(w => { const r: [number, number] = [a0, a0 + w]; a0 += w; return r; });
+            a0 = fo;
+            st.uw.forEach((w, m) => {
+              const c = st.uc[m];
+              if (c && c.length > 1 && c[c.length - 1] < 0) {
+                const li = lr.findIndex(([x, y]) => Math.abs(x - a0) < 1 && Math.abs(y - (a0 + w)) < 1);
+                if (li >= 0 && st.lc[li].every(v => v < 0)) c.pop();
+              }
+              a0 += w;
+            });
+            fitApi.onChange({ ...f, lowerW: st.lw, lowerBodies: st.lw.length, lowerCells: st.lc, upperW: st.uw, upperBodies: st.uw.length, upperCells: st.uc });
+          };
           // mover el borde entre el cuerpo k y el k + 1 de una fila: lo que gana uno lo pierde el otro (mínimo 100 mm)
           // si la unión de la otra fila está en el mismo lugar, las dos se mueven juntas (así los cuerpos no chocan ni se sobreponen)
-          const beginEdge = (lower: boolean, k: number) => () => {
+          const bid = (low: boolean, a: number, b = 0) => `fit-${low ? 'inf' : 'sup'}-${a}-${b}`;
+          const edgeLocked = (low: boolean, k: number) => fitLocked(bid(low, k), 'w') || fitLocked(bid(low, k + 1), 'w');
+          const cellLocked = (low: boolean, i: number, j: number) => fitLocked(bid(low, i, j), 'h') || fitLocked(bid(low, i, j + 1), 'h');
+          const pairLocked = (m: number, li: number) => fitLocked(`fit-sup-${m}-${cs.upper[m].length - 1}`, 'h') || (li >= 0 && fitLocked(`fit-inf-${li}-0`, 'h'));
+          const beginEdge = (lower: boolean, k: number, independent = false, freeSide?: 'l' | 'r') => () => {
+            const nid = (low: boolean, a: number) => `fit-${low ? 'inf' : 'sup'}-${a}-0`;
+            if (fitLocked(nid(lower, k), 'w') || fitLocked(nid(lower, k + 1), 'w')) return () => {}; // una de las dos medidas tiene candado
             const base = [...(lower ? rows.lower : rows.upper)];
             const other = [...(lower ? rows.upper : rows.lower)];
             const pos = base.slice(0, k + 1).reduce((a, b) => a + b, 0);
             let om = -1, acc2 = 0;
-            for (let m = 0; m < other.length - 1; m++) { acc2 += other[m]; if (Math.abs(acc2 - pos) < 1) om = m; }
+            if (!independent) for (let m = 0; m < other.length - 1; m++) { acc2 += other[m]; if (Math.abs(acc2 - pos) < 1) om = m; } // la flecha sencilla (espacio libre) es independiente: no arrastra la unión de la otra fila
             return (d: number, exact?: boolean) => {
-              let lo = -(base[k] - 100), hi = base[k + 1] - 100;
+              // la cara que da al espacio libre puede comerse casi todo ese espacio (1 mm); el cuerpo real conserva 100 mm
+              let lo = -(base[k] - (freeSide === 'l' ? 1 : 100)), hi = base[k + 1] - (freeSide === 'r' ? 1 : 100);
               if (om >= 0) { lo = Math.max(lo, -(other[om] - 100)); hi = Math.min(hi, other[om + 1] - 100); }
               const dd = Math.max(lo, Math.min(hi, d));
+              if (dd !== d) exact = true; // en el límite: medida exacta
               const w = [...base]; w[k] = exact ? base[k] + dd : Math.round((base[k] + dd) / 5) * 5; w[k + 1] = base[k] + base[k + 1] - w[k];
               const st = rowsAll();
               if (lower) st.lw = w; else st.uw = w;
@@ -2711,10 +2881,12 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           };
           // mover la línea entre dos celdas apiladas del mismo cuerpo
           const beginCell = (lower: boolean, i: number, j: number) => () => {
+            if (fitLocked(`fit-${lower ? 'inf' : 'sup'}-${i}-${j}`, 'h') || fitLocked(`fit-${lower ? 'inf' : 'sup'}-${i}-${j + 1}`, 'h')) return () => {};
             const base = [...(lower ? cs.lower[i] : cs.upper[i])];
             return (d: number, exact?: boolean) => {
               const aj = Math.abs(base[j]), an = Math.abs(base[j + 1]);
-              const dd = Math.max(-(an - 100), Math.min(aj - 100, d));
+              const dd = Math.max(-(an - (base[j + 1] < 0 ? 1 : 100)), Math.min(aj - (base[j] < 0 ? 1 : 100), d)); // el espacio libre puede reducirse hasta 1 mm
+              if (dd !== d) exact = true;
               const nj = exact ? aj - dd : Math.round((aj - dd) / 5) * 5;
               const c = [...base]; c[j] = sgn(base[j]) * nj; c[j + 1] = sgn(base[j + 1]) * (aj + an - nj);
               const st = rowsAll(); (lower ? st.lc : st.uc)[i] = c;
@@ -2722,12 +2894,14 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             };
           };
           // contacto de un cuerpo de arriba con el de abajo (mismo ancho): solo esos dos cambian de alto
-          const beginPair = (m: number) => () => {
+          const beginPair = (m: number, lowFree = false, li = -1) => () => {
+            if (fitLocked(`fit-sup-${m}-${cs.upper[m].length - 1}`, 'h') || (li >= 0 && fitLocked(`fit-inf-${li}-0`, 'h'))) return () => {};
             const base = [...cs.upper[m]];
             const total = sum(base);
             return (d: number, exact?: boolean) => {
               const last = base.length - 1;
-              const dd = Math.min(Math.max(d, -(cs.Hf - 300 - total)), Math.abs(base[last]) - 100);
+              const dd = Math.min(Math.max(d, -(cs.Hf - (lowFree ? 1 : 300) - total)), Math.abs(base[last]) - (base[last] < 0 ? 1 : 100)); // si abajo hay espacio libre la cara puede bajar hasta casi el piso
+              if (dd !== d) exact = true;
               const c = [...base]; c[last] = sgn(base[last]) * (exact ? Math.abs(base[last]) - dd : Math.round((Math.abs(base[last]) - dd) / 5) * 5);
               const st = rowsAll(); st.uc[m] = c;
               commit(st);
@@ -2745,30 +2919,61 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             };
           };
           const nodes: React.ReactNode[] = [];
+          // posiciones (mm) de los contactos entre dos cuerpos reales: ahí ya hay una flecha doble y no hace falta otra sencilla sobre la misma línea
+          // (con el tramo vertical que cubren, para que solo cuenten si tocan el mismo tramo de la línea)
+          const doublePos: { pos: number; lo: number; hi: number }[] = [];
+          ([[rows.lower, cs.lower, true], [rows.upper, cs.upper, false]] as const).forEach(([row, cells, isLow]) => {
+            let a = fo;
+            for (let k = 0; k < row.length - 1; k++) {
+              a += row[k];
+              if (!cells[k].every(c => c < 0) && !cells[k + 1].every(c => c < 0)) {
+                const t0 = isLow ? cs.lowerHs[k] : cs.Hf, t1 = isLow ? cs.lowerHs[k + 1] : cs.Hf;
+                doublePos.push({ pos: a, lo: Math.min(t0 - sum(cells[k]), t1 - sum(cells[k + 1])), hi: Math.max(t0, t1) });
+              }
+            }
+          });
           ([[true, rows.lower, cs.lower], [false, rows.upper, cs.upper]] as const).forEach(([lower, row, cells]) => {
-            let acc = 0;
+            let acc = fo;
             for (let k = 0; k < row.length; k++) {
               const bodyTop = lower ? cs.lowerHs[k] : cs.Hf;
               const bodyH = sum(cells[k]);
               // contacto entre cuerpos vecinos: flecha doble a media altura del cuerpo
-              if (k < row.length - 1) { acc += row[k]; nodes.push(<FitJunction key={`fj-${lower ? 'l' : 'u'}-${k}`} position={[toX(acc), (bodyTop - bodyH / 2) / 1000, frontZ]} axis={[1, 0, 0]} posMm={acc} group={lower ? 'l' : 'u'} begin={beginEdge(lower, k)} controlsRef={controlsRef} />); }
+              if (k < row.length - 1) {
+                acc += row[k];
+                // si un lado es espacio libre (todo hueco) la flecha es sencilla, va en el centro del espacio libre y apunta hacia él
+                const meFree = cells[k].every(c => c < 0), nbFree = cells[k + 1].every(c => c < 0);
+                let single: 1 | -1 | undefined, yMid = bodyTop - bodyH / 2, fLo = 0, fHi = 0, limit: { at: number; from: number; to: number } | undefined;
+                if (meFree !== nbFree) {
+                  const fk = nbFree ? k + 1 : k;
+                  single = nbFree ? 1 : -1;
+                  fHi = lower ? cs.lowerHs[fk] : cs.Hf; fLo = fHi - sum(cells[fk]);
+                  yMid = (fHi + fLo) / 2;
+                  limit = { at: toX(nbFree ? acc + row[k + 1] : acc - row[k]), from: fLo / 1000, to: fHi / 1000 };
+                }
+                // si esa línea ya la controla una flecha doble, la sencilla sobra
+                if (!(single && ((limit && Math.abs(limit.at - toX(acc)) < 0.003) || fHi - fLo < 3)) && !(single && doublePos.some(d => Math.abs(d.pos - acc) < 1 && Math.min(fHi, d.hi) - Math.max(fLo, d.lo) > 1))) nodes.push(<FitJunction key={`fj-${lower ? 'l' : 'u'}-${k}`} position={[toX(acc), yMid / 1000, frontZ]} axis={[1, 0, 0]} locked={edgeLocked(lower, k)} single={single} limit={limit} posMm={acc} group={lower ? 'l' : 'u'} begin={beginEdge(lower, k, !!single, single ? (nbFree ? 'r' : 'l') : undefined)} controlsRef={controlsRef} />);
+              }
               // contacto entre celdas apiladas del mismo cuerpo: flecha doble vertical
               let top = bodyTop;
-              const cx = row.slice(0, k).reduce((a, b) => a + b, 0) + row[k] / 2;
+              const cx = fo + row.slice(0, k).reduce((a, b) => a + b, 0) + row[k] / 2;
               for (let j = 0; j < cells[k].length - 1; j++) {
                 top -= Math.abs(cells[k][j]);
-                nodes.push(<FitJunction key={`fc-${lower ? 'l' : 'u'}-${k}-${j}`} position={[toX(cx), top / 1000, frontZ]} axis={[0, 1, 0]} vertical posMm={top} group={`${lower ? 'l' : 'u'}-${k}`} begin={beginCell(lower, k, j)} controlsRef={controlsRef} />);
+                const aFree = cells[k][j] < 0, bFree = cells[k][j + 1] < 0;
+                if (aFree !== bFree && Math.abs(cells[k][aFree ? j : j + 1]) < 3) continue; // el espacio libre ya se agotó: el cuerpo toca al otro
+                nodes.push(<FitJunction key={`fc-${lower ? 'l' : 'u'}-${k}-${j}`} position={[toX(cx), top / 1000, frontZ]} axis={[0, 1, 0]} vertical locked={cellLocked(lower, k, j)} single={aFree !== bFree ? (bFree ? 1 : -1) : undefined} limit={aFree !== bFree ? { at: (bFree ? top - Math.abs(cells[k][j + 1]) : top + Math.abs(cells[k][j])) / 1000, from: toX(cx - row[k] / 2), to: toX(cx + row[k] / 2) } : undefined} posMm={top} group={`${lower ? 'l' : 'u'}-${k}`} begin={beginCell(lower, k, j)} controlsRef={controlsRef} />);
               }
             }
           });
           if (rows.upper.length > 0) {
             // un cuerpo de arriba con el mismo ancho y posición que uno de abajo: botón de unión; al arrastrarlo solo cambian de alto esos dos
-            let any = false, a = 0;
+            let any = false, a = fo;
             rows.lower.forEach((w, i) => {
               const m = cs.match[i];
               if (m >= 0) {
                 any = true;
-                nodes.push(<FitJunction key={`fj-h-${i}`} position={[toX(a + w / 2), cs.lowerHs[i] / 1000, frontZ]} axis={[0, 1, 0]} vertical posMm={cs.lowerHs[i]} group={`h-${i}`} begin={beginPair(m)} controlsRef={controlsRef} />);
+                const lowFree = cs.lower[i].every(c => c < 0), upFree = cs.upper[m][cs.upper[m].length - 1] < 0;
+                // si un lado del contacto es espacio libre, la flecha es sencilla y apunta hacia él
+                if (lowFree !== upFree && (lowFree ? cs.lowerHs[i] : Math.abs(cs.upper[m][cs.upper[m].length - 1])) < 3) { any = true; } else nodes.push(<FitJunction key={`fj-h-${i}`} position={[toX(a + w / 2), cs.lowerHs[i] / 1000, frontZ]} axis={[0, 1, 0]} vertical locked={pairLocked(m, i)} single={lowFree !== upFree ? (lowFree ? 1 : -1) : undefined} limit={lowFree !== upFree ? { at: (lowFree ? 0 : cs.Hf - (sum(cs.upper[m]) - Math.abs(cs.upper[m][cs.upper[m].length - 1]))) / 1000, from: toX(a), to: toX(a + w) } : undefined} posMm={cs.lowerHs[i]} group={`h-${i}`} begin={beginPair(m, lowFree, i)} controlsRef={controlsRef} />);
               }
               a += w;
             });
