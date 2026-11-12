@@ -1557,7 +1557,7 @@ const DraftNum: React.FC<{ value: number; onCommit: (n: number) => void; min?: n
 };
 
 /** Formulario de un cuerpo del Closet fit (doble clic): ¿marco puerta o surrón? y sus puertas, entrepaños y cajones */
-const FitBodyForm: React.FC<{ label: string; cfg: FitBodyCfg | undefined; onChange: (c: FitBodyCfg | undefined) => void; onClose: () => void; hiddenCount?: number; onShowAll?: () => void; suggestedMaletero?: number }> = ({ label, cfg, onChange, onClose, hiddenCount = 0, onShowAll, suggestedMaletero = 1900 }) => {
+const FitBodyForm: React.FC<{ label: string; cfg: FitBodyCfg | undefined; onChange: (c: FitBodyCfg | undefined) => void; onClose: () => void; hiddenCount?: number; onShowAll?: () => void; suggestedMaletero?: number; fondo?: number; onFondo?: (n: number) => void }> = ({ label, cfg, onChange, onClose, hiddenCount = 0, onShowAll, suggestedMaletero = 1900, fondo, onFondo }) => {
   const drag = useDragOffset();
   const set = (patch: Partial<FitBodyCfg>) => onChange({ ...(cfg ?? { kind: 'surron' }), ...patch } as FitBodyCfg);
   const btn = (on: boolean) => `flex-1 px-2 py-1 rounded-lg border text-[10px] font-black uppercase ${on ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`;
@@ -1578,9 +1578,11 @@ const FitBodyForm: React.FC<{ label: string; cfg: FitBodyCfg | undefined; onChan
     <div data-overlay data-module-editor {...drag.handle} className="fixed right-4 top-[250px] z-[200] pointer-events-auto w-64 p-3 space-y-2 rounded-xl bg-white border border-slate-300 shadow-xl max-h-[70vh] overflow-y-auto" style={{ ...drag.handle.style, ...drag.style }} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
       <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wide text-slate-500 select-none"><span>⠿ {label}</span><button className="text-slate-400 hover:text-slate-700" onClick={onClose}>✕</button></div>
       {hiddenCount > 0 && <button className="w-full px-2 py-1 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-[10px] font-black uppercase hover:bg-amber-100" onClick={onShowAll}>Mostrar piezas ocultas ({hiddenCount})</button>}
+      {fondo !== undefined && onFondo && row('Fondo de este cubo (mm)', <DraftNum value={Math.round(fondo)} min={100} max={900} onCommit={onFondo} className="w-20 text-center rounded border border-slate-300 text-xs font-black py-0.5" />)}
       {row('¿Qué es?', <><button className={btn(cfg?.kind === 'marco')} onClick={() => set({ kind: 'marco', doors: cfg?.doors || 2, doorDir: cfg?.doorDir ?? 'vertical' })}>Marco puerta</button><button className={btn(isSurron)} onClick={() => set({ kind: 'surron', top: cfg?.top ?? 'puente', base: cfg?.base ?? 'base', doors: cfg?.doors ?? 2, doorDir: cfg?.doorDir ?? 'vertical' })}>Surrón</button></>)}
       {cfg && (
         <>
+          {([['izq', 'Lado izquierdo', cfg.ladoIzq], ['der', 'Lado derecho', cfg.ladoDer]] as Array<['izq' | 'der', string, FitBodyCfg['ladoIzq']]>).map(([side, title, cur]) => <React.Fragment key={side}>{row(`${title}: dilatada o visto`, <>{([['ninguno', 'Nada'], ['dilatada', 'Dilatada'], ['visto15', 'Visto 15'], ['visto19', 'Visto 19']] as Array<[NonNullable<FitBodyCfg['ladoIzq']>, string]>).map(([val, lab]) => (<button key={val} className={btn((cur ?? 'ninguno') === val)} onClick={() => set(side === 'izq' ? { ladoIzq: val } : { ladoDer: val })}>{lab}</button>))}</>)}</React.Fragment>)}
           {row('Zócalo (80 mm) si va al piso', <><button className={btn(!!cfg.zocalo)} onClick={() => set({ zocalo: true })}>Con zócalo</button><button className={btn(!cfg.zocalo)} onClick={() => set({ zocalo: false })}>Sin zócalo</button></>)}
           {isSurron && drawers === 0 && row('Abajo', <><button className={btn((cfg.base ?? 'base') === 'base')} onClick={() => set({ base: 'base' })}>Base completa</button><button className={btn(cfg.base === 'puentes')} onClick={() => set({ base: 'puentes' })}>Puentes</button></>)}
           {isSurron && drawers > 0 && <div className="text-[10px] text-slate-500">Con cajones solo lleva puentes inferiores.</div>}
@@ -2566,6 +2568,22 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
     const row = lower ? wl : wu;
     const lc = cs.lower.map(c => [...c]), uc = cs.upper.map(c => [...c]);
     const idOf = (low: boolean, a: number, b: number) => `fit-${low ? 'inf' : 'sup'}-${a}-${b}`;
+    // cada cuerpo de una columna con varios cuerpos tiene su ancho propio: uno más angosto que la columna solo cambia ese cuerpo;
+    // uno más ancho ensancha la columna y deja los demás con el ancho que ya tenían
+    let cellWNext = f.cellW;
+    if (patch.width != null && (lower ? cs.lower : cs.upper)[i]?.length > 1 && !fitLocked(id, 'w')) {
+      const colW = row[i];
+      const cw = { ...(f.cellW ?? {}) };
+      if (patch.width <= colW + 0.5) { cw[id] = Math.max(100, Math.round(patch.width)); fitApi.onChange({ ...f, cellW: cw }); return; }
+      (lower ? cs.lower : cs.upper)[i].forEach((_, k) => { const kid = idOf(lower, i, k); if (kid !== id && cw[kid] === undefined) cw[kid] = colW; });
+      delete cw[id];
+      cellWNext = cw;
+    }
+    if (patch.width != null && row.length === 1 && lower && f.mueble) {
+      // baño con un solo cuerpo: el ancho que se pide es el ancho del mueble
+      fitApi.onChange({ ...f, cellW: cellWNext, mueble: { ...(f.mueble ?? { x0: 0, ancho: patch.width }), ancho: Math.max(200, Math.min(wallA, Math.round(patch.width))) } });
+      return;
+    }
     if (patch.width != null && row.length > 1) {
       // el ancho se reparte con el vecino que no tenga candado; si el cuerpo o todos sus vecinos están bloqueados, no cambia
       const nb = [i + 1, i - 1].find(n => n >= 0 && n < row.length && !fitLocked(idOf(lower, n, 0), 'w'));
@@ -2593,9 +2611,13 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         let acc = 0;
         const nh = Math.min(Math.max(cs.Hf - cs.base - patch.height, 100), cs.Hf - 300);
         rows.upper.forEach((w, k) => { if (Math.min(b0, acc + w) - Math.max(a0, acc) > 0.5) uc[k] = [(uc[k][0] < 0 ? -1 : 1) * nh]; acc += w; });
+      } else if (f.altoMueble && f.altoMueble > 0) {
+        // baño sin cuerpos arriba: el alto del cuerpo es el alto del mueble
+        fitApi.onChange({ ...f, altoMueble: Math.max(150, Math.min(1500, Math.round(patch.height))) });
+        return;
       }
     }
-    fitApi.onChange({ ...f, lowerW: wl, lowerBodies: wl.length, lowerCells: lc, upperW: wu, upperBodies: wu.length, upperCells: uc });
+    fitApi.onChange({ ...f, cellW: cellWNext, lowerW: wl, lowerBodies: wl.length, lowerCells: lc, upperW: wu, upperBodies: wu.length, upperCells: uc });
   };
   // Igualar dos o tres cuerpos (shift + clic en cada uno): en la misma fila quedan del mismo ancho y en la misma columna de la misma altura.
   // Las medidas se mantienen en múltiplos de 5 mm: si no se puede quedar exacto, la diferencia la absorbe otro cuerpo sin candado que no esté elegido, o si no hay, los elegidos se ajustan de 5 en 5 mm.
@@ -2644,11 +2666,28 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   };
   const [isoHidden, setIsoHidden] = useState<string[]>([]); // piezas ocultadas con clic sostenido mientras el módulo está aislado
   const isoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // sanitario y espejo del baño son solo ambientación: se ven translúcidos, no se pueden seleccionar y no son piezas del mueble
+  const isAmb = (n: string) => n === 'Espejo bano' || n.startsWith('Sanitario');
   // el zócalo del cubo (escalera) se ve translúcido mientras no se convierte a módulos
   const zocGhost = (n: string) => (n === 'Zócalo largero fit' || n === 'Zócalo travesaño fit') && !!fitApi && !fitApi.fit.converted;
   const [fitIsolate, setFitIsolate] = useState<string | null>(null); // triple clic: el módulo se aísla para editarlo; al aplicar vuelve al ensamble general
   const [fitForm, setFitForm] = useState<string | null>(null); // cuerpo del Closet fit con el formulario (marco puerta / surrón) abierto
   const [fitMulti, setFitMulti] = useState<string[]>([]); // cuerpos elegidos con shift + clic para igualarlos (se pintan como el seleccionado)
+  // Clic derecho sobre un cubo del Closet fit / baño: el cubo se convierte en un espacio libre (como el espacio bajo un mueble flotado); clic derecho sobre un espacio lo vuelve cubo
+  const fitToggleGap = (id: string) => {
+    if (!fitApi || !id.startsWith('fit-')) return;
+    const f = fitApi.fit;
+    const rows = fitRows(f, wallA);
+    const cs = fitCells(f, wallA, spaceHeight);
+    const parts = id.split('-');
+    const lower = parts[1] === 'inf', i = Number(parts[2]), j = Number(parts[3]);
+    const lc = cs.lower.map(c => [...c]), uc = cs.upper.map(c => [...c]);
+    const cells = (lower ? lc : uc)[i];
+    if (!cells || cells[j] === undefined) return;
+    cells[j] = -cells[j];
+    setFitSel(null);
+    fitApi.onChange({ ...f, lowerW: [...rows.lower], lowerBodies: rows.lower.length, lowerCells: lc, upperW: [...rows.upper], upperBodies: rows.upper.length, upperCells: uc });
+  };
   const [fitAsk, setFitAsk] = useState<{ ids: string[]; dim: 'ancho' | 'alto' } | null>(null);
   const [fitCopySrc, setFitCopySrc] = useState<string | null>(null); // cuerpo cuyo módulo se copia con alt + clic // pregunta antes de igualar
   const [fitMsg, setFitMsg] = useState<Record<string, string>>({}); // letreros pequeños sobre los cuerpos al igualar
@@ -2809,6 +2848,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           onChange={(c) => { const bodies = { ...(fitApi.fit.bodies ?? {}) }; if (c) bodies[fitForm] = c; else delete bodies[fitForm]; fitApi.onChange({ ...fitApi.fit, bodies }); }}
           onClose={() => { setFitForm(null); setFitIsolate(null); setIsoHidden([]); }}
           suggestedMaletero={(() => { const bb = boxes.find(x => x.id === fitForm); return bb ? Math.max(350, Math.round((bb.z + bb.sz - Math.min(1900, bb.z + bb.sz - 350)) / 5) * 5) : 350; })()} /* distancia sugerida: deja el maletero a la menor de 1900 mm o (tope − 350 mm) */
+          fondo={boxes.find(x => x.id === fitForm)?.sy}
+          onFondo={(n) => { const fid = fitForm!; fitApi.onChange({ ...fitApi.fit, cellD: { ...(fitApi.fit.cellD ?? {}), [fid]: n } }); }}
           hiddenCount={isoHidden.length}
           onShowAll={() => setIsoHidden([])}
         />
@@ -2876,13 +2917,14 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         ))}
 
         {/* Piezas de los módulos convertidos: laterales, base, techo, puentes, amarres, espaldar y entrepaños */}
-        {vBoxes.filter(b => b.kind === 'panel' && !(viewMode === 'frontal' && (b.name.startsWith('Cajón ') || b.name.startsWith('Puente') || b.name === 'Zócalo travesaño fit' || b.id === 'fit-zoc-lb')) && !((vis.shelves === false && (closetSectionOf(b.name) === 'entrepanos' || closetSectionOf(b.name) === 'torre')) || (vis.cajonero === false && closetSectionOf(b.name) === 'cajonero') || (vis.costado === false && closetSectionOf(b.name) === 'costado')) && (isClosetDoor(b.name) ? vis.doors !== false : (b.id.startsWith('panel-upper-') ? vis.upper : vis.lower))).map(b => (
+        {vBoxes.filter(b => b.kind === 'panel' && !(b.name === 'Cubo closet fit' && (fitApi?.fit.altoMueble ?? 0) > 0) && !(viewMode === 'frontal' && (b.name.startsWith('Cajón ') || b.name.startsWith('Puente') || b.name === 'Zócalo travesaño fit' || b.id === 'fit-zoc-lb')) && !((vis.shelves === false && (closetSectionOf(b.name) === 'entrepanos' || closetSectionOf(b.name) === 'torre')) || (vis.cajonero === false && closetSectionOf(b.name) === 'cajonero') || (vis.costado === false && closetSectionOf(b.name) === 'costado')) && (isClosetDoor(b.name) ? vis.doors !== false : (b.id.startsWith('panel-upper-') ? vis.upper : vis.lower))).map(b => (
           <mesh
             key={b.id}
             position={boxCenter(b)}
             castShadow
             {...(fitApi && !measureMode && (b.name.startsWith('Cuerpo ') || b.name.startsWith('Hueco ')) ? {
               onDoubleClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); if (b.name.startsWith('Cuerpo ')) setFitForm(b.id); },
+              onContextMenu: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); (e.nativeEvent as MouseEvent | undefined)?.preventDefault?.(); fitToggleGap(b.id); },
               onClick: (e: ThreeEvent<MouseEvent>) => {
                 e.stopPropagation();
                 if ((e.nativeEvent as MouseEvent | undefined)?.detail === 3 && b.name.startsWith('Cuerpo ')) { setFitIsolate(b.id); setFitForm(b.id); setFitSel(b.id); return; } // triple clic: aislar el módulo
@@ -2939,7 +2981,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             } : {})}
           >
             <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
-            <meshStandardMaterial color={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? '#bfdbfe' : fitCopySrc === b.id ? '#22c55e' : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? '#fb923c' : '#60a5fa') : b.name.startsWith('Espaldar') || b.name.includes('fondo') ? '#e5e7eb' : isClosetDoor(b.name) ? '#cdb592' : b.name.startsWith('Tubo') ? '#9ca3af' : b.name.startsWith('Entrepaño') ? '#f3e8d2' : (b.id.startsWith('panel-upper-') ? '#e8d3b0' : '#dcc5a0')} roughness={0.7} key={isFitBody(b.name) ? 'fit' : (doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name) ? 'ghost' : 'solid'} transparent={isFitBody(b.name) || ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name))} opacity={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? 0.08 : (fitApi?.fit.converted && fitApi.fit.bodies?.[b.id] && fitCopySrc !== b.id) ? 0.03 : b.name.startsWith('Hueco ') ? ((fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? 0.25 : 0.02) : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? 0.4 : 0.22) : ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name)) ? 0.25 : 1} depthWrite={!(isFitBody(b.name) || ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name)))}  polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+            <meshStandardMaterial color={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? '#bfdbfe' : fitCopySrc === b.id ? '#22c55e' : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? '#fb923c' : '#60a5fa') : b.name.startsWith('Sanitario') ? '#f8fafc' : isAmb(b.name) ? '#bae6fd' : b.name.startsWith('Espaldar') || b.name.includes('fondo') ? '#e5e7eb' : isClosetDoor(b.name) ? '#cdb592' : b.name.startsWith('Tubo') ? '#9ca3af' : b.name.startsWith('Entrepaño') ? '#f3e8d2' : (b.id.startsWith('panel-upper-') ? '#e8d3b0' : '#dcc5a0')} roughness={0.7} key={isFitBody(b.name) ? 'fit' : (doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name) || isAmb(b.name) ? 'ghost' : 'solid'} transparent={isFitBody(b.name) || isAmb(b.name) || ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name))} opacity={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? 0.08 : (fitApi?.fit.converted && fitApi.fit.bodies?.[b.id] && fitCopySrc !== b.id) ? 0.03 : b.name.startsWith('Hueco ') ? ((fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? 0.25 : 0.02) : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? 0.4 : 0.22) : isAmb(b.name) ? 0.5 : ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name)) ? 0.25 : 1} depthWrite={!(isFitBody(b.name) || isAmb(b.name) || ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name)))}  polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
             {isFitBody(b.name) && viewMode === 'frontal' ? (
               // En frontal solo se dibuja el contorno de la cara frontal (una línea), sin las aristas de profundidad que se ven dobles
               b.name !== 'Cubo closet fit' && (() => { const hw = b.sx / 2000, hh = b.sz / 2000, zf = b.sy / 2000 + 0.002; return (
@@ -2989,7 +3031,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             )}
             {b.name.startsWith('Cuerpo ') && b.id.startsWith('fit-') && viewMode === 'frontal' && fitApi && (vis.dims !== false || dimFlash.includes(b.id)) && (
               <Html position={[0, 0, b.sy / 2000 + 0.01]} center occlude={false} zIndexRange={[60, 0]} style={{ pointerEvents: 'none' }}>
-                <FitDimLabel onHold={(on) => { if (on) { if (dimTimer.current) clearTimeout(dimTimer.current); } else if (vis.dims === false) hideDimsSoon(); }} w={b.sx} h={b.sz} lockW={fitLocked(b.id.replace(/-\d+$/, '-0'), 'w')} lockH={fitLocked(b.id, 'h')} onLock={(k) => { const key = k === 'w' ? b.id.replace(/-\d+$/, '-0') : b.id; setFitLocks(prev => ({ ...prev, [key]: { ...prev[key], [k]: !prev[key]?.[k] } })); }} canEditH={b.id.startsWith('fit-sup') || b.name.includes('.') || fitApi.fit.upperBodies > 0} onCommit={(patch) => fitEdit(b.id, patch)} offset={fitLabelOff[b.id] ?? { x: 0, y: 0 }} onOffset={(o) => setFitLabelOff(prev => ({ ...prev, [b.id]: o }))} />
+                <FitDimLabel onHold={(on) => { if (on) { if (dimTimer.current) clearTimeout(dimTimer.current); } else if (vis.dims === false) hideDimsSoon(); }} w={b.sx} h={b.sz} lockW={fitLocked(b.id.replace(/-\d+$/, '-0'), 'w')} lockH={fitLocked(b.id, 'h')} onLock={(k) => { const key = k === 'w' ? b.id.replace(/-\d+$/, '-0') : b.id; setFitLocks(prev => ({ ...prev, [key]: { ...prev[key], [k]: !prev[key]?.[k] } })); }} canEditH={b.id.startsWith('fit-sup') || b.name.includes('.') || fitApi.fit.upperBodies > 0 || (fitApi.fit.altoMueble ?? 0) > 0} onCommit={(patch) => fitEdit(b.id, patch)} offset={fitLabelOff[b.id] ?? { x: 0, y: 0 }} onOffset={(o) => setFitLabelOff(prev => ({ ...prev, [b.id]: o }))} />
               </Html>
             )}
           </mesh>
@@ -3003,7 +3045,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           const dpt = Math.max(200, f.depth);
           const frontZ = offsetZ + dpt / 1000 + 0.003; // pegados a la cara frontal del cubo, como un parche
           const toX = (X: number) => (X - wallA / 2) / 1000;
-          const fo = fitInsets(f).left; // descuento por la dilatación al lado del muro izquierdo
+          const fo = fitInsets(f, wallA).left; // descuento por la dilatación al lado del muro izquierdo
           const sum = (c: number[]) => c.reduce((a, b) => a + Math.abs(b), 0);
           const sgn = (v: number) => (v < 0 ? -1 : 1);
           const rowsAll = () => ({ lw: [...rows.lower], uw: [...rows.upper], lc: cs.lower.map(c => [...c]), uc: cs.upper.map(c => [...c]) });

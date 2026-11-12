@@ -1262,20 +1262,21 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   // Closet fit: un cubo que cubre el área y, dentro, los cuerpos inferiores (uno al lado del otro) y los superiores.
   // Se arma en un marco local (x a lo largo del muro, y fondo desde el muro) con el prefijo `pre`; los muros B y C se giran después
   const buildFitCube = (f: ClosetFit, wallA: number, pre: string, boxes: Box[], zExt = 0) => {
-    const Hf = spaceHeight - CLOSET_TOP_MARGIN, dpt = Math.max(200, f.depth);
+    const Hf = fitTop(f, spaceHeight), dpt = Math.max(200, f.depth);
     const nLow = Math.max(1, Math.round(f.lowerBodies)), nUp = Math.max(0, Math.round(f.upperBodies));
     const upH = nUp > 0 ? Math.min(Math.max(100, f.upperHeight), Hf - 1) : 0;
-    const put = (id: string, name: string, x: number, z: number, sx: number, sz: number) => boxes.push({ id, name, kind: 'panel', wall: 'A', x, y: 0, z, sx, sy: dpt, sz, facing: null });
-    const ins = fitInsets(f);
+    const put = (id: string, name: string, x: number, z: number, sx: number, sz: number, depth = dpt) => boxes.push({ id, name, kind: 'panel', wall: 'A', x, y: 0, z, sx, sy: depth, sz, facing: null });
+    const ins = fitInsets(f, wallA);
     put(`${pre}cubo`, 'Cubo closet fit', ins.left, 0, wallA - ins.left - ins.right, Hf);
     // dilatación de 15 x 15 de piso a techo junto a cada muro (al frente del cubo)
     const dilPut = (id: string, x: number) => boxes.push({ id, name: 'Dilatación closet fit', kind: 'panel', wall: 'A', x, y: dpt - PANEL_THICKNESS, z: 0, sx: PANEL_THICKNESS, sy: PANEL_THICKNESS, sz: Hf, facing: null });
-    if (ins.left > 0) dilPut(`${pre}dil-izq`, 0);
-    if (ins.right > 0) dilPut(`${pre}dil-der`, wallA - PANEL_THICKNESS);
+    // la dilatación solo va si el mueble llega hasta ese muro (en el baño puede quedar separado)
+    if (ins.dl > 0 && ins.left <= ins.dl) dilPut(`${pre}dil-izq`, 0);
+    if (ins.dr > 0 && ins.right <= ins.dr) dilPut(`${pre}dil-der`, wallA - PANEL_THICKNESS);
     const rows = fitRows(f, wallA);
     const cells = fitCells(f, wallA, spaceHeight);
     // zócalo del cubo: subensamble en forma de escalera (dos largueros a lo largo, delante y detrás, y travesaños entre ellos)
-    if (f.zocalo?.on && f.zocalo.alto > 0) {
+    if (f.zocalo?.on && f.zocalo.alto > 0 && !f.flotado?.on) {
       const zc = f.zocalo, cw = wallA - ins.left - ins.right, E2 = PANEL_THICKNESS;
       const depthZ = Math.max(3 * E2, Math.min(zc.fondo, dpt - 30));  // regla: el zócalo es menos profundo que el fondo de los módulos, 30 mm como mínimo
       const yBack = 0;                                              // el zócalo va siempre pegado al muro
@@ -1302,13 +1303,13 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     let xa = ins.left;
     rows.lower.forEach((w, i) => {
       let top = cells.lowerHs[i];
-      cells.lower[i].forEach((hh, j) => { const h = Math.abs(hh); top -= h; const cfgB = hh >= 0 ? f.bodies?.[`${pre}inf-${i}-${j}`] : undefined; if (cfgB) fitBodyParts(cfgB, `${pre}inf-${i}-${j}`, xa, top, w, h, dpt, !!f.converted, spanOf(true, i)).forEach(b => boxes.push(b)); put(`${pre}inf-${i}-${j}`, `${hh < 0 ? 'Hueco' : 'Cuerpo'} inferior ${i + 1}${cells.lower[i].length > 1 ? '.' + (j + 1) : ''}`, xa, top, w, h); });
+      cells.lower[i].forEach((hh, j) => { const h = Math.abs(hh); top -= h; const wc = hh >= 0 ? Math.min(w, f.cellW?.[`${pre}inf-${i}-${j}`] ?? w) : w; const dc = hh >= 0 ? Math.max(100, f.cellD?.[`${pre}inf-${i}-${j}`] ?? dpt) : dpt; const cfgB = hh >= 0 ? f.bodies?.[`${pre}inf-${i}-${j}`] : undefined; if (cfgB) fitBodyParts(cfgB, `${pre}inf-${i}-${j}`, xa, top, wc, h, dc, !!f.converted, spanOf(true, i)).forEach(b => boxes.push(b)); put(`${pre}inf-${i}-${j}`, `${hh < 0 ? 'Hueco' : 'Cuerpo'} inferior ${i + 1}${cells.lower[i].length > 1 ? '.' + (j + 1) : ''}`, xa, top, wc, h, dc); });
       xa += w;
     });
     xa = ins.left;
     rows.upper.forEach((w, i) => {
       let top = cells.Hf;
-      cells.upper[i].forEach((hh, j) => { const h = Math.abs(hh); top -= h; const cfgB = hh >= 0 ? f.bodies?.[`${pre}sup-${i}-${j}`] : undefined; if (cfgB) fitBodyParts(cfgB, `${pre}sup-${i}-${j}`, xa, top, w, h, dpt, !!f.converted, spanOf(false, i)).forEach(b => boxes.push(b)); put(`${pre}sup-${i}-${j}`, `${hh < 0 ? 'Hueco' : 'Cuerpo'} superior ${i + 1}${cells.upper[i].length > 1 ? '.' + (j + 1) : ''}`, xa, top, w, h); });
+      cells.upper[i].forEach((hh, j) => { const h = Math.abs(hh); top -= h; const wc = hh >= 0 ? Math.min(w, f.cellW?.[`${pre}sup-${i}-${j}`] ?? w) : w; const dc = hh >= 0 ? Math.max(100, f.cellD?.[`${pre}sup-${i}-${j}`] ?? dpt) : dpt; const cfgB = hh >= 0 ? f.bodies?.[`${pre}sup-${i}-${j}`] : undefined; if (cfgB) fitBodyParts(cfgB, `${pre}sup-${i}-${j}`, xa, top, wc, h, dc, !!f.converted, spanOf(false, i)).forEach(b => boxes.push(b)); put(`${pre}sup-${i}-${j}`, `${hh < 0 ? 'Hueco' : 'Cuerpo'} superior ${i + 1}${cells.upper[i].length > 1 ? '.' + (j + 1) : ''}`, xa, top, wc, h, dc); });
       xa += w;
     });
     };
@@ -1317,11 +1318,24 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     const cubesOn = { A: true, B: true, C: true, ...(f0.cubes ?? {}) };
     const dptA = cubesOn.A ? Math.max(200, f0.depth) : 0;
     if (cubesOn.A) buildFitCube(f0, wallA, 'fit-', boxes);
+    // baño: sanitario y espejo para ambientar el entorno (solo si se activan); no son parte del mueble
+    const insA = fitInsets(f0, wallA);
+    if (f0.sanitario?.on) {
+      // el lado del sanitario que mira al muro auxiliar queda a `x0` de ese muro (1000 por defecto, editable); izquierdo si hay los dos; sin auxiliar se mide desde el extremo izquierdo del muro A
+      const bw = Math.max(200, f0.sanitario.ancho), dist = Math.max(0, f0.sanitario.x0);
+      const cx = (hasC && !hasB) ? wallA - dist - bw / 2 : dist + bw / 2;
+      boxes.push({ id: 'bano-san-taza', name: 'Sanitario taza', kind: 'panel', wall: 'A', x: cx - bw / 2, y: 120, z: 0, sx: bw, sy: 530, sz: 400, facing: null } as Box);
+      boxes.push({ id: 'bano-san-tanque', name: 'Sanitario tanque', kind: 'panel', wall: 'A', x: cx - bw / 2, y: 0, z: 400, sx: bw, sy: 190, sz: 400, facing: null } as Box);
+    }
+    if (f0.espejo?.on) {
+      const cubeW = wallA - insA.left - insA.right, mw = Math.max(100, Math.min(f0.espejo.ancho, cubeW));
+      boxes.push({ id: 'bano-espejo', name: 'Espejo bano', kind: 'panel', wall: 'A', x: insA.left + (cubeW - mw) / 2, y: 0, z: f0.espejo.desde, sx: mw, sy: 6, sz: Math.max(100, f0.espejo.alto), facing: null } as Box);
+    }
     // muros B y C: el cubo del brazo empieza delante del cubo del muro A y se gira al muro correspondiente
     const arm = (key: 'B' | 'C', has: boolean, len: number) => {
       if (!has || !cubesOn[key]) return;
       const a0 = key === 'B' ? f0.armB : f0.armC;
-      const fa: ClosetFit = { ...DEFAULT_ARM, ...(a0 ?? {}), bodies: f0.bodies, converted: f0.converted, leftWall: false, rightWall: false };
+      const fa: ClosetFit = { ...DEFAULT_ARM, ...(a0 ?? {}), flotado: f0.flotado, altoMueble: f0.altoMueble, bodies: f0.bodies, converted: f0.converted, leftWall: false, rightWall: false };
       const local: Box[] = [];
       // unir zócalos: el zócalo del brazo se alarga hacia el muro A hasta tocar el zócalo transversal
       const zA = f0.zocalo?.on && cubesOn.A ? Math.max(45, Math.min(f0.zocalo.fondo, dptA - 30)) : 0;
@@ -1401,9 +1415,20 @@ export function closetTorreIndex(name: string): 1 | 2 { return name.endsWith(' �
 
 /** Anchos de los cuerpos del Closet fit (inferiores y superiores): los guardados (ajustados al muro) o iguales */
 /** Descuento por la dilatación (15 mm) en cada lado con muro: el cubo y los cuerpos quedan entre las dilataciones */
-export function fitInsets(fit: ClosetFit) {
-  const on = fit.dilatacion !== false;
-  return { left: on && fit.leftWall ? PANEL_THICKNESS : 0, right: on && fit.rightWall ? PANEL_THICKNESS : 0 };
+export function fitInsets(fit: ClosetFit, wallAll: number) {
+  // ya no hay dilatación automática junto al muro: se pide por módulo (dilatada o visto), como en la cocina
+  const dl = 0, dr = 0;
+  // baño: el mueble tiene su propio ancho y su posición desde el punto 0; lo demás del muro queda libre
+  if (fit.mueble) {
+    const x0 = Math.max(0, Math.min(fit.mueble.x0, wallAll - 100)), x1 = Math.max(x0 + 100, Math.min(wallAll, x0 + fit.mueble.ancho));
+    return { left: Math.max(dl, x0), right: Math.max(dr, wallAll - x1), dl, dr };
+  }
+  return { left: dl, right: dr, dl, dr };
+}
+
+/** Alto del cubo: hasta 5 mm bajo el techo */
+export function fitTop(fit: ClosetFit, spaceHeight: number) {
+  return spaceHeight - CLOSET_TOP_MARGIN; // el cubo llega hasta el techo; el mueble del baño es el cuerpo de abajo (alto del mueble) y encima queda un hueco que se puede dividir
 }
 
 
@@ -1415,6 +1440,17 @@ export function fitInsets(fit: ClosetFit) {
 export function fitBodyParts(c: FitBodyCfg, id: string, x: number, z: number, w: number, h: number, dpt: number, converted: boolean, span?: [number, number]): Box[] {
   const E = PANEL_THICKNESS, ZOC = 80;
   const out: Box[] = [];
+  // dilatada o visto a cada lado: restan ancho al módulo (como en la cocina); la dilatada es de 15 x 70 y el visto cubre todo el fondo
+  const sideT = (v?: string) => (v === 'dilatada' || v === 'visto15' ? 15 : v === 'visto19' ? 19 : 0);
+  const eL = sideT(c.ladoIzq), eR = sideT(c.ladoDer);
+  const sidePiece = (v: string | undefined, e: number, px: number, key: string) => {
+    if (!e || !converted) return;
+    const dil = v === 'dilatada', dp = dil ? 70 : dpt;
+    out.push({ id: `${id}-${key}`, name: dil ? 'Dilatada fit' : 'Visto fit', kind: 'panel', wall: 'A', x: px, y: dpt - dp, z, sx: e, sy: dp, sz: h, facing: null } as Box);
+  };
+  sidePiece(c.ladoIzq, eL, x, 'vi');
+  sidePiece(c.ladoDer, eR, x + w - eR, 'vd');
+  x += eL; w -= eL + eR;
   const add = (suffix: string, name: string, px: number, py: number, pz: number, sx: number, sy: number, sz: number) => {
     if (sx > 0.01 && sy > 0.01 && sz > 0.01) out.push({ id: `${id}-${suffix}`, name, kind: 'panel', wall: 'A', x: px, y: py, z: pz, sx, sy, sz, facing: null } as Box);
   };
@@ -1545,7 +1581,7 @@ export function fitBodyParts(c: FitBodyCfg, id: string, x: number, z: number, w:
 }
 
 export function fitRows(fit: ClosetFit, wallAll: number) {
-  const ins = fitInsets(fit);
+  const ins = fitInsets(fit, wallAll);
   const wallA = wallAll - ins.left - ins.right;
   const norm = (w: number[] | undefined, n: number) => {
     if (w && w.length === n && n > 0) { const sum = w.reduce((a, b) => a + b, 0); return w.map(x => (x * wallA) / sum); }
@@ -1560,10 +1596,10 @@ export function fitRows(fit: ClosetFit, wallAll: number) {
  * el cuerpo de abajo que está justo debajo (mismo ancho y posición) llega hasta él. Los demás de abajo usan la altura general de los superiores.
  */
 /** Altura del zócalo del cubo (los cuerpos de abajo arrancan sobre él) */
-export function fitBase(fit: ClosetFit) { return fit.zocalo?.on ? Math.max(0, fit.zocalo.alto) : 0; }
+export function fitBase(fit: ClosetFit) { return fit.flotado?.on ? Math.max(0, fit.flotado.alto) : fit.zocalo?.on ? Math.max(0, fit.zocalo.alto) : 0; }
 
 export function fitCells(fit: ClosetFit, wallA: number, spaceHeight: number) {
-  const Hf = spaceHeight - CLOSET_TOP_MARGIN;
+  const Hf = fitTop(fit, spaceHeight);
   const base = fitBase(fit);
   const rows = fitRows(fit, wallA);
   const baseUp = rows.upper.length > 0 ? Math.min(Math.max(100, fit.upperHeight), Hf - 1) : 0; // el límite real (300 mm para un cuerpo de abajo) lo pone el arrastre; si abajo hay espacio libre puede llegar casi al piso
@@ -1583,6 +1619,19 @@ export function fitCells(fit: ClosetFit, wallA: number, spaceHeight: number) {
   const lower = rows.lower.map((_, i) => {
     const c = fit.lowerCells?.[i], h = Math.max(50, lowerHs[i] - base); // los cuerpos de abajo arrancan sobre el zócalo
     if (c && c.length > 0) { const k = h / sum(c); return c.map(x => x * k); }
+    // baño: el mueble tiene su alto propio y encima queda un hueco libre hasta el techo (o hasta los cuerpos de arriba)
+    if (fit.altoMueble && fit.altoMueble > 0 && h > fit.altoMueble + 50) {
+      const rest = h - fit.altoMueble, n = Math.max(0, Math.round(fit.sobreMueble ?? 0));
+      if (n === 0) return [-rest, fit.altoMueble];
+      // cuerpos encima del mueble, de abajo hacia arriba: 200 (franja), 700 (el grande) y el de arriba con lo que sobre; si no caben se reparten por igual
+      const fixed = [200, 700];
+      let up: number[];
+      if (n === 1) up = [rest];
+      else if (n === 2) up = [rest - fixed[0], fixed[0]];
+      else { const topAll = rest - fixed[0] - fixed[1], extra = n - 2; up = [...Array.from({ length: extra }, () => topAll / extra), fixed[1], fixed[0]]; }
+      if (up.some(x => x < 50)) up = Array.from({ length: n }, () => rest / n);
+      return [...up, fit.altoMueble];
+    }
     return [h];
   });
   return { lower, upper, Hf, upH: baseUp, lowerHs, upTotals, match, base };

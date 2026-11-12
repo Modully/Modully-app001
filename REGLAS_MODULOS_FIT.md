@@ -51,6 +51,10 @@ Surrón de puertas 728 × 905 × 532: 2 puertas de parche, entrepaños a 298 y 6
 - Zócalo del cubo (escalera): altura, profundidad (menor que el fondo, 30 mm como mínimo) y travesaños; va pegado al muro; los cuerpos de abajo arrancan sobre él.
 - Walking closet: arranca como el Closet fit en U con cubos en A, B y C (cápsula por muro). Zócalos unibles: los de B y C se alargan hasta tocar el transversal de A. Chips A, B y C para ocultar o mostrar cada muro con sus cubos.
 
+## Baño y lados (2026-11-12)
+- Cada módulo puede llevar dilatada (15 x 70) o visto (15 o 19) a cada lado; restan ancho al módulo.
+- El sanitario y el espejo del baño son ambientación: no son piezas del mueble ni van al listado de corte.
+
 ## Preguntas abiertas
 - Con 3 puertas, ¿se pregunta por la pieza vertical o solo con 4 o más?
 - Medida de cada puerta con 2 o más hojas (reparto del ancho y luces entre hojas).

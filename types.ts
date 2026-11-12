@@ -222,6 +222,8 @@ export interface IslandItem {
 export interface FitBodyCfg {
   kind: 'marco' | 'surron';
   zocalo?: boolean;                       // zócalo de 80 abajo (si el cuerpo va al piso)
+  ladoIzq?: 'ninguno' | 'dilatada' | 'visto15' | 'visto19'; // lado izquierdo del módulo: dilatada (15 x 70) o visto (15 / 19); restan ancho al módulo
+  ladoDer?: 'ninguno' | 'dilatada' | 'visto15' | 'visto19'; // lado derecho
   base?: 'base' | 'puentes';              // surrón: base completa o puentes inferiores
   top?: 'tapa' | 'puente' | 'puenteL';    // surrón: arriba va tapa, puente o puente en L (dos piezas de 65: una vertical y otra horizontal)
   doors?: number;                         // cantidad de puertas de parche (0 = sin puertas)
@@ -236,6 +238,14 @@ export interface FitBodyCfg {
   drawerKind?: 'manija' | 'puenteL';      // manija: 2 mm entre frentes; puente en L: 30 mm
 }
 export interface ClosetFit {
+  altoMueble?: number;    // baño: alto de los cuerpos (el cubo mide el espacio al piso + este alto)
+  cellW?: Record<string, number>; // ancho propio de un cuerpo (clave = id) cuando es menor que el de su columna; sin valor = el ancho de la columna
+  cellD?: Record<string, number>; // fondo propio de un cuerpo (clave = id); sin valor = el fondo general
+  sobreMueble?: number;   // baño: cuerpos que se activan encima del mueble (0 = un espacio libre); el de abajo mide 200, el siguiente 700 y el de arriba lo que sobre
+  flotado?: { on: boolean; alto: number }; // baño: mueble flotado; alto = espacio del mueble al piso (mm)
+  mueble?: { x0: number; ancho: number }; // baño: posición del mueble medida desde el punto 0 (esquina izquierda del muro) y su ancho propio, sin depender de la medida del muro
+  sanitario?: { on: boolean; x0: number; ancho: number }; // baño: x0 = distancia del muro auxiliar (o del extremo izquierdo del muro A si no hay) al lado del sanitario que mira a ese muro; ancho = ancho del sanitario (mm)
+  espejo?: { on: boolean; alto: number; ancho: number; desde: number }; // baño: espejo sobre el mueble; desde = altura desde el piso a su borde de abajo (mm)
   unirZocalos?: boolean;  // une los zócalos: los de los muros B y C se alargan hasta tocar el zócalo transversal del muro A (por defecto sí)
   cubes?: { A?: boolean; B?: boolean; C?: boolean }; // cubos activos por muro (por defecto los tres; B y C solo si el espacio tiene esos muros)
   armB?: ClosetFit;       // cubo del muro B (se gira desde el marco del muro A): fondo, cuerpos, zócalo...

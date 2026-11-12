@@ -681,7 +681,7 @@ export default function App() {
     const first = initialDesign.current!;
     return {
       ...first, ...c.defaults,
-      modules: [], islands: [], columns: [], closet: { ...DEFAULT_CLOSET }, fit: { ...DEFAULT_FIT }, counterExtras: {}, hasLeftClosure: false, hasRightClosure: false, hasIsland: false, lArm: 'left',
+      modules: [], islands: [], columns: [], closet: { ...DEFAULT_CLOSET }, fit: id === 'bano' ? { ...DEFAULT_FIT, depth: 480, lowerBodies: 1, upperBodies: 0, altoMueble: 600, flotado: { on: true, alto: 250 }, mueble: { x0: 700, ancho: 1000 }, sobreMueble: 3, cubes: { B: false, C: false } } : { ...DEFAULT_FIT }, counterExtras: {}, hasLeftClosure: false, hasRightClosure: false, hasIsland: false, lArm: 'left',
       specialModules: first.specialModules.map((sm, i) => ({ ...sm, active: false, name: c.specials[i] ?? sm.name })),
       appliances: first.appliances.map(ap => ({ ...ap, active: false })),
     } as DesignSnapshot;
@@ -730,7 +730,7 @@ export default function App() {
     if (h.timer) { clearTimeout(h.timer); h.timer = null; }
     h.past = []; h.future = []; h.committed = null; h.committedKey = '';
     setSection(next);
-    if (next === 'closets' || next === 'walking' || next === 'closetfit') { setFitHidden(false); setActiveView('frontal'); setWallsCardOpen(true); setWallsHidden(false); } // al entrar a closets: vista frontal con las puertas translúcidas y el formulario de muros
+    if (next === 'closets' || next === 'walking' || next === 'closetfit' || next === 'bano') { setFitHidden(false); setActiveView('frontal'); setWallsCardOpen(true); setWallsHidden(false); } // al entrar a closets: vista frontal con las puertas translúcidas y el formulario de muros
     applySnapshot(sectionStore.current[next] ?? makeSectionDefaults(next));
     setIsElementsPanelOpen(false); setIsAccessoriesPanelOpen(false); setIsViewsPanelOpen(false); setIsSpecialModulesPanelOpen(false); setIsWorkspaceModalOpen(false);
     bumpHistory();
@@ -908,7 +908,8 @@ export default function App() {
   // la forma queda guardada pero no se dibuja
   // Closet: los lados con muro o con costado salen del Espacio (muros auxiliares, L o U); el lado sin muro lleva costado propio
   const isClosetSection = cfg.id === 'closets';
-  const isFitSection = cfg.id === 'closetfit' || cfg.id === 'walking'; // el walking closet arranca como el Closet fit: cubos por cuerpos en cada muro
+  const isFitSection = cfg.id === 'closetfit' || cfg.id === 'walking' || cfg.id === 'bano'; // el walking closet y el baño arrancan como el Closet fit: cubos por cuerpos
+  const isBano = cfg.id === 'bano';
   const closetInput = useMemo(() => (isClosetSection ? {
     ...closet,
     leftWall: layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left') || hasLeftClosure,
@@ -4628,7 +4629,7 @@ export default function App() {
               {isFitSection && !fitHidden && (
                 <div {...fitDrag.handle} className="absolute right-4 bottom-4 z-30 pointer-events-auto w-64 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 p-4 space-y-3" style={{ ...fitDrag.handle.style, ...fitDrag.style }}>
                   <div className="flex items-center justify-between">
-                    <span className="flex-1 text-[11px] font-black text-slate-800 uppercase tracking-tight select-none" title="Arrastra para mover la tarjeta">⠿ Closet fit · cuerpos</span>
+                    <span className="flex-1 text-[11px] font-black text-slate-800 uppercase tracking-tight select-none" title="Arrastra para mover la tarjeta">⠿ {isBano ? 'Mueble de baño · cuerpos' : 'Closet fit · cuerpos'}</span>
                     <button onClick={() => setFitHidden(true)} className="p-1 text-slate-400 hover:text-red-500" title="Ocultar la tarjeta"><X size={16} /></button>
                   </div>
                   {(() => {
@@ -4657,8 +4658,8 @@ export default function App() {
                         <div className="grid grid-cols-2 gap-2">
                           {([
                             ['Fondo (mm)', cur.depth, (n: number) => patchCur({ depth: Math.max(200, Math.min(900, Math.round(n))) })],
-                            ['Cuerpos inferiores', cur.lowerBodies, (n: number) => patchCur({ lowerBodies: Math.max(1, Math.min(10, Math.round(n))), lowerW: undefined, lowerCells: undefined })],
-                            ['Cuerpos superiores', cur.upperBodies, (n: number) => patchCur({ upperBodies: Math.max(0, Math.min(10, Math.round(n))), upperW: undefined, upperCells: undefined })],
+                            ['Cuerpos inferiores', cur.lowerBodies, (n: number) => patchCur({ lowerBodies: Math.max(1, Math.min(10, Math.round(n))), lowerW: undefined, lowerCells: undefined, cellW: undefined, cellD: undefined })],
+                            ['Cuerpos superiores', cur.upperBodies, (n: number) => patchCur({ upperBodies: Math.max(0, Math.min(10, Math.round(n))), upperW: undefined, upperCells: undefined, cellW: undefined, cellD: undefined })],
                             ['Alto superior (mm)', cur.upperHeight, (n: number) => patchCur({ upperHeight: Math.max(100, Math.min(1200, Math.round(n))), upperCells: undefined })],
                           ] as Array<[string, number, (n: number) => void]>).map(([label, value, onCommit]) => (
                             <div key={label} className="space-y-1">
@@ -4667,12 +4668,81 @@ export default function App() {
                             </div>
                           ))}
                         </div>
+                        {isBano && sel === 'A' && (
+                          <>
+                            <div className="space-y-1">
+                              <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Alto del mueble (mm)</label>
+                              <DeferredNumber value={fit.altoMueble ?? 600} onCommit={(n) => setFit(f => ({ ...f, altoMueble: Math.max(150, Math.min(1500, Math.round(n))), lowerCells: undefined, cellW: undefined, cellD: undefined }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Cuerpos sobre el mueble</label>
+                              <DeferredNumber value={fit.sobreMueble ?? 0} onCommit={(n) => setFit(f => ({ ...f, sobreMueble: Math.max(0, Math.min(8, Math.round(n))), lowerCells: undefined, cellW: undefined, cellD: undefined }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              {([
+                                ['Mueble desde el 0 (mm)', fit.mueble?.x0 ?? 0, (n: number) => setFit(f => ({ ...f, mueble: { ancho: wallA, ...(f.mueble ?? {}), x0: Math.max(0, Math.min(wallA - 200, Math.round(n))) } }))],
+                                ['Ancho del mueble (mm)', fit.mueble?.ancho ?? wallA, (n: number) => setFit(f => ({ ...f, mueble: { x0: 0, ...(f.mueble ?? {}), ancho: Math.max(200, Math.min(wallA, Math.round(n))) } }))],
+                              ] as Array<[string, number, (n: number) => void]>).map(([label, value, onCommit]) => (
+                                <div key={label} className="space-y-1">
+                                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
+                                  <DeferredNumber value={value} onCommit={onCommit} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                                </div>
+                              ))}
+                            </div>
+                            <button type="button" onClick={() => setFit(f => ({ ...f, flotado: { alto: 250, ...(f.flotado ?? {}), on: !f.flotado?.on } }))} className={`w-full flex items-center justify-between px-3 py-1.5 rounded-full border text-[10px] font-black uppercase transition-colors ${fit.flotado?.on ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                              <span>Flotado</span>
+                              <span className={`flex items-center w-8 h-4 rounded-full p-0.5 ${fit.flotado?.on ? 'bg-white/40 justify-end' : 'bg-slate-200 justify-start'}`}><span className="w-3 h-3 rounded-full bg-white shadow" /></span>
+                            </button>
+                            {fit.flotado?.on && (
+                              <div className="space-y-1">
+                                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Espacio del mueble al piso (mm)</label>
+                                <DeferredNumber value={fit.flotado.alto} onCommit={(n) => setFit(f => ({ ...f, flotado: { ...(f.flotado ?? { on: true, alto: 250 }), on: true, alto: Math.max(0, Math.min(1200, Math.round(n))) } }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                              </div>
+                            )}
+                            <button type="button" onClick={() => setFit(f => ({ ...f, sanitario: { x0: 1000, ancho: 380, ...(f.sanitario ?? {}), on: !f.sanitario?.on } }))} className={`w-full flex items-center justify-between px-3 py-1.5 rounded-full border text-[10px] font-black uppercase transition-colors ${fit.sanitario?.on ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                              <span>Sanitario</span>
+                              <span className={`flex items-center w-8 h-4 rounded-full p-0.5 ${fit.sanitario?.on ? 'bg-white/40 justify-end' : 'bg-slate-200 justify-start'}`}><span className="w-3 h-3 rounded-full bg-white shadow" /></span>
+                            </button>
+                            {fit.sanitario?.on && <p className="text-[9px] font-bold text-slate-500 px-1">{layout === 'STRAIGHT' ? 'Se mide desde el extremo izquierdo del muro hasta el lado del sanitario.' : 'Se mide desde el muro auxiliar hasta el lado del sanitario que lo mira.'}</p>}
+                            {fit.sanitario?.on && (
+                              <div className="grid grid-cols-2 gap-2">
+                                {([
+                                  ...(true ? ([['Distancia al muro (mm)', fit.sanitario.x0, (n: number) => setFit(f => ({ ...f, sanitario: { ...(f.sanitario ?? { on: true, x0: 1000, ancho: 380 }), on: true, x0: Math.max(0, Math.min(wallA, Math.round(n))) } }))]]) as Array<[string, number, (n: number) => void]> : []),
+                                  ['Ancho (mm)', fit.sanitario.ancho, (n: number) => setFit(f => ({ ...f, sanitario: { ...(f.sanitario ?? { on: true, x0: 1000, ancho: 380 }), on: true, ancho: Math.max(200, Math.min(900, Math.round(n))) } }))],
+                                ] as Array<[string, number, (n: number) => void]>).map(([label, value, onCommit]) => (
+                                  <div key={label} className="space-y-1">
+                                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
+                                    <DeferredNumber value={value} onCommit={onCommit} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <button type="button" onClick={() => setFit(f => ({ ...f, espejo: { alto: 800, ancho: 700, desde: 1100, ...(f.espejo ?? {}), on: !f.espejo?.on } }))} className={`w-full flex items-center justify-between px-3 py-1.5 rounded-full border text-[10px] font-black uppercase transition-colors ${fit.espejo?.on ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                              <span>Espejo</span>
+                              <span className={`flex items-center w-8 h-4 rounded-full p-0.5 ${fit.espejo?.on ? 'bg-white/40 justify-end' : 'bg-slate-200 justify-start'}`}><span className="w-3 h-3 rounded-full bg-white shadow" /></span>
+                            </button>
+                            {fit.espejo?.on && (
+                              <div className="grid grid-cols-3 gap-2">
+                                {([
+                                  ['Alto (mm)', fit.espejo.alto, (n: number) => setFit(f => ({ ...f, espejo: { ...(f.espejo ?? { on: true, alto: 800, ancho: 700, desde: 1100 }), on: true, alto: Math.max(100, Math.min(2000, Math.round(n))) } }))],
+                                  ['Ancho (mm)', fit.espejo.ancho, (n: number) => setFit(f => ({ ...f, espejo: { ...(f.espejo ?? { on: true, alto: 800, ancho: 700, desde: 1100 }), on: true, ancho: Math.max(100, Math.min(3000, Math.round(n))) } }))],
+                                  ['Desde el piso (mm)', fit.espejo.desde, (n: number) => setFit(f => ({ ...f, espejo: { ...(f.espejo ?? { on: true, alto: 800, ancho: 700, desde: 1100 }), on: true, desde: Math.max(0, Math.min(2000, Math.round(n))) } }))],
+                                ] as Array<[string, number, (n: number) => void]>).map(([label, value, onCommit]) => (
+                                  <div key={label} className="space-y-1">
+                                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
+                                    <DeferredNumber value={value} onCommit={onCommit} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
                         {/* Zócalo del cubo: subensamble en forma de escalera (largueros delante y detrás con travesaños) */}
-                        <button type="button" onClick={() => patchCur({ zocalo: cur.zocalo?.on ? { ...cur.zocalo, on: false } : { alto: 80, fondo: Math.max(60, cur.depth - 100), travesanos: 3, ...(cur.zocalo ?? {}), on: true } })} className={`w-full flex items-center justify-between px-3 py-1.5 rounded-full border text-[10px] font-black uppercase transition-colors ${cur.zocalo?.on ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                        {!(isBano && fit.flotado?.on) && <button type="button" onClick={() => patchCur({ zocalo: cur.zocalo?.on ? { ...cur.zocalo, on: false } : { alto: 80, fondo: Math.max(60, cur.depth - 100), travesanos: 3, ...(cur.zocalo ?? {}), on: true } })} className={`w-full flex items-center justify-between px-3 py-1.5 rounded-full border text-[10px] font-black uppercase transition-colors ${cur.zocalo?.on ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
                           <span>Zócalo</span>
                           <span className={`flex items-center w-8 h-4 rounded-full p-0.5 ${cur.zocalo?.on ? 'bg-white/40 justify-end' : 'bg-slate-200 justify-start'}`}><span className="w-3 h-3 rounded-full bg-white shadow" /></span>
-                        </button>
-                        {cur.zocalo?.on && (
+                        </button>}
+                        {cur.zocalo?.on && !(isBano && fit.flotado?.on) && (
                           <div className="grid grid-cols-3 gap-2">
                             {([
                               ['Altura (mm)', cur.zocalo.alto, (n: number) => patchCur({ zocalo: { ...cur.zocalo!, alto: Math.max(30, Math.min(300, Math.round(n))) } })],
@@ -4710,6 +4780,31 @@ export default function App() {
                   </div>
                   {wallsCardOpen && (
                     <div className="px-4 pb-4 space-y-3">
+                      {isBano ? (
+                        // baño: muros auxiliares izquierdo y derecho, cada uno se activa o no por separado
+                        (() => {
+                          const hasL = layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left'), hasR = layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right');
+                          const setAux = (l: boolean, r: boolean) => {
+                            // el mueble se pega al muro auxiliar que se acaba de pedir (sin crear cubos en ese muro)
+                            if (l && !hasL) setFit(f => ({ ...f, mueble: { ancho: wallA, ...(f.mueble ?? {}), x0: 0 } }));
+                            else if (r && !hasR) setFit(f => ({ ...f, mueble: { ancho: wallA, ...(f.mueble ?? {}), x0: Math.max(0, wallA - (f.mueble?.ancho ?? wallA)) } }));
+                            if (l && r) chooseLayout('U_SHAPE');
+                            else if (l || r) { setLArm(l ? 'left' : 'right'); chooseLayout('L_SHAPE'); }
+                            else chooseLayout('STRAIGHT');
+                          };
+                          return (
+                            <div className="space-y-1.5">
+                              {([['izquierdo', hasL, () => setAux(!hasL, hasR)], ['derecho', hasR, () => setAux(hasL, !hasR)]] as Array<[string, boolean, () => void]>).map(([name, on, toggle]) => (
+                                <button key={name} type="button" onClick={toggle} className={`w-full flex items-center justify-between px-3 py-1.5 rounded-full border text-[10px] font-black uppercase transition-colors ${on ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                                  <span>Muro auxiliar {name}</span>
+                                  <span className={`flex items-center w-8 h-4 rounded-full p-0.5 ${on ? 'bg-white/40 justify-end' : 'bg-slate-200 justify-start'}`}><span className="w-3 h-3 rounded-full bg-white shadow" /></span>
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        <>
                       <div className="grid grid-cols-3 gap-1.5">
                         {(['STRAIGHT', 'L_SHAPE', 'U_SHAPE'] as LayoutType[]).filter(l => cfg.layouts.includes(l)).map(l => (
                           <button key={l} onClick={() => chooseLayout(l)} className={`py-1.5 rounded-lg text-[10px] font-black border-2 ${layout === l ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{l === 'STRAIGHT' ? 'Recto' : l === 'L_SHAPE' ? 'En L' : 'En U'}</button>
@@ -4722,11 +4817,13 @@ export default function App() {
                           ))}
                         </div>
                       )}
+                        </>
+                      )}
                       <div className="grid grid-cols-2 gap-2">
                         {([
                           ['Muro A (mm)', wallA, (n: number) => setWallA(Math.max(500, Math.round(n))), true],
-                          ['Muro B (mm)', wallB, (n: number) => setWallB(Math.max(500, Math.round(n))), layout !== 'STRAIGHT'],
-                          ['Muro C (mm)', wallC, (n: number) => setWallC(Math.max(500, Math.round(n))), layout === 'U_SHAPE'],
+                          [isBano ? 'Auxiliar izquierdo (mm)' : 'Muro B (mm)', wallB, (n: number) => setWallB(Math.max(500, Math.round(n))), isBano ? (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')) : layout !== 'STRAIGHT'],
+                          [isBano ? 'Auxiliar derecho (mm)' : 'Muro C (mm)', wallC, (n: number) => setWallC(Math.max(500, Math.round(n))), isBano ? (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')) : layout === 'U_SHAPE'],
                           ['Altura (mm)', spaceHeight, (n: number) => setSpaceHeight(Math.max(1000, Math.round(n))), true],
                         ] as Array<[string, number, (n: number) => void, boolean]>).filter(r => r[3]).map(([label, value, onCommit]) => (
                           <div key={label} className="space-y-1">
@@ -4735,7 +4832,7 @@ export default function App() {
                           </div>
                         ))}
                       </div>
-                      {(isFitSection ? (fitInput?.leftWall || fitInput?.rightWall) : (closetInput?.leftWall || closetInput?.rightWall)) && (
+                      {!isFitSection && (closetInput?.leftWall || closetInput?.rightWall) && (
                         <div className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl">
                           <div>
                             <label className="text-[10px] font-black text-slate-700 uppercase tracking-tight">Dilatación 15 × 15</label>
