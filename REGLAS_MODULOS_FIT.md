@@ -17,7 +17,7 @@ Doble clic en un cuerpo (cubo) del Closet fit abre el formulario: **¿Es marco p
 ## Surrón (módulo de laterales con puentes)
 - Preguntas, en orden:
   1. **Base completa o puente inferior.** Regla: con puertas → base completa; con cajones → solo puentes inferiores (uno al frente y uno atrás). Si el módulo va al piso → preguntar si lleva zócalo.
-  2. **Puertas**: 1 o más; horizontal o vertical. Con más de 3 (por confirmar si 3 entra) → preguntar si la pieza vertical que sostiene las puertas de parche es **puente vertical** o **costado completo**. Va entre la base y la tapa; normalmente van dos pegadas (dos puentes verticales) o un puente vertical + un costado vertical.
+  2. **Puertas**: 1 o más; horizontal o vertical. Con puertas lado a lado: pieza vertical (dos pegadas: dos puentes verticales, o puente + costado) en las uniones donde empieza una puerta (su bisagra); el cierre del medio (donde se juntan las puertas de la izquierda con las de la derecha) NO lleva pieza salvo que se pida con el botón "¿Pieza vertical en medio de las puertas?" (por defecto no). Con 2 puertas la única unión es el cierre: sin pieza por defecto.
   3. **Entrepaños**: cantidad; van a 70 mm del lateral (retranqueo por confirmar, ver preguntas).
   4. **Cajones**: cantidad y tipo de frente:
      - **Con manija**: espacio entre frentes de **2 mm**.
@@ -55,7 +55,12 @@ Surrón de puertas 728 × 905 × 532: 2 puertas de parche, entrepaños a 298 y 6
 - Cada módulo puede llevar dilatada (15 x 70) o visto (15 o 19) a cada lado; restan ancho al módulo.
 - El sanitario y el espejo del baño son ambientación: no son piezas del mueble ni van al listado de corte.
 
+## Puertas: simetría y abertura (2026-11-12)
+- Por defecto las aberturas son simétricas: con cantidad par, la mitad de la izquierda con bisagra a la izquierda y la mitad de la derecha a la derecha; con cantidad impar, la del centro con abertura horizontal (bisagra arriba, líneas en V).
+- Con más de 2 puertas, "Horizontal" es abertura horizontal (las puertas siguen lado a lado, bisagra arriba).
+- Un clic en una puerta (con el módulo seleccionado) cambia su abertura: izquierda, derecha o arriba.
+- Cada cubo es independiente: al dividirlo solo se divide él; al eliminar una parte queda un espacio libre.
+
 ## Preguntas abiertas
-- Con 3 puertas, ¿se pregunta por la pieza vertical o solo con 4 o más?
 - Medida de cada puerta con 2 o más hojas (reparto del ancho y luces entre hojas).
 - Cantidad y posición de los puentes en el surrón de cajones (la lista del plano trae 1 puente de 698 × 80).

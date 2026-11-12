@@ -1300,16 +1300,39 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       for (let c = i + 1; c < row.length; c++) if (has(c)) { r = xs[c]; break; }
       return [l, r];
     };
+    // un cuerpo (celda) puede dividirse en varios lado a lado sin tocar el resto de su columna (`subs`): cada parte es un cuerpo independiente
+    const emitCell = (low: boolean, i: number, j: number, hh: number, w: number, xa: number, top: number, count: number) => {
+      const nm = low ? 'inf' : 'sup', cellKey = `${pre}${nm}-${i}-${j}`, h = Math.abs(hh);
+      const wc = hh >= 0 ? Math.min(w, f.cellW?.[cellKey] ?? w) : w;
+      const dc = hh >= 0 ? Math.max(100, f.cellD?.[cellKey] ?? dpt) : dpt;
+      const label = `${low ? 'inferior' : 'superior'} ${i + 1}${count > 1 ? '.' + (j + 1) : ''}`;
+      const subsW = hh >= 0 ? f.subs?.[cellKey] : undefined;
+      if (subsW && subsW.length > 1) {
+        const tot = subsW.reduce((a, b2) => a + b2, 0);
+        let sx = xa;
+        subsW.forEach((sw, k) => {
+          const wk = (sw * wc) / tot, sid = `${cellKey}-s${k}`, cfgS = f.bodies?.[sid];
+          const gapS = !!f.gaps?.[sid]; // parte eliminada: queda un espacio libre del mismo ancho, sin alargar a la vecina
+          if (cfgS && !gapS) fitBodyParts(cfgS, sid, sx, top, wk, h, dc, !!f.converted, spanOf(low, i)).forEach(b2 => boxes.push(b2));
+          put(sid, `${gapS ? 'Hueco' : 'Cuerpo'} ${label}.${k + 1}`, sx, top, wk, h, dc);
+          sx += wk;
+        });
+        return;
+      }
+      const cfgB = hh >= 0 ? f.bodies?.[cellKey] : undefined;
+      if (cfgB) fitBodyParts(cfgB, cellKey, xa, top, wc, h, dc, !!f.converted, spanOf(low, i)).forEach(b2 => boxes.push(b2));
+      put(cellKey, `${hh < 0 ? 'Hueco' : 'Cuerpo'} ${label}`, xa, top, wc, h, dc);
+    };
     let xa = ins.left;
     rows.lower.forEach((w, i) => {
       let top = cells.lowerHs[i];
-      cells.lower[i].forEach((hh, j) => { const h = Math.abs(hh); top -= h; const wc = hh >= 0 ? Math.min(w, f.cellW?.[`${pre}inf-${i}-${j}`] ?? w) : w; const dc = hh >= 0 ? Math.max(100, f.cellD?.[`${pre}inf-${i}-${j}`] ?? dpt) : dpt; const cfgB = hh >= 0 ? f.bodies?.[`${pre}inf-${i}-${j}`] : undefined; if (cfgB) fitBodyParts(cfgB, `${pre}inf-${i}-${j}`, xa, top, wc, h, dc, !!f.converted, spanOf(true, i)).forEach(b => boxes.push(b)); put(`${pre}inf-${i}-${j}`, `${hh < 0 ? 'Hueco' : 'Cuerpo'} inferior ${i + 1}${cells.lower[i].length > 1 ? '.' + (j + 1) : ''}`, xa, top, wc, h, dc); });
+      cells.lower[i].forEach((hh, j) => { top -= Math.abs(hh); emitCell(true, i, j, hh, w, xa, top, cells.lower[i].length); });
       xa += w;
     });
     xa = ins.left;
     rows.upper.forEach((w, i) => {
       let top = cells.Hf;
-      cells.upper[i].forEach((hh, j) => { const h = Math.abs(hh); top -= h; const wc = hh >= 0 ? Math.min(w, f.cellW?.[`${pre}sup-${i}-${j}`] ?? w) : w; const dc = hh >= 0 ? Math.max(100, f.cellD?.[`${pre}sup-${i}-${j}`] ?? dpt) : dpt; const cfgB = hh >= 0 ? f.bodies?.[`${pre}sup-${i}-${j}`] : undefined; if (cfgB) fitBodyParts(cfgB, `${pre}sup-${i}-${j}`, xa, top, wc, h, dc, !!f.converted, spanOf(false, i)).forEach(b => boxes.push(b)); put(`${pre}sup-${i}-${j}`, `${hh < 0 ? 'Hueco' : 'Cuerpo'} superior ${i + 1}${cells.upper[i].length > 1 ? '.' + (j + 1) : ''}`, xa, top, wc, h, dc); });
+      cells.upper[i].forEach((hh, j) => { top -= Math.abs(hh); emitCell(false, i, j, hh, w, xa, top, cells.upper[i].length); });
       xa += w;
     });
     };
@@ -1432,6 +1455,15 @@ export function fitTop(fit: ClosetFit, spaceHeight: number) {
 }
 
 
+/** Abertura de la puerta k de n (lado a lado): por defecto simétrica (par: izquierda y derecha en espejo; impar: la del centro con bisagra arriba) o la que se haya cambiado con un clic */
+export function doorOpening(c: { aberturas?: Record<string, 'izq' | 'der' | 'sup'>; hinge?: 'izq' | 'der' }, k: number, n: number): 'izq' | 'der' | 'sup' {
+  const o = c.aberturas?.[String(k)];
+  if (o) return o;
+  if (n <= 1) return c.hinge ?? 'izq';
+  if (n % 2 === 1 && k === (n - 1) / 2) return 'sup';
+  return k < n / 2 ? 'izq' : 'der';
+}
+
 /**
  * Piezas de un cuerpo del Closet fit configurado como marco puerta o surrón (reglas del carpintero, ver REGLAS_MODULOS_FIT.md).
  * Sin convertir solo salen las placas representativas (puertas y frentes de cajón); al convertir salen todas las piezas reales.
@@ -1514,7 +1546,8 @@ export function fitBodyParts(c: FitBodyCfg, id: string, x: number, z: number, w:
   } else if (doors > 0) {
     // con puente en L arriba la puerta pierde 30 mm por arriba (deja ver el puente en L)
     const dh = h - zh - 3 - (!marco && c.top === 'puenteL' ? 30 : 0);
-    if (c.doorDir === 'horizontal') {
+    // horizontal: con 1 o 2 puertas van una sobre otra; con más de 2 siguen lado a lado pero con abertura horizontal (bisagra arriba)
+    if (c.doorDir === 'horizontal' && doors <= 2) {
       const eh = (dh - (doors - 1) * 2) / doors;
       for (let k = 0; k < doors; k++) add(`pu${k}`, real('Puerta rep fit', 'Puerta fit'), x + 1, dpt, z + zh + 1 + k * (eh + 2), w - 2, E, eh);
     } else {
@@ -1562,10 +1595,17 @@ export function fitBodyParts(c: FitBodyCfg, id: string, x: number, z: number, w:
     if (camisero && topM > 0) add('tubc', 'Tubo camisero fit', sx0, dpt / 2 - 12.5, topM - E - 40 - 25, sw, 25, 25);
     if (pantalonero) add('tubp', 'Tubo pantalonero fit', sx0, dpt / 2 - 12.5, 900 - 12.5, sw, 25, 25);
   }
-  // con más de 3 puertas lado a lado: pieza vertical en cada unión (dos pegadas: dos puentes verticales, o puente + costado)
-  if (doors > 3 && c.doorDir !== 'horizontal') {
+  // puertas lado a lado: pieza vertical en las uniones donde empieza una puerta (su bisagra) y, solo si se pide, en el cierre del medio
+  // (donde se juntan las puertas de la izquierda con las de la derecha); dos pegadas: dos puentes verticales, o puente + costado
+  if (doors >= 2 && (c.doorDir !== 'horizontal' || doors > 2)) {
     const vh = h - zh - 2 * E;
+    // simetría: con cantidad par, la mitad de la izquierda lleva la bisagra a la izquierda y la mitad de la derecha a la derecha; con cantidad impar la puerta
+    // del centro tiene abertura horizontal (bisagra arriba) y las demás se espejan. Se pone pieza vertical donde empieza una puerta con bisagra; las demás uniones son cierres
+    const hingeL = (j: number) => doorOpening(c, j, doors) === 'izq', hingeR = (j: number) => doorOpening(c, j, doors) === 'der';
     for (let k = 1; k < doors; k++) {
+      const isClosure = !(hingeL(k) || hingeR(k - 1));
+      const need = c.doorDir !== 'horizontal' ? (!isClosure || !!c.vertMedio) : (isClosure && !!c.vertMedio);
+      if (!need) continue;
       const dx = x + (w * k) / doors - E / 2;
       add(`dv${k}a`, c.divider === 'costado' ? 'Costado vertical fit' : 'Puente vertical fit', dx - E / 2, c.divider === 'costado' ? yF : dpt - 80, z + zh + E, E, c.divider === 'costado' ? depth : 80, vh);
       add(`dv${k}b`, 'Puente vertical fit', dx + E / 2, dpt - 80, z + zh + E, E, 80, vh);

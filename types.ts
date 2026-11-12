@@ -230,6 +230,8 @@ export interface FitBodyCfg {
   doorType?: 'parche' | 'corredizas';     // marco puerta: puertas de parche (por defecto) o corredizas en dos rieles
   doorDir?: 'vertical' | 'horizontal';    // vertical = una a la izquierda y otra a la derecha; horizontal = una sobre otra
   hinge?: 'izq' | 'der';                  // con una sola puerta vertical: de qué lado está la bisagra (por defecto izquierda)
+  aberturas?: Record<string, 'izq' | 'der' | 'sup'>; // abertura de cada puerta (índice) cambiada con un clic: bisagra izquierda, derecha o arriba; sin valor = la simétrica por defecto
+  vertMedio?: boolean;                    // pieza vertical entre las puertas (en medio de la puerta derecha y la izquierda); por defecto no lleva
   divider?: 'puentes' | 'costado';        // con más de 3 puertas: pieza vertical entre base y tapa (dos puentes verticales pegados, o puente + costado)
   shelves?: number;                       // entrepaños (fondo = fondo del módulo − 70)
   maletero?: number;                      // marco puerta: distancia desde la parte superior del cuerpo hacia abajo hasta la cara de arriba del maletero (mm); sin valor = sin maletero
@@ -240,6 +242,8 @@ export interface FitBodyCfg {
 export interface ClosetFit {
   altoMueble?: number;    // baño: alto de los cuerpos (el cubo mide el espacio al piso + este alto)
   cellW?: Record<string, number>; // ancho propio de un cuerpo (clave = id) cuando es menor que el de su columna; sin valor = el ancho de la columna
+  gaps?: Record<string, boolean>; // partes de un cuerpo dividido que se eliminaron: quedan como espacio libre (clave = id-sN)
+  subs?: Record<string, number[]>; // un cuerpo dividido en varios lado a lado, solo él (clave = id del cuerpo; valores = anchos en mm); sus partes se llaman id-s0, id-s1...
   cellD?: Record<string, number>; // fondo propio de un cuerpo (clave = id); sin valor = el fondo general
   sobreMueble?: number;   // baño: cuerpos que se activan encima del mueble (0 = un espacio libre); el de abajo mide 200, el siguiente 700 y el de arriba lo que sobre
   flotado?: { on: boolean; alto: number }; // baño: mueble flotado; alto = espacio del mueble al piso (mm)

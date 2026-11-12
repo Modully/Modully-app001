@@ -6,7 +6,7 @@ import { OrbitControls, Grid, Environment, Text, Edges, PerspectiveCamera, Ortho
 import * as THREE from 'three';
 import { IslandItem, KitchenModule, Appliance, ApplianceType, LayoutType, WallName } from './types';
 import type { CounterEdge, CounterExtras, closetDerived } from './boxes';
-import { closetSectionOf, closetCajoneroIndex, closetTorreIndex, fitRows, fitCells, fitInsets, fitBodyParts } from './boxes';
+import { closetSectionOf, closetCajoneroIndex, closetTorreIndex, fitRows, fitCells, fitInsets, fitBodyParts, doorOpening } from './boxes';
 import type { ClosetConfig, ClosetFit, FitBodyCfg } from './types';
 import { Box, findModuleBox, boxesBounds, applianceCenter, counterTopZ, CORNER_BLIND_OFFSET, WALL_THICKNESS } from './boxes';
 import { COLORS } from './constants';
@@ -1579,7 +1579,7 @@ const DraftNum: React.FC<{ value: number; onCommit: (n: number) => void; min?: n
     if (apply && draft !== null && draft.trim() !== '' && Number.isFinite(n)) onCommit(Math.max(min, Math.min(max, Math.round(n))));
   };
   return (
-    <input type="number" className={className} value={draft ?? value} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setDraft(e.target.value)} onBlur={() => finish(true)}
+    <input type="number" min={min} max={max} className={className} value={draft ?? value} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setDraft(e.target.value)} onBlur={() => finish(true)}
       onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') finish(false); }} />
   );
 };
@@ -1618,9 +1618,10 @@ const FitBodyForm: React.FC<{ label: string; cfg: FitBodyCfg | undefined; onChan
           {isSurron && row('El surrón lleva', <><button className={btn(drawers === 0)} onClick={() => set({ doors: cfg.doors || 2, drawers: 0 })}>Puertas</button><button className={btn(drawers > 0)} onClick={() => set({ drawers: cfg.drawers || 3, doors: 0, base: 'puentes' })}>Cajones</button></>)}
           {cfg.kind === 'marco' && row('Tipo de puertas', <><button className={btn(cfg.doorType !== 'corredizas')} onClick={() => set({ doorType: 'parche', doors: Math.min(2, cfg.doors || 2) })}>De parche</button><button className={btn(cfg.doorType === 'corredizas')} onClick={() => set({ doorType: 'corredizas', doors: Math.max(2, cfg.doors || 2) })}>Corredizas</button></>)}
           {(cfg.kind === 'marco' || drawers === 0) && row('Cantidad de puertas', <>{num(cfg.doors, (n) => set({ doors: cfg.doorType === 'corredizas' ? Math.max(2, n) : n }), cfg.doorType === 'corredizas' ? 2 : 0, cfg.kind === 'marco' ? (cfg.doorType === 'corredizas' ? 6 : 2) : 8)}</>)}
-          {doors > 0 && cfg.doorType !== 'corredizas' && row('Puertas', <><button className={btn((cfg.doorDir ?? 'vertical') === 'vertical')} onClick={() => set({ doorDir: 'vertical' })}>Vertical (izq/der)</button><button className={btn(cfg.doorDir === 'horizontal')} onClick={() => set({ doorDir: 'horizontal' })}>Horizontal (una sobre otra)</button></>)}
+          {doors > 0 && cfg.doorType !== 'corredizas' && row('Puertas', <><button className={btn((cfg.doorDir ?? 'vertical') === 'vertical')} onClick={() => set({ doorDir: 'vertical' })}>Vertical (izq/der)</button><button className={btn(cfg.doorDir === 'horizontal')} onClick={() => set({ doorDir: 'horizontal' })}>{doors > 2 ? 'Horizontal (abertura horizontal)' : 'Horizontal (una sobre otra)'}</button></>)}
           {doors === 1 && cfg.doorDir !== 'horizontal' && row('Bisagra de la puerta', <><button className={btn((cfg.hinge ?? 'izq') === 'izq')} onClick={() => set({ hinge: 'izq' })}>Izquierda</button><button className={btn(cfg.hinge === 'der')} onClick={() => set({ hinge: 'der' })}>Derecha</button></>)}
-          {isSurron && doors > 3 && cfg.doorDir !== 'horizontal' && row('Pieza vertical entre puertas', <><button className={btn((cfg.divider ?? 'puentes') === 'puentes')} onClick={() => set({ divider: 'puentes' })}>Puente vertical</button><button className={btn(cfg.divider === 'costado')} onClick={() => set({ divider: 'costado' })}>Costado completo</button></>)}
+          {isSurron && doors >= 2 && (cfg.doorDir !== 'horizontal' || doors > 2) && row('¿Pieza vertical en medio de las puertas?', <><button className={btn(!cfg.vertMedio)} onClick={() => set({ vertMedio: false })}>Sin pieza</button><button className={btn(!!cfg.vertMedio)} onClick={() => set({ vertMedio: true })}>Con pieza vertical</button></>)}
+          {isSurron && doors >= 2 && (cfg.vertMedio || (doors >= 3 && cfg.doorDir !== 'horizontal')) && (cfg.doorDir !== 'horizontal' || doors > 2) && row('Pieza vertical entre puertas', <><button className={btn((cfg.divider ?? 'puentes') === 'puentes')} onClick={() => set({ divider: 'puentes' })}>Puente vertical</button><button className={btn(cfg.divider === 'costado')} onClick={() => set({ divider: 'costado' })}>Costado completo</button></>)}
           {isSurron && drawers > 0 && row('Cantidad de cajones', <>{num(cfg.drawers, (n) => set({ drawers: Math.max(1, n), base: 'puentes' }), 1, 8)}</>)}
           {isSurron && drawers > 0 && row('Frentes de cajón', <><button className={btn((cfg.drawerKind ?? 'manija') === 'manija')} onClick={() => set({ drawerKind: 'manija' })}>Manija</button><button className={btn(cfg.drawerKind === 'puenteL')} onClick={() => set({ drawerKind: 'puenteL' })}>Adicionar puentes en L</button></>)}
           {(cfg.kind === 'marco' || (isSurron && drawers === 0)) && (
@@ -2585,9 +2586,26 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   const [fitLocks, setFitLocks] = useState<Record<string, { w?: boolean; h?: boolean }>>({}); // candados: medidas que no deben cambiar al editar otras
   const fitLocked = (id: string, kind: 'w' | 'h') => !!fitLocks[id]?.[kind];
   // Editar las medidas de un cuerpo del Closet fit desde su nota: el ancho se reparte con el vecino y el alto con la celda vecina (o con el cuerpo de arriba / abajo)
-  const fitEdit = (id: string, patch: { width?: number; height?: number }) => {
+  const fitEdit = (id: string, patch: { width?: number; height?: number }): void => {
     if (!fitApi) return;
     const f = fitApi.fit;
+    // parte de un cuerpo dividido (id-sN): el alto es el de su celda y el ancho se reparte solo con sus hermanas
+    const subM = /^(fit-(?:inf|sup)-\d+-\d+)-s(\d+)$/.exec(id);
+    if (subM) {
+      if (patch.height != null) return fitEdit(subM[1], patch);
+      const cellKey = subM[1], k = Number(subM[2]), cur = f.subs?.[cellKey];
+      const bx = boxes.find(x => x.id === cellKey + '-s0');
+      if (patch.width != null && cur && cur.length > 1 && bx) {
+        const tot = cur.reduce((a, b) => a + b, 0), cellW = boxes.filter(x => x.id.startsWith(cellKey + '-s')).reduce((a, x) => a + x.sx, 0);
+        const ws = cur.map(x => (x * cellW) / tot);
+        const nb = k < ws.length - 1 ? k + 1 : k - 1;
+        const pair = ws[k] + ws[nb];
+        const nw = Math.min(Math.max(patch.width, 100), pair - 100);
+        ws[k] = nw; ws[nb] = pair - nw;
+        fitApi.onChange({ ...f, subs: { ...(f.subs ?? {}), [cellKey]: ws } });
+      }
+      return;
+    }
     const rows = fitRows(f, wallA);
     const cs = fitCells(f, wallA, spaceHeight);
     const parts = id.split('-');
@@ -2652,6 +2670,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   const fitEqualizeMany = (ids: string[]): string => {
     if (!fitApi || ids.length < 2) return '';
     if (ids.some(i => !i.startsWith('fit-'))) return 'Igualar medidas solo funciona en el muro A por ahora';
+    if (ids.some(i => /-s\d+$/.test(i))) return 'Igualar no funciona con cuerpos divididos; usa sus notas de medidas';
     const f = fitApi.fit;
     const rows = fitRows(f, wallA);
     const cs = fitCells(f, wallA, spaceHeight);
@@ -2703,7 +2722,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   const [fitMulti, setFitMulti] = useState<string[]>([]); // cuerpos elegidos con shift + clic para igualarlos (se pintan como el seleccionado)
   // Clic derecho sobre un cubo del Closet fit / baño: el cubo se convierte en un espacio libre (como el espacio bajo un mueble flotado); clic derecho sobre un espacio lo vuelve cubo
   const fitToggleGap = (id: string) => {
-    if (!fitApi || !id.startsWith('fit-')) return;
+    if (!fitApi || !id.startsWith('fit-') || /-s\d+$/.test(id)) return; // las partes de un cuerpo dividido se quitan con su X
     const f = fitApi.fit;
     const rows = fitRows(f, wallA);
     const cs = fitCells(f, wallA, spaceHeight);
@@ -2999,7 +3018,26 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               onClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setCajoneroSel(closetSectionOf(b.name) === 'cajonero' ? closetCajoneroIndex(b.name) : 0); },
               onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; },
               onPointerOut: () => { document.body.style.cursor = 'auto'; },
-            } : closetForm ? {} : fitApi && (b.name.startsWith('Cuerpo ') || b.name.startsWith('Hueco ')) ? {} : fitIsolate && b.id.startsWith(fitIsolate + '-') ? {} : { raycast: () => null })}
+            } : closetForm ? {} : fitApi && (b.name.startsWith('Cuerpo ') || b.name.startsWith('Hueco ')) ? {} : fitIsolate && b.id.startsWith(fitIsolate + '-') ? {} : (b.name === 'Puerta rep fit' || b.name === 'Puerta fit') && fitApi && !measureMode ? {} : { raycast: () => null })}
+            {...((b.name === 'Puerta rep fit' || b.name === 'Puerta fit') && fitApi && !measureMode && !fitIsolate ? {
+              // clic en una puerta: si su cuerpo está seleccionado cambia la abertura de esa puerta (bisagra izquierda, derecha o arriba); si no, selecciona el cuerpo
+              onClick: (e: ThreeEvent<MouseEvent>) => {
+                const ne = e.nativeEvent as MouseEvent | undefined;
+                if (ne?.shiftKey || ne?.altKey) return; // shift y alt siguen siendo para igualar y copiar: pasan al cuerpo
+                e.stopPropagation();
+                const m = /^(.*)-pu(\d+)$/.exec(b.id);
+                if (!m) return;
+                if (ne?.detail === 3) { setFitIsolate(m[1]); setFitForm(m[1]); setFitSel(m[1]); return; }
+                if (ne && ne.detail >= 2) return;
+                const cfgP = fitApi.fit.bodies?.[m[1]];
+                if (fitSel !== m[1] || !cfgP || cfgP.doorType === 'corredizas' || (cfgP.doorDir === 'horizontal' && (cfgP.doors ?? 1) <= 2)) { setFitSel(m[1]); return; }
+                const k = Number(m[2]), n = Math.max(1, cfgP.doors ?? 1), cur = doorOpening(cfgP, k, n), next = cur === 'izq' ? 'der' : cur === 'der' ? 'sup' : 'izq';
+                fitApi.onChange({ ...fitApi.fit, bodies: { ...(fitApi.fit.bodies ?? {}), [m[1]]: { ...cfgP, aberturas: { ...(cfgP.aberturas ?? {}), [k]: next } } } });
+              },
+              onDoubleClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); const m = /^(.*)-pu(\d+)$/.exec(b.id); if (m) setFitForm(m[1]); },
+              onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; },
+              onPointerOut: () => { document.body.style.cursor = 'auto'; },
+            } : {})}
             {...(fitIsolate && b.id.startsWith(fitIsolate + '-') ? {
               // clic sostenido sobre una pieza del módulo aislado: se oculta
               onPointerDown: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); if (isoTimer.current) clearTimeout(isoTimer.current); isoTimer.current = setTimeout(() => setIsoHidden(prev => (prev.includes(b.id) ? prev : [...prev, b.id])), 450); },
@@ -3039,8 +3077,9 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               const hw = b.sx / 2000, hh = b.sz / 2000, zf = b.sy / 2000 + 0.002;
               let pts: [number, number][];
               // el vértice queda en el borde libre (lado de la manija) y las líneas abren hacia las esquinas del lado de la bisagra
-              if (cfgD.doorDir === 'horizontal') pts = k < n - 1 || n === 1 ? [[-hw, hh], [0, -hh], [hw, hh]] : [[-hw, -hh], [0, hh], [hw, -hh]]; // arriba: bisagra arriba; la de abajo: bisagra abajo
-              else pts = (n === 1 ? (cfgD.hinge ?? 'izq') === 'izq' : k < n / 2) ? [[-hw, hh], [hw, 0], [-hw, -hh]] : [[hw, hh], [-hw, 0], [hw, -hh]];                                         // bisagra a la izquierda las de la izquierda y a la derecha las de la derecha
+              if (cfgD.doorDir === 'horizontal' && n > 2) pts = [[-hw, hh], [0, -hh], [hw, hh]]; // más de 2 puertas con abertura horizontal: lado a lado, bisagra arriba y líneas en V
+              else if (cfgD.doorDir === 'horizontal') pts = k < n - 1 || n === 1 ? [[-hw, hh], [0, -hh], [hw, hh]] : [[-hw, -hh], [0, hh], [hw, -hh]]; // arriba: bisagra arriba; la de abajo: bisagra abajo
+              else { const op = doorOpening(cfgD, k, n); pts = op === 'sup' ? [[-hw, hh], [0, -hh], [hw, hh]] : op === 'izq' ? [[-hw, hh], [hw, 0], [-hw, -hh]] : [[hw, hh], [-hw, 0], [hw, -hh]]; } // la abertura simétrica por defecto o la que se cambió con un clic
               return <Line points={pts.map(([x, y]) => [x, y, zf] as [number, number, number])} color="#64748b" lineWidth={1} dashed dashSize={0.03} gapSize={0.025} transparent opacity={0.45} raycast={() => null} />;
             })()}
             {fitAsk && fitAsk.ids[fitAsk.ids.length - 1] === b.id && viewMode === 'frontal' && (
@@ -3226,6 +3265,31 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
                 // si esa línea ya la controla una flecha doble, la sencilla sobra
                 if (!(single && ((limit && Math.abs(limit.at - toX(acc)) < 0.003) || fHi - fLo < 3)) && !(single && doublePos.some(d => Math.abs(d.pos - acc) < 1 && Math.min(fHi, d.hi) - Math.max(fLo, d.lo) > 1))) nodes.push(<FitJunction key={`fj-${lower ? 'l' : 'u'}-${k}`} position={[toX(acc), yMid / 1000, frontZ]} axis={[1, 0, 0]} locked={edgeLocked(lower, k)} single={single} limit={limit} posMm={acc} group={lower ? 'l' : 'u'} begin={beginEdge(lower, k, !!single, single ? (nbFree ? 'r' : 'l') : undefined)} controlsRef={controlsRef} />);
               }
+              // contacto entre las partes de un cuerpo dividido (independientes del resto de la columna): flechas dobles horizontales
+              {
+                let topC = bodyTop; const x0c = fo + row.slice(0, k).reduce((a, b) => a + b, 0);
+                cells[k].forEach((hc, jj) => {
+                  const cellKey = `fit-${lower ? 'inf' : 'sup'}-${k}-${jj}`, subsW = hc > 0 ? f.subs?.[cellKey] : undefined;
+                  if (subsW && subsW.length > 1) {
+                    const wc0 = Math.min(row[k], f.cellW?.[cellKey] ?? row[k]), tot0 = subsW.reduce((a, b) => a + b, 0), ys = (topC - Math.abs(hc) / 2) / 1000;
+                    let acc3 = x0c;
+                    for (let kk = 0; kk < subsW.length - 1; kk++) {
+                      acc3 += (subsW[kk] * wc0) / tot0;
+                      const accK = acc3, kk2 = kk;
+                      const beginSub = () => {
+                        const baseWs = subsW.map(x => (x * wc0) / tot0);
+                        return (d: number, exact?: boolean) => {
+                          const dd = Math.max(-(baseWs[kk2] - 100), Math.min(baseWs[kk2 + 1] - 100, d));
+                          const ws = [...baseWs]; ws[kk2] = exact ? baseWs[kk2] + dd : Math.round((baseWs[kk2] + dd) / 5) * 5; ws[kk2 + 1] = baseWs[kk2] + baseWs[kk2 + 1] - ws[kk2];
+                          fitApi.onChange({ ...f, subs: { ...(f.subs ?? {}), [cellKey]: ws } });
+                        };
+                      };
+                      nodes.push(<FitJunction key={`fs-${cellKey}-${kk}`} position={[toX(accK), ys, frontZ]} axis={[1, 0, 0]} posMm={accK} group={`s-${cellKey}`} begin={beginSub} controlsRef={controlsRef} />);
+                    }
+                  }
+                  topC -= Math.abs(hc);
+                });
+              }
               // contacto entre celdas apiladas del mismo cuerpo: flecha doble vertical
               let top = bodyTop;
               const cx = fo + row.slice(0, k).reduce((a, b) => a + b, 0) + row[k] / 2;
@@ -3258,7 +3322,35 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             const lower = parts[1] === 'inf', i = Number(parts[2]), j = Number(parts[3]);
             const row = lower ? rows.lower : rows.upper;
             // dividir en dos cuerpos uno al lado del otro (botón de arriba a la derecha)
+            // cada cuerpo es independiente: si la columna tiene varios cuerpos (o ya está dividido), solo se divide ese cuerpo; si la columna tiene uno solo, se divide la columna
+            const cellKey = `fit-${lower ? 'inf' : 'sup'}-${i}-${j}`, subM2 = /-s(\d+)$/.exec(sel.id), subIdx = subM2 ? Number(subM2[1]) : -1;
+            const subsCur = f.subs?.[cellKey];
+            const cellWidth = (subsCur ? boxes.filter(x => x.id.startsWith(cellKey + '-s')).reduce((a, x) => a + x.sx, 0) : sel.sx);
+            const subWs = () => { const tot = (subsCur ?? [1]).reduce((a, b) => a + b, 0); return (subsCur ?? [1]).map(x => (x * cellWidth) / tot); };
+            // al cambiar la cantidad de partes se renumeran: se conserva la configuración y el hueco de cada una (map: índice viejo -> índice nuevo, null = se pierde)
+            const remapParts = (map: (k: number) => number | null, dup?: { from: number; to: number }) => {
+              const bodies = { ...(f.bodies ?? {}) }, gaps = { ...(f.gaps ?? {}) };
+              const oldB: Record<number, FitBodyCfg | undefined> = {}, oldG: Record<number, boolean> = {};
+              (subsCur ?? []).forEach((_, k) => { oldB[k] = bodies[`${cellKey}-s${k}`]; oldG[k] = !!gaps[`${cellKey}-s${k}`]; delete bodies[`${cellKey}-s${k}`]; delete gaps[`${cellKey}-s${k}`]; });
+              (subsCur ?? []).forEach((_, k) => { const nk = map(k); if (nk === null) return; if (oldB[k]) bodies[`${cellKey}-s${nk}`] = oldB[k]; if (oldG[k]) gaps[`${cellKey}-s${nk}`] = true; });
+              if (dup && oldB[dup.from]) bodies[`${cellKey}-s${dup.to}`] = JSON.parse(JSON.stringify(oldB[dup.from]));
+              return { bodies, gaps };
+            };
             const splitSide = () => {
+              if (subIdx >= 0 && subsCur) {
+                const ws = subWs(); const half = ws[subIdx] / 2; ws.splice(subIdx, 1, half, half);
+                const { bodies, gaps } = remapParts(k => (k <= subIdx ? k : k + 1), { from: subIdx, to: subIdx + 1 });
+                setFitSel(null);
+                fitApi.onChange({ ...f, subs: { ...(f.subs ?? {}), [cellKey]: ws }, bodies, gaps });
+                return;
+              }
+              if ((lower ? cs.lower : cs.upper)[i].length > 1) {
+                const half = cellWidth / 2, bodies = { ...(f.bodies ?? {}) }, src = bodies[cellKey];
+                if (src) { bodies[`${cellKey}-s0`] = JSON.parse(JSON.stringify(src)); bodies[`${cellKey}-s1`] = JSON.parse(JSON.stringify(src)); delete bodies[cellKey]; }
+                setFitSel(null);
+                fitApi.onChange({ ...f, subs: { ...(f.subs ?? {}), [cellKey]: [half, half] }, bodies });
+                return;
+              }
               const st = rowsAll(); const w = lower ? st.lw : st.uw, cc = lower ? st.lc : st.uc;
               const half = w[i] / 2; w.splice(i, 1, half, half); cc.splice(i, 1, [...cc[i]], [...cc[i]]);
               commit(st);
@@ -3268,6 +3360,20 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             const isGap = sel.name.startsWith('Hueco ');
             // eliminar: el cuerpo desaparece y queda el espacio libre (un hueco); eliminar el hueco quita el espacio y lo suma al vecino
             const remove = () => {
+              if (subIdx >= 0 && subsCur) {
+                if (!isGap) {
+                  // eliminar una parte: queda un espacio libre del mismo ancho y la vecina NO se alarga
+                  setFitSel(null);
+                  fitApi.onChange({ ...f, gaps: { ...(f.gaps ?? {}), [sel.id]: true } });
+                  return;
+                }
+                // quitar el espacio: su ancho se lo queda la vecina
+                const ws = subWs(); const gone = ws.splice(subIdx, 1)[0]; ws[subIdx > 0 ? subIdx - 1 : 0] += gone;
+                const { bodies, gaps } = remapParts(k => (k === subIdx ? null : k > subIdx ? k - 1 : k));
+                const subs = { ...(f.subs ?? {}) }; if (ws.length > 1) subs[cellKey] = ws; else delete subs[cellKey];
+                setFitSel(null); fitApi.onChange({ ...f, subs, bodies, gaps });
+                return;
+              }
               const st = rowsAll(); const w = lower ? st.lw : st.uw, cc = lower ? st.lc : st.uc;
               if (!isGap) { cc[i][j] = -Math.abs(cc[i][j]); setFitSel(null); commit(st); return; }
               if (cc[i].length > 1) { const gone = Math.abs(cc[i].splice(j, 1)[0]); const t = j > 0 ? j - 1 : 0; cc[i][t] = sgn(cc[i][t]) * (Math.abs(cc[i][t]) + gone); setFitSel(null); commit(st); return; }
@@ -3277,7 +3383,9 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               setFitSel(null); commit(st);
             };
             // rellenar un hueco con un cuerpo otra vez
-            const restore = () => { const st = rowsAll(); (lower ? st.lc : st.uc)[i][j] = Math.abs((lower ? st.lc : st.uc)[i][j]); setFitSel(null); commit(st); };
+            const restore = () => {
+              if (subIdx >= 0) { const gaps = { ...(f.gaps ?? {}) }; delete gaps[sel.id]; setFitSel(null); fitApi.onChange({ ...f, gaps }); return; }
+              const st = rowsAll(); (lower ? st.lc : st.uc)[i][j] = Math.abs((lower ? st.lc : st.uc)[i][j]); setFitSel(null); commit(st); };
             const left = toX(sel.x) + 0.1, right = toX(sel.x + sel.sx) - 0.1, top = (sel.z + sel.sz) / 1000 - 0.1, bottom = sel.z / 1000 + 0.1;
             const bigBtn = 'w-14 h-14 rounded-full text-white shadow-lg border-2 border-white flex items-center justify-center';
             if (isGap) {
@@ -3297,7 +3405,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
                 <HtmlScaled key="fit-plus" zoomScale position={[right, top, frontZ]} center distanceFactor={1} zIndexRange={[110, 0]}>
                   <button data-overlay onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); splitSide(); }} className={`${bigBtn} bg-green-600 hover:bg-green-700`} title="Dividir en dos cuerpos, uno al lado del otro"><Plus size={28} strokeWidth={3} /></button>
                 </HtmlScaled>,
-                <HtmlScaled key="fit-plus-h" zoomScale position={[left, bottom, frontZ]} center distanceFactor={1} zIndexRange={[110, 0]}>
+                subIdx >= 0 ? null : <HtmlScaled key="fit-plus-h" zoomScale position={[left, bottom, frontZ]} center distanceFactor={1} zIndexRange={[110, 0]}>
                   <button data-overlay onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); splitHorizontal(); }} className={`${bigBtn} bg-green-600 hover:bg-green-700`} title="Dividir en dos, uno sobre otro (horizontal)"><Plus size={28} strokeWidth={3} /></button>
                 </HtmlScaled>
               );

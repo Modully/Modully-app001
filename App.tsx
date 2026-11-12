@@ -568,9 +568,14 @@ export default function App() {
       if (t && t.tagName === 'INPUT' && t.type === 'number' && !t.disabled) { justFocused = t; setTimeout(() => { try { t.select(); } catch { /* algunos navegadores no permiten select() en number */ } }, 0); }
     };
     const onMouseUp = (e: MouseEvent) => { if (justFocused && e.target === justFocused) { e.preventDefault(); } justFocused = null; }; // el clic que dio el foco no debe quitar la selección
+    // la rueda del ratón no debe cambiar el número de un campo (se pegaba hacia arriba o abajo) y no se escriben negativos ni signos
+    const onWheel = (e: WheelEvent) => { const t = e.target as HTMLInputElement | null; if (t && t.tagName === 'INPUT' && t.type === 'number' && document.activeElement === t) t.blur(); };
+    const onKey = (e: KeyboardEvent) => { const t = e.target as HTMLInputElement | null; if (t && t.tagName === 'INPUT' && t.type === 'number' && (e.key === '-' || e.key === '+' || e.key === 'e' || e.key === 'E') && !(t.min !== '' && Number(t.min) < 0)) e.preventDefault(); };
     document.addEventListener('focusin', onFocusIn);
     document.addEventListener('mouseup', onMouseUp, true);
-    return () => { document.removeEventListener('focusin', onFocusIn); document.removeEventListener('mouseup', onMouseUp, true); };
+    document.addEventListener('wheel', onWheel, { capture: true, passive: true });
+    document.addEventListener('keydown', onKey, true);
+    return () => { document.removeEventListener('focusin', onFocusIn); document.removeEventListener('mouseup', onMouseUp, true); document.removeEventListener('wheel', onWheel, true); document.removeEventListener('keydown', onKey, true); };
   }, []);
 
   useEffect(() => {
@@ -4671,8 +4676,8 @@ export default function App() {
                         <div className="grid grid-cols-2 gap-2">
                           {([
                             ['Fondo (mm)', cur.depth, (n: number) => patchCur({ depth: Math.max(200, Math.min(900, Math.round(n))) })],
-                            ['Cuerpos inferiores', cur.lowerBodies, (n: number) => patchCur({ lowerBodies: Math.max(1, Math.min(10, Math.round(n))), lowerW: undefined, lowerCells: undefined, cellW: undefined, cellD: undefined })],
-                            ['Cuerpos superiores', cur.upperBodies, (n: number) => patchCur({ upperBodies: Math.max(0, Math.min(10, Math.round(n))), upperW: undefined, upperCells: undefined, cellW: undefined, cellD: undefined })],
+                            ['Cuerpos inferiores', cur.lowerBodies, (n: number) => patchCur({ lowerBodies: Math.max(1, Math.min(10, Math.round(n))), lowerW: undefined, lowerCells: undefined, cellW: undefined, cellD: undefined, subs: undefined, gaps: undefined })],
+                            ['Cuerpos superiores', cur.upperBodies, (n: number) => patchCur({ upperBodies: Math.max(0, Math.min(10, Math.round(n))), upperW: undefined, upperCells: undefined, cellW: undefined, cellD: undefined, subs: undefined, gaps: undefined })],
                             ['Alto superior (mm)', cur.upperHeight, (n: number) => patchCur({ upperHeight: Math.max(100, Math.min(1200, Math.round(n))), upperCells: undefined })],
                           ] as Array<[string, number, (n: number) => void]>).map(([label, value, onCommit]) => (
                             <div key={label} className="space-y-1">
@@ -4685,11 +4690,11 @@ export default function App() {
                           <>
                             <div className="space-y-1">
                               <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Alto del mueble (mm)</label>
-                              <DeferredNumber value={fit.altoMueble ?? 600} onCommit={(n) => setFit(f => ({ ...f, altoMueble: Math.max(150, Math.min(1500, Math.round(n))), lowerCells: undefined, cellW: undefined, cellD: undefined }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                              <DeferredNumber value={fit.altoMueble ?? 600} onCommit={(n) => setFit(f => ({ ...f, altoMueble: Math.max(150, Math.min(1500, Math.round(n))), lowerCells: undefined, cellW: undefined, cellD: undefined, subs: undefined, gaps: undefined }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
                             </div>
                             <div className="space-y-1">
                               <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Cuerpos sobre el mueble</label>
-                              <DeferredNumber value={fit.sobreMueble ?? 0} onCommit={(n) => setFit(f => ({ ...f, sobreMueble: Math.max(0, Math.min(8, Math.round(n))), lowerCells: undefined, cellW: undefined, cellD: undefined }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                              <DeferredNumber value={fit.sobreMueble ?? 0} onCommit={(n) => setFit(f => ({ ...f, sobreMueble: Math.max(0, Math.min(8, Math.round(n))), lowerCells: undefined, cellW: undefined, cellD: undefined, subs: undefined, gaps: undefined }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
                             </div>
                             <div className="grid grid-cols-2 gap-2">
                               {([
