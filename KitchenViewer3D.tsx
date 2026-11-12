@@ -340,6 +340,34 @@ const FitJunction: React.FC<{ position: [number, number, number]; axis: [number,
 };
 
 
+
+/** Calculadora básica de suma y resta: "800-30", "250+20-5", "1.200 + 30". Devuelve null si la expresión no es válida */
+export function calcSimple(raw: string): number | null {
+  const t = raw.replace(/\s+/g, '').replace(/,/g, '.');
+  if (!/^[+-]?\d+(\.\d+)?([+-]\d+(\.\d+)?)*$/.test(t)) return null;
+  const parts = t.match(/[+-]?\d+(\.\d+)?/g);
+  if (!parts) return null;
+  const v = parts.reduce((a, x) => a + parseFloat(x), 0);
+  return Number.isFinite(v) ? v : null;
+}
+
+/** Campo de medida que acepta sumas y restas (por ejemplo 800-30); se aplica al salir del campo o con Enter y Escape cancela */
+const CalcInput: React.FC<{ value: number; onCommit: (n: number) => void; className?: string; disabled?: boolean; title?: string }> = ({ value, onCommit, className, disabled, title }) => {
+  const [draft, setDraft] = useState<string | null>(null);
+  const finish = (apply: boolean) => {
+    const raw = draft;
+    setDraft(null);
+    if (!apply || raw === null || raw.trim() === '') return;
+    const n = calcSimple(raw);
+    if (n !== null && n > 0) onCommit(Math.round(n));
+  };
+  return (
+    <input type="text" inputMode="decimal" className={className} title={title ?? 'Puedes escribir sumas y restas, por ejemplo 800-30'} disabled={disabled} value={draft ?? String(Math.round(value))}
+      onFocus={(e) => e.currentTarget.select()} onChange={(e) => setDraft(e.target.value)} onBlur={() => finish(true)}
+      onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') finish(false); }} />
+  );
+};
+
 /** Nota con las medidas de un cuerpo del Closet fit: ancho y alto se pueden escribir (Enter o salir del campo para aplicar) */
 const FitDimLabel: React.FC<{ onHold?: (on: boolean) => void; w: number; h: number; canEditH: boolean; lockW: boolean; lockH: boolean; onLock: (k: 'w' | 'h') => void; onCommit: (patch: { width?: number; height?: number }) => void; offset: { x: number; y: number }; onOffset: (o: { x: number; y: number }) => void }> = ({ onHold, w, h, canEditH, lockW, lockH, onLock, onCommit, offset, onOffset }) => {
   const [dw, setDw] = useState<string | null>(null);
@@ -368,10 +396,10 @@ const FitDimLabel: React.FC<{ onHold?: (on: boolean) => void; w: number; h: numb
   return (
     <div data-overlay onMouseEnter={() => onHold?.(true)} onMouseLeave={() => onHold?.(false)} onFocus={() => onHold?.(true)} onBlur={() => onHold?.(false)} className="flex items-center gap-px select-none whitespace-nowrap rounded bg-white/70 hover:bg-white/95 focus-within:bg-white/95 shadow-sm border border-slate-300/70 px-0.5 py-px opacity-70 hover:opacity-100 focus-within:opacity-100 transition-opacity" style={{ pointerEvents: 'auto', transform: `translate(${offset.x}px, ${offset.y}px)` }} onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
       <span onPointerDown={startMove} className="cursor-move text-[8px] leading-none text-slate-400 px-px" style={{ touchAction: 'none' }} title="Arrastra para mover la nota">⠿</span>
-      <input type="number" className={cls(lockW)} value={dw ?? Math.round(w)} disabled={lockW} onChange={(e) => setDw(e.target.value)} onBlur={() => done('w')} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} title="Ancho (mm)" />
+      <CalcInput className={cls(lockW)} value={w} disabled={lockW} onCommit={(n) => onCommit({ width: n })} title="Ancho (mm): puedes escribir sumas y restas" />
       {lock('w', lockW)}
       <span className="text-[8px] leading-none text-slate-400">×</span>
-      <input type="number" className={cls(lockH)} value={dh ?? Math.round(h)} disabled={!canEditH || lockH} onChange={(e) => setDh(e.target.value)} onBlur={() => done('h')} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} title={canEditH ? 'Alto (mm)' : 'El alto de este cuerpo sale de la altura del Espacio'} />
+      <CalcInput className={cls(lockH)} value={h} disabled={!canEditH || lockH} onCommit={(n) => onCommit({ height: n })} title={canEditH ? 'Alto (mm): puedes escribir sumas y restas' : 'El alto de este cuerpo sale de la altura del Espacio'} />
       {lock('h', lockH)}
     </div>
   );
@@ -3037,6 +3065,36 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           </mesh>
         ))}
 
+        {/* cotas de la vista frontal: del piso al borde de abajo del mueble (espacio al piso) y del piso a su borde de arriba (alto total del mueble) */}
+        {fitApi && viewMode === 'frontal' && vis.dims !== false && !fitIsolate && vis.wallA !== false && (() => {
+          const f = fitApi.fit;
+          const cs = fitCells(f, wallA, spaceHeight);
+          const col = cs.lower[0];
+          if (!col || col.length === 0) return null;
+          const base = cs.base, top = base + Math.abs(col[col.length - 1]);
+          const xl = fitInsets(f, wallA).left;
+          const zf = offsetZ + Math.max(200, f.depth) / 1000 + 0.003;
+          const toXw = (X: number) => (X - wallA / 2) / 1000;
+          const cota = (key: string, xmm: number, z0: number, z1: number, label: number, onEdit: (n: number) => void) => {
+            const xw = toXw(xmm), tk = 0.025;
+            return (
+              <React.Fragment key={key}>
+                <Line points={[[xw, z0 / 1000, zf], [xw, z1 / 1000, zf]]} color="#06b6d4" lineWidth={2} raycast={() => null} />
+                <Line points={[[xw - tk, z0 / 1000, zf], [xw + tk, z0 / 1000, zf]]} color="#06b6d4" lineWidth={2} raycast={() => null} />
+                <Line points={[[xw - tk, z1 / 1000, zf], [xw + tk, z1 / 1000, zf]]} color="#06b6d4" lineWidth={2} raycast={() => null} />
+                <Html position={[xw, (z0 + z1) / 2000, zf]} center occlude={false} zIndexRange={[60, 0]} style={{ pointerEvents: 'none' }}>
+                  <div data-overlay className="select-none rounded bg-white/95 border border-cyan-500 shadow-sm" style={{ pointerEvents: 'auto' }} onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+                    <CalcInput value={label} onCommit={onEdit} className="w-12 text-center bg-transparent text-[10px] font-black text-cyan-700 outline-none py-px" title="Cota editable: puedes escribir sumas y restas, por ejemplo 800-30" />
+                  </div>
+                </Html>
+              </React.Fragment>
+            );
+          };
+          // editar la cota de abajo cambia el espacio al piso (flotado o zócalo); editar la de arriba cambia el alto del cuerpo de abajo (el resto se ajusta con su vecino)
+          const editBase = (n: number) => { if (f.flotado?.on) fitApi.onChange({ ...f, flotado: { ...f.flotado, alto: Math.max(0, Math.min(1200, n)) } }); else if (f.zocalo?.on) fitApi.onChange({ ...f, zocalo: { ...f.zocalo, alto: Math.max(30, Math.min(300, n)) } }); };
+          const editTop = (n: number) => fitEdit(`fit-inf-0-${col.length - 1}`, { height: Math.max(50, n - base) });
+          return <>{cota('cota-top', xl - 180, 0, top, top, editTop)}{base > 0 && cota('cota-base', xl - 90, 0, base, base, editBase)}</>;
+        })()}
         {/* al convertir a módulos se ocultan las flechas de arrastre y los botones de eliminar y dividir cubos */}
         {fitApi && !measureMode && !fitApi.fit.converted && !fitIsolate && vis.wallA !== false && (() => {
           const f = fitApi.fit;

@@ -560,6 +560,19 @@ export default function App() {
   const currentBaseModuleHeight = cfg.baseModuleHeight;
   const currentUpperModuleHeight = useMemo(() => spaceHeight - counterHeight - cfg.upperGap - TOP_MARGIN, [spaceHeight, counterHeight, cfg.upperGap]);
 
+  // En cualquier campo numérico, al entrar se selecciona todo el valor: así lo que se escribe lo reemplaza y no se queda pegado el cero
+  useEffect(() => {
+    let justFocused: HTMLInputElement | null = null;
+    const onFocusIn = (e: FocusEvent) => {
+      const t = e.target as HTMLInputElement | null;
+      if (t && t.tagName === 'INPUT' && t.type === 'number' && !t.disabled) { justFocused = t; setTimeout(() => { try { t.select(); } catch { /* algunos navegadores no permiten select() en number */ } }, 0); }
+    };
+    const onMouseUp = (e: MouseEvent) => { if (justFocused && e.target === justFocused) { e.preventDefault(); } justFocused = null; }; // el clic que dio el foco no debe quitar la selección
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('mouseup', onMouseUp, true);
+    return () => { document.removeEventListener('focusin', onFocusIn); document.removeEventListener('mouseup', onMouseUp, true); };
+  }, []);
+
   useEffect(() => {
     setModules(prev => prev.map(m => {
       if (m.heightLocked) return m; // alto editado a mano en el panel

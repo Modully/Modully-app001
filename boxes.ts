@@ -1618,7 +1618,15 @@ export function fitCells(fit: ClosetFit, wallA: number, spaceHeight: number) {
   const lowerHs = lr.map(([a, b]) => { let t = 0, any = false; ur.forEach(([c, d], k) => { if (Math.min(b, d) - Math.max(a, c) > 0.5) { any = true; t = Math.max(t, upTotals[k]); } }); return Hf - (any ? t : baseUp); });
   const lower = rows.lower.map((_, i) => {
     const c = fit.lowerCells?.[i], h = Math.max(50, lowerHs[i] - base); // los cuerpos de abajo arrancan sobre el zócalo
-    if (c && c.length > 0) { const k = h / sum(c); return c.map(x => x * k); }
+    if (c && c.length > 0) {
+      // si el espacio disponible cambió (zócalo, flotado, cuerpos de arriba), los cuerpos de abajo conservan su alto y el de arriba absorbe la diferencia
+      const tot = sum(c);
+      if (c.length > 1 && Math.abs(tot - h) > 0.01) {
+        const first = Math.abs(c[0]) + (h - tot);
+        if (first >= 50) return c.map((x, k) => (k === 0 ? (x < 0 ? -first : first) : x));
+      }
+      const k = h / tot; return c.map(x => x * k);
+    }
     // baño: el mueble tiene su alto propio y encima queda un hueco libre hasta el techo (o hasta los cuerpos de arriba)
     if (fit.altoMueble && fit.altoMueble > 0 && h > fit.altoMueble + 50) {
       const rest = h - fit.altoMueble, n = Math.max(0, Math.round(fit.sobreMueble ?? 0));
