@@ -371,7 +371,7 @@ const CalcInput: React.FC<{ value: number; onCommit: (n: number) => void; classN
     if (n !== null && n > 0) onCommit(Math.round(n));
   };
   return (
-    <input type="text" inputMode="decimal" className={className} style={style} title={title ?? 'Puedes escribir sumas y restas, por ejemplo 800-30'} disabled={disabled} value={draft ?? String(Math.round(value))}
+    <input ref={(el) => { if (el && style?.fontSize != null) el.style.setProperty('font-size', `${style.fontSize}px`, 'important'); }} type="text" inputMode="decimal" className={className} style={style} title={title ?? 'Puedes escribir sumas y restas, por ejemplo 800-30'} disabled={disabled} value={draft ?? String(Math.round(value))}
       onFocus={(e) => e.currentTarget.select()} onChange={(e) => setDraft(e.target.value)} onBlur={() => finish(true)}
       onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') finish(false); }} />
   );
@@ -507,23 +507,30 @@ const MovableCota: React.FC<{ kind: 'v' | 'h'; from: number; to: number; at: num
     (dx, dy) => { const t = st.current; if (!t) return; setOff(t.o0 + pixelsToMm(dx, dy, t.sx, t.sy) / 1000); },
     () => { st.current = null; setDrag(false); if (controlsRef?.current) controlsRef.current.enabled = true; document.body.style.cursor = 'auto'; }
   );
-  const C = moved ? '#047857' : '#111827', tk = 0.03, p = at + off;
-  const tick = (a: number): [number, number, number][] => (kind === 'v' ? [[p, a, zf], [p + tk, a, zf]] : [[a, p, zf], [a, p + tk, zf]]); // solo media marca, hacia la derecha o hacia arriba
+  // estilo de dibujo técnico: líneas de extensión finas que salen del objeto (con una pequeña separación) y pasan un poco la línea de cota,
+  // línea de cota fina, marcas oblicuas a 45° en los extremos y la medida escrita sobre la línea (girada en las verticales)
+  const C = moved ? '#047857' : '#111827', EXT = moved ? '#34d399' : '#94a3b8', tk = 0.014, p = at + off;
+  const tick = (a: number): [number, number, number][] => (kind === 'v' ? [[p - tk, a - tk, zf], [p + tk, a + tk, zf]] : [[a - tk, p - tk, zf], [a + tk, p + tk, zf]]);
   const mid: [number, number, number] = kind === 'v' ? [p, (from + to) / 2, zf] : [(from + to) / 2, p, zf];
+  const extLine = (a: number): [number, number, number][] => {
+    if (!ext) return [];
+    const o = ext[0], dirS = Math.sign(p - o) || 1, gapE = 0.012, over = 0.025;
+    return kind === 'v' ? [[o + dirS * gapE, a, zf], [p + dirS * over, a, zf]] : [[a, o + dirS * gapE, zf], [a, p + dirS * over, zf]];
+  };
   return (
     <>
       {ext && <>
-        <Line points={kind === 'v' ? [[ext[0], from, zf], [p + tk, from, zf]] : [[from, ext[0], zf], [from, p + tk, zf]]} color={C} lineWidth={1} dashed dashSize={0.03} gapSize={0.03} raycast={() => null} />
-        <Line points={kind === 'v' ? [[ext[0], to, zf], [p + tk, to, zf]] : [[to, ext[0], zf], [to, p + tk, zf]]} color={C} lineWidth={1} dashed dashSize={0.03} gapSize={0.03} raycast={() => null} />
+        <Line points={extLine(from)} color={EXT} lineWidth={1} raycast={() => null} />
+        <Line points={extLine(to)} color={EXT} lineWidth={1} raycast={() => null} />
       </>}
       <Line points={[kind === 'v' ? [p, from, zf] : [from, p, zf], kind === 'v' ? [p, to, zf] : [to, p, zf]] as [number, number, number][]} color={C} lineWidth={1} raycast={() => null} />
-      {kind === 'v' && <Line points={tick(from)} color={C} lineWidth={1} raycast={() => null} />}
-      {kind === 'v' && <Line points={tick(to)} color={C} lineWidth={1} raycast={() => null} />}
+      <Line points={tick(from)} color={C} lineWidth={1.5} raycast={() => null} />
+      <Line points={tick(to)} color={C} lineWidth={1.5} raycast={() => null} />
       {([0, 1] as const).map(k => {
         const pos: [number, number, number] = kind === 'v' ? [p, k === 0 ? from : to, zf] : [k === 0 ? from : to, p, zf];
         return (
           <Html key={`end-${k}`} position={pos} center occlude={false} zIndexRange={[61, 0]} style={{ pointerEvents: 'none' }}>
-<div data-overlay title="Arrastra esta línea hasta donde quieras medir" onMouseDown={beginEnd(k, pos)} onPointerDown={(e) => e.stopPropagation()} className={`flex ${kind === 'v' ? 'w-10 h-4 items-center justify-end cursor-ns-resize' : 'w-4 h-10 items-start justify-center cursor-ew-resize'}`} style={{ pointerEvents: 'auto' }}><div className={`${moved ? 'bg-emerald-700' : 'bg-slate-900'} rounded-sm ${kind === 'v' ? 'w-5 h-[1.5px]' : 'w-[1.5px] h-5 opacity-0 hover:opacity-100'}`} /></div>
+            <div data-overlay title="Arrastra este extremo hasta donde quieras medir" onMouseDown={beginEnd(k, pos)} onPointerDown={(e) => e.stopPropagation()} className={`${kind === 'v' ? 'w-6 h-3 cursor-ns-resize' : 'w-3 h-6 cursor-ew-resize'} rounded-full hover:bg-slate-400/30`} style={{ pointerEvents: 'auto' }} />
           </Html>
         );
       })}
@@ -542,15 +549,15 @@ const MovableCota: React.FC<{ kind: 'v' | 'h'; from: number; to: number; at: num
             <div
               data-overlay
               title={onEdit ? 'Cota editable (puedes escribir sumas y restas); arrastra el asa ⠿ para moverla' : 'Arrastra para mover esta cota'}
-              className={`select-none rounded bg-white/95 border-2 ${moved ? 'border-emerald-600 text-emerald-800' : 'border-slate-900 text-slate-900'} shadow-sm w-12 h-5 relative text-[11px] leading-none font-black flex items-center justify-center ${drag ? 'bg-slate-100' : ''}`}
-              style={{ pointerEvents: drag ? 'none' : 'auto', cursor: onEdit ? 'default' : 'grab' }}
+              className={`select-none relative px-0.5 text-[11px] leading-none font-bold flex items-center justify-center rounded-sm hover:bg-white/80 ${moved ? 'text-emerald-700' : 'text-slate-900'} ${drag ? 'bg-white/80' : ''}`}
+              style={{ pointerEvents: drag ? 'none' : 'auto', cursor: onEdit ? 'default' : 'grab', textShadow: '0 0 3px #fff, 0 0 3px #fff', transform: kind === 'v' ? 'rotate(-90deg) translateY(-9px)' : 'translateY(-9px)' }}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               onDoubleClick={(e) => { e.stopPropagation(); if (moved) setEo([0, 0]); }}
               onMouseDown={onEdit ? (e) => e.stopPropagation() : beginDrag}
             >
-              {onEdit && <span className="absolute left-0.5 cursor-grab text-slate-500 leading-none text-[9px]" onMouseDown={beginDrag}>⠿</span>}
-              {onEdit ? <CalcInput value={label} onCommit={onEdit} className="w-full pl-2 text-center bg-transparent text-[11px] leading-none font-black text-slate-900 outline-none" style={{ fontSize: 11, fontWeight: 900, lineHeight: 1 }} title="Cota editable: puedes escribir sumas y restas, por ejemplo 800-30" /> : Math.round(label)}
+              {onEdit && <span className="cursor-grab text-slate-400 leading-none text-[9px] mr-0.5" onMouseDown={beginDrag}>⠿</span>}
+              {onEdit ? <CalcInput value={label} onCommit={onEdit} className="w-10 text-center bg-transparent text-[11px] leading-none font-bold text-slate-900 outline-none border-b border-transparent hover:border-slate-400 focus:border-indigo-500" style={{ fontSize: 11, fontWeight: 700, lineHeight: 1, textShadow: '0 0 3px #fff' }} title="Cota editable: puedes escribir sumas y restas, por ejemplo 800-30" /> : Math.round(label)}
             </div>
           );
         })()}
@@ -609,7 +616,7 @@ const FitMoveHandle: React.FC<{ position: [number, number, number]; begin: () =>
 };
 
 /** Nota con las medidas de un cuerpo del Closet fit: ancho y alto se pueden escribir (Enter o salir del campo para aplicar) */
-const FitDimLabel: React.FC<{ onHold?: (on: boolean) => void; w: number; h: number; canEditH: boolean; lockW: boolean; lockH: boolean; onLock: (k: 'w' | 'h') => void; onCommit: (patch: { width?: number; height?: number }) => void; offset: { x: number; y: number }; onOffset: (o: { x: number; y: number }) => void }> = ({ onHold, w, h, canEditH, lockW, lockH, onLock, onCommit, offset, onOffset }) => {
+const FitDimLabel: React.FC<{ onGuide?: (k: 'w' | 'h' | null) => void; onHold?: (on: boolean) => void; w: number; h: number; canEditH: boolean; lockW: boolean; lockH: boolean; onLock: (k: 'w' | 'h') => void; onCommit: (patch: { width?: number; height?: number }) => void; offset: { x: number; y: number }; onOffset: (o: { x: number; y: number }) => void }> = ({ onGuide, onHold, w, h, canEditH, lockW, lockH, onLock, onCommit, offset, onOffset }) => {
   const [dw, setDw] = useState<string | null>(null);
   const [dh, setDh] = useState<string | null>(null);
   const done = (kind: 'w' | 'h') => {
@@ -626,21 +633,26 @@ const FitDimLabel: React.FC<{ onHold?: (on: boolean) => void; w: number; h: numb
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
   };
-  const cls = (locked: boolean) => `w-9 px-0 h-3.5 text-center rounded-sm border text-[8px] leading-none font-bold outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none ${locked ? 'bg-amber-100 text-amber-800 border-amber-400' : 'bg-white/90 text-slate-700 border-slate-300 focus:border-sky-500'}`;
+  const cls = (locked: boolean) => `w-9 px-0 h-3.5 text-center rounded-sm border text-[8px] leading-none font-bold outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none ${locked ? 'bg-transparent text-amber-700 border-transparent group-hover:border-amber-400' : 'bg-transparent text-slate-500 border-transparent group-hover:bg-white group-hover:text-slate-800 group-hover:border-slate-300 focus:border-sky-500 focus:bg-white'}`;
   // candado: bloquea esa medida para que no cambie al editar otra
   const lock = (k: 'w' | 'h', on: boolean) => (
-    <button type="button" onClick={() => onLock(k)} className={`flex items-center justify-center w-3 h-3 rounded-sm ${on ? 'text-amber-600' : 'text-slate-400 hover:text-slate-600'}`} title={on ? 'Medida bloqueada: clic para desbloquear' : 'Clic para bloquear esta medida'}>
+    <button type="button" onClick={() => onLock(k)} className={`flex items-center justify-center w-3 h-3 rounded-sm ${on ? 'text-amber-600' : 'text-slate-400 hover:text-slate-600 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`} title={on ? 'Medida bloqueada: clic para desbloquear' : 'Clic para bloquear esta medida'}>
       <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">{on ? <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></> : <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 7.5-2" /></>}</svg>
     </button>
   );
   return (
-    <div data-overlay onMouseEnter={() => onHold?.(true)} onMouseLeave={() => onHold?.(false)} onFocus={() => onHold?.(true)} onBlur={() => onHold?.(false)} className="flex items-center gap-px select-none whitespace-nowrap rounded bg-white/70 hover:bg-white/95 focus-within:bg-white/95 shadow-sm border border-slate-300/70 px-0.5 py-px opacity-70 hover:opacity-100 focus-within:opacity-100 transition-opacity" style={{ pointerEvents: 'auto', transform: `translate(${offset.x}px, ${offset.y}px)` }} onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-      <span onPointerDown={startMove} className="cursor-move text-[8px] leading-none text-slate-400 px-px" style={{ touchAction: 'none' }} title="Arrastra para mover la nota">⠿</span>
-      <CalcInput className={cls(lockW)} value={w} disabled={lockW} onCommit={(n) => onCommit({ width: n })} title="Ancho (mm): puedes escribir sumas y restas" />
-      {lock('w', lockW)}
+    <div data-overlay onMouseEnter={() => onHold?.(true)} onMouseLeave={() => onHold?.(false)} onFocus={() => onHold?.(true)} onBlur={() => onHold?.(false)} className="flex items-center gap-px select-none whitespace-nowrap rounded bg-transparent hover:bg-white/95 focus-within:bg-white/95 hover:shadow-sm border border-transparent hover:border-slate-300/70 px-0.5 py-px transition-all group" style={{ pointerEvents: 'auto', transform: `translate(${offset.x}px, ${offset.y}px)` }} onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+      <span onPointerDown={startMove} className="cursor-move text-[8px] leading-none text-slate-400 px-px opacity-0 group-hover:opacity-100" style={{ touchAction: 'none' }} title="Arrastra para mover la nota">⠿</span>
+      {/* regla: primero el alto y después el ancho; al pasar por cada medida se ve en el cubo la línea guía de lo que va a cambiar */}
+      <span className="flex items-center" onMouseEnter={() => onGuide?.('h')} onMouseLeave={() => onGuide?.(null)} onFocus={() => onGuide?.('h')} onBlur={() => onGuide?.(null)}>
+        <CalcInput style={{ fontSize: 10 }} className={cls(lockH)} value={h} disabled={!canEditH || lockH} onCommit={(n) => onCommit({ height: n })} title={canEditH ? 'Alto (mm): puedes escribir sumas y restas' : 'El alto de este cuerpo sale de la altura del Espacio'} />
+        {lock('h', lockH)}
+      </span>
       <span className="text-[8px] leading-none text-slate-400">×</span>
-      <CalcInput className={cls(lockH)} value={h} disabled={!canEditH || lockH} onCommit={(n) => onCommit({ height: n })} title={canEditH ? 'Alto (mm): puedes escribir sumas y restas' : 'El alto de este cuerpo sale de la altura del Espacio'} />
-      {lock('h', lockH)}
+      <span className="flex items-center" onMouseEnter={() => onGuide?.('w')} onMouseLeave={() => onGuide?.(null)} onFocus={() => onGuide?.('w')} onBlur={() => onGuide?.(null)}>
+        <CalcInput style={{ fontSize: 10 }} className={cls(lockW)} value={w} disabled={lockW} onCommit={(n) => onCommit({ width: n })} title="Ancho (mm): puedes escribir sumas y restas" />
+        {lock('w', lockW)}
+      </span>
     </div>
   );
 };
@@ -992,9 +1004,9 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
               const z = module.depth / 2000 + 0.01;
               return (
                 <>
-                  <Line points={[[sx, -hh, z], [sx, hh, z]]} color="#111827" lineWidth={2} />
-                  <Line points={[[sx - 0.03, -hh, z], [sx + 0.03, -hh, z]]} color="#111827" lineWidth={2} />
-                  <Line points={[[sx - 0.03, hh, z], [sx + 0.03, hh, z]]} color="#111827" lineWidth={2} />
+                  <Line points={[[sx, -hh, z], [sx, hh, z]]} color="#111827" lineWidth={1} />
+                  <Line points={[[sx - 0.018, -hh - 0.018, z], [sx + 0.018, -hh + 0.018, z]]} color="#111827" lineWidth={1.5} />
+                  <Line points={[[sx - 0.018, hh - 0.018, z], [sx + 0.018, hh + 0.018, z]]} color="#111827" lineWidth={1.5} />
                   <Html position={[sx, -hh * 0.6, z]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }} {...(viewMode === 'isometric' || viewMode === '3d' ? { transform: true, distanceFactor: 3 } : {})}>
                     <div data-overlay>
                       <DimLabel
@@ -1016,9 +1028,9 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
               const y = labelPos[1];
               return (
                 <>
-                  <Line points={[[sx, y, -hd], [sx, y, hd]]} color="#111827" lineWidth={2} />
-                  <Line points={[[sx - 0.03, y, -hd], [sx + 0.03, y, -hd]]} color="#111827" lineWidth={2} />
-                  <Line points={[[sx - 0.03, y, hd], [sx + 0.03, y, hd]]} color="#111827" lineWidth={2} />
+                  <Line points={[[sx, y, -hd], [sx, y, hd]]} color="#111827" lineWidth={1} />
+                  <Line points={[[sx - 0.018, y, -hd - 0.018], [sx + 0.018, y, -hd + 0.018]]} color="#111827" lineWidth={1.5} />
+                  <Line points={[[sx - 0.018, y, hd - 0.018], [sx + 0.018, y, hd + 0.018]]} color="#111827" lineWidth={1.5} />
                   <Html position={[sx, y, 0]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
                     <div data-overlay>
                       <DimLabel
@@ -1721,8 +1733,8 @@ const Island3D: React.FC<{
             return (
               <>
                 <Line points={[[yTotX, y, oz], [yTotX, y, z1]]} color="#111827" lineWidth={2} />
-                <Line points={[[yTotX - tick, y, oz], [yTotX + tick, y, oz]]} color="#111827" lineWidth={1.5} />
-                <Line points={[[yTotX - tick, y, z1], [yTotX + tick, y, z1]]} color="#111827" lineWidth={1.5} />
+                <Line points={[[yTotX - tick * 0.6, y, oz - tick * 0.6], [yTotX + tick * 0.6, y, oz + tick * 0.6]]} color="#111827" lineWidth={1.5} />
+                <Line points={[[yTotX - tick * 0.6, y, z1 - tick * 0.6], [yTotX + tick * 0.6, y, z1 + tick * 0.6]]} color="#111827" lineWidth={1.5} />
                 <Line points={[[x1, y, z1], [yTotX + tick, y, z1]]} color="#111827" lineWidth={1} dashed dashSize={0.03} gapSize={0.03} />
                 <Html position={[yTotX, y, (oz + z1) / 2]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
                   <div data-overlay><DimLabel text={String(Math.round(totalY))} value={totalY} tone="white" onCommit={onEdit ? (typed) => onEdit(isl.id, { dy: Math.max(0, Math.round(typed) - isl.width) }) : undefined} title={`${Math.round(totalY)} mm: del punto 0 al borde lejano. Clic para editar`} /></div>
@@ -1730,8 +1742,8 @@ const Island3D: React.FC<{
                 {isl.kind !== 'peninsula' && (
                   <>
                     <Line points={[[ox, y, xTotZ], [x1, y, xTotZ]]} color="#111827" lineWidth={2} />
-                    <Line points={[[ox, y, xTotZ - tick], [ox, y, xTotZ + tick]]} color="#111827" lineWidth={1.5} />
-                    <Line points={[[x1, y, xTotZ - tick], [x1, y, xTotZ + tick]]} color="#111827" lineWidth={1.5} />
+                    <Line points={[[ox - tick * 0.6, y, xTotZ - tick * 0.6], [ox + tick * 0.6, y, xTotZ + tick * 0.6]]} color="#111827" lineWidth={1.5} />
+                    <Line points={[[x1 - tick * 0.6, y, xTotZ - tick * 0.6], [x1 + tick * 0.6, y, xTotZ + tick * 0.6]]} color="#111827" lineWidth={1.5} />
                     <Line points={[[x1, y, z1], [x1, y, xTotZ + tick]]} color="#111827" lineWidth={1} dashed dashSize={0.03} gapSize={0.03} />
                     <Html position={[(ox + x1) / 2, y, xTotZ]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
                       <div data-overlay><DimLabel text={String(Math.round(totalX))} value={totalX} tone="white" onCommit={onEdit ? (typed) => onEdit(isl.id, { dx: Math.max(0, Math.round(typed) - isl.length) }) : undefined} title={`${Math.round(totalX)} mm: del punto 0 al borde lejano. Clic para editar`} /></div>
@@ -1834,7 +1846,7 @@ const SwingLines: React.FC<{ hw: number; hh: number; op: 'izq' | 'der' | 'sup' |
 };
 
 /** Formulario de un cuerpo del Closet fit (doble clic): ¿marco puerta o surrón? y sus puertas, entrepaños y cajones */
-const FitBodyForm: React.FC<{ label: string; cfg: FitBodyCfg | undefined; onChange: (c: FitBodyCfg | undefined) => void; onClose: () => void; hiddenCount?: number; onShowAll?: () => void; suggestedMaletero?: number; fondo?: number; onFondo?: (n: number) => void }> = ({ label, cfg, onChange, onClose, hiddenCount = 0, onShowAll, suggestedMaletero = 1900, fondo, onFondo }) => {
+const FitBodyForm: React.FC<{ label: string; cfg: FitBodyCfg | undefined; onChange: (c: FitBodyCfg | undefined) => void; onClose: () => void; hiddenCount?: number; onShowAll?: () => void; suggestedMaletero?: number; fondo?: number; onFondo?: (n: number) => void; desde?: number; onDesde?: (n: number) => void }> = ({ label, cfg, onChange, onClose, hiddenCount = 0, onShowAll, suggestedMaletero = 1900, fondo, onFondo, desde, onDesde }) => {
   const drag = useDragOffset();
   const set = (patch: Partial<FitBodyCfg>) => onChange({ ...(cfg ?? { kind: 'surron' }), ...patch } as FitBodyCfg);
   const btn = (on: boolean) => `flex-1 px-2 py-1 rounded-lg border text-[10px] font-black uppercase ${on ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`;
@@ -1855,6 +1867,7 @@ const FitBodyForm: React.FC<{ label: string; cfg: FitBodyCfg | undefined; onChan
     <div data-overlay data-module-editor {...drag.handle} className="fixed right-4 top-[250px] z-[200] pointer-events-auto w-64 p-3 space-y-2 rounded-xl bg-white border border-slate-300 shadow-xl max-h-[70vh] overflow-y-auto" style={{ ...drag.handle.style, ...drag.style }} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
       <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wide text-slate-500 select-none"><span>⠿ {label}</span><button className="text-slate-400 hover:text-slate-700" onClick={onClose}>✕</button></div>
       {hiddenCount > 0 && <button className="w-full px-2 py-1 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-[10px] font-black uppercase hover:bg-amber-100" onClick={onShowAll}>Mostrar piezas ocultas ({hiddenCount})</button>}
+      {desde !== undefined && onDesde && row('Altura desde el piso (mm)', <DraftNum value={Math.round(desde)} min={0} max={3000} onCommit={onDesde} className="w-20 text-center rounded border border-slate-300 text-xs font-black py-0.5" />)}
       {fondo !== undefined && onFondo && row('Fondo de este cubo (mm)', <DraftNum value={Math.round(fondo)} min={100} max={900} onCommit={onFondo} className="w-20 text-center rounded border border-slate-300 text-xs font-black py-0.5" />)}
       {row('¿Qué es?', <><button className={btn(cfg?.kind === 'marco')} onClick={() => set({ kind: 'marco', doors: cfg?.doors || 2, doorDir: cfg?.doorDir ?? 'vertical' })}>Marco puerta</button><button className={btn(isSurron)} onClick={() => set({ kind: 'surron', top: cfg?.top ?? 'puente', base: cfg?.base ?? 'base', doors: cfg?.doors ?? 2, doorDir: cfg?.doorDir ?? 'vertical' })}>Surrón</button><button className={btn(cfg?.kind === 'alistonado')} onClick={() => set({ kind: 'alistonado', liston: cfg?.liston ?? { ancho: 65, esp: 15, sep: 35 } })}>Alistonado</button></>)}
       {cfg && cfg.kind === 'alistonado' && (() => {
@@ -2589,7 +2602,7 @@ const DimLabel: React.FC<{ text: string; value: number; onCommit?: (value: numbe
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const finished = useRef(false);
-  const base = 'whitespace-nowrap w-12 h-5 inline-flex items-center justify-center rounded border-2 text-[11px] leading-none font-black shadow-sm'; // mismo tamaño que todas las cotas
+  const base = 'whitespace-nowrap inline-flex items-center justify-center px-0.5 rounded-sm text-[11px] leading-none font-bold'; // estilo técnico: la medida escrita sobre la línea, sin cajetín
 
   // Aplica o cancela una sola vez (Enter, Escape y perder el foco pueden llegar seguidos)
   const finish = (apply: boolean) => {
@@ -2620,7 +2633,8 @@ const DimLabel: React.FC<{ text: string; value: number; onCommit?: (value: numbe
   }
   return (
     <div
-      className={`${base} bg-white text-slate-900 border-slate-900 ${onCommit ? `pointer-events-auto cursor-text hover:bg-slate-100` : ''}`}
+      className={`${base} text-slate-900 ${onCommit ? `pointer-events-auto cursor-text hover:bg-white/90` : ''}`}
+      style={{ textShadow: '0 0 3px #fff, 0 0 3px #fff' }}
       title={onCommit ? title : undefined}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={() => { finished.current = false; setDraft(String(Math.round(value))); setEditing(true); }}
@@ -2665,8 +2679,8 @@ const PlanDimensions: React.FC<{ appliances: Appliance[]; wallA: number; offsetZ
           return (
             <group key={`${wall}-${app.type}`}>
               <Line points={[pt(0, off), pt(target, off)]} color="#111827" lineWidth={2.5} />
-              <Line points={[pt(0, off - 60), pt(0, off + 60)]} color="#111827" lineWidth={1.5} />
-              <Line points={[pt(target, off - 60), pt(target, off + 60)]} color="#111827" lineWidth={1.5} />
+              <Line points={[pt(-35, off - 35), pt(35, off + 35)]} color="#111827" lineWidth={1.5} />
+              <Line points={[pt(target - 35, off - 35), pt(target + 35, off + 35)]} color="#111827" lineWidth={1.5} />
               {row === 0 && (
                 <Html position={pt(0, off + 150)} center style={{ pointerEvents: 'none' }}>
                   <div className={`${pill} bg-white text-slate-500 border-slate-300`}>0</div>
@@ -2708,8 +2722,8 @@ const WallDimensions: React.FC<{ layout: LayoutType; lArm: 'left' | 'right'; app
         return (
           <group key={wall}>
             <Line points={[pt(0, off), pt(length, off)]} color="#111827" lineWidth={2} />
-            <Line points={[pt(0, off - 60), pt(0, off + 60)]} color="#111827" lineWidth={1.5} />
-            <Line points={[pt(length, off - 60), pt(length, off + 60)]} color="#111827" lineWidth={1.5} />
+            <Line points={[pt(-35, off - 35), pt(35, off + 35)]} color="#111827" lineWidth={1.5} />
+            <Line points={[pt(length - 35, off - 35), pt(length + 35, off + 35)]} color="#111827" lineWidth={1.5} />
             <Html position={pt(length / 2, off)} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
               <div data-overlay><DimLabel text={`Muro ${wall} ${Math.round(length)}`} value={length} tone="white" onCommit={onEditWall ? (typed) => onEditWall(wall, typed) : undefined} title={`Largo del muro ${wall}: ${Math.round(length)} mm. Clic para editar`} /></div>
             </Html>
@@ -2849,6 +2863,24 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   const [fitLocks, setFitLocks] = useState<Record<string, { w?: boolean; h?: boolean }>>({}); // candados: medidas que no deben cambiar al editar otras
   const fitLocked = (id: string, kind: 'w' | 'h') => !!fitLocks[id]?.[kind];
   // Editar las medidas de un cuerpo del Closet fit desde su nota: el ancho se reparte con el vecino y el alto con la celda vecina (o con el cuerpo de arriba / abajo)
+  const fitMoveV = (id: string, up: number) => {
+    if (!fitApi) return;
+    const m = /^fit-(inf|sup)-(\d+)-(\d+)$/.exec(id);
+    if (!m) return;
+    const lower = m[1] === 'inf', i = Number(m[2]), j = Number(m[3]);
+    const f2 = fitApi.fit, rs = fitRows(f2, wallA), cs2 = fitCells(f2, wallA, spaceHeight);
+    const lc2 = cs2.lower.map(c => [...c]), uc2 = cs2.upper.map(c => [...c]);
+    const baseC = [...((lower ? cs2.lower : cs2.upper)[i] ?? [])];
+    const hasA = j >= 1 && baseC[j - 1] < 0, hasB = baseC[j + 1] !== undefined && baseC[j + 1] < 0;
+    const ua = hasA ? Math.abs(baseC[j - 1]) : 0, ub = hasB ? Math.abs(baseC[j + 1]) : 0;
+    const d = Math.round(Math.max(-(hasB ? ub - 1 : 0), Math.min(hasA ? ua - 1 : 0, up)));
+    if (d === 0) return;
+    const nc = [...baseC];
+    if (d > 0) { nc[j - 1] = -(ua - d); if (hasB) nc[j + 1] = -(ub + d); else nc.splice(j + 1, 0, -d); }
+    else { const dd = -d; nc[j + 1] = -(ub - dd); if (hasA) nc[j - 1] = -(ua + dd); else nc.splice(j, 0, -dd); }
+    (lower ? lc2 : uc2)[i] = nc;
+    fitApi.onChange({ ...f2, lowerW: [...rs.lower], lowerBodies: rs.lower.length, lowerCells: lc2, upperW: [...rs.upper], upperBodies: rs.upper.length, upperCells: uc2 });
+  };
   const fitEdit = (id: string, patch: { width?: number; height?: number }, side?: 'l' | 'r'): void => {
     if (!fitApi) return;
     const f = fitApi.fit;
@@ -2980,6 +3012,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   const [isoHidden, setIsoHidden] = useState<string[]>([]); // piezas ocultadas con clic sostenido mientras el módulo está aislado
   const isoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isoSel, setIsoSel] = useState<string | null>(null);
+  const [dimGuide, setDimGuide] = useState<{ id: string; k: 'w' | 'h' } | null>(null); // línea guía de la medida que se va a cambiar en la nota de un cubo
   const [puertaSel, setPuertaSel] = useState(false); // Puertas: la puerta seleccionada muestra las flechas del vano // pieza del módulo aislado con sus flechas
   // sanitario y espejo del baño son solo ambientación: se ven translúcidos, no se pueden seleccionar y no son piezas del mueble
   const isAmb = (n: string) => n === 'Espejo bano' || n.startsWith('Sanitario');
@@ -3169,6 +3202,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           onClose={() => { setFitForm(null); setFitIsolate(null); setIsoHidden([]); }}
           suggestedMaletero={(() => { const bb = boxes.find(x => x.id === fitForm); return bb ? Math.max(350, Math.round((bb.z + bb.sz - Math.min(1900, bb.z + bb.sz - 350)) / 5) * 5) : 350; })()} /* distancia sugerida: deja el maletero a la menor de 1900 mm o (tope − 350 mm) */
           fondo={boxes.find(x => x.id === fitForm)?.sy}
+          desde={boxes.find(x => x.id === fitForm)?.z}
+          onDesde={(n) => { const bb = boxes.find(x => x.id === fitForm); if (bb) fitMoveV(bb.id, n - bb.z); }}
           onFondo={(n) => { const fid = fitForm!; fitApi.onChange({ ...fitApi.fit, cellD: { ...(fitApi.fit.cellD ?? {}), [fid]: n } }); }}
           hiddenCount={isoHidden.length}
           onShowAll={() => setIsoHidden([])}
@@ -3243,7 +3278,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           <mesh
             key={b.id}
             position={boxCenter(b)}
-            castShadow
+            castShadow={viewMode !== 'frontal' && !isFitBody(b.name)}
+            receiveShadow={viewMode !== 'frontal' && !isFitBody(b.name)}
             {...(fitApi && !measureMode && (b.name.startsWith('Cuerpo ') || b.name.startsWith('Hueco ')) ? {
               onDoubleClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); if (b.name.startsWith('Cuerpo ')) setFitForm(b.id); },
               onContextMenu: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); (e.nativeEvent as MouseEvent | undefined)?.preventDefault?.(); fitToggleGap(b.id); },
@@ -3385,15 +3421,52 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
                 <div className={`select-none whitespace-nowrap rounded px-1.5 py-px text-[9px] font-black text-white shadow ${fitCopySrc === b.id && !fitMsg[b.id] ? 'bg-emerald-600' : 'bg-amber-500'}`}>{fitMsg[b.id] ?? (fitCopySrc === b.id ? '= copiar: alt + clic en otro' : '= igualar')}</div>
               </Html>
             )}
+            {dimGuide && dimGuide.id === b.id && (() => {
+              // línea guía: muestra en el cubo la medida que se va a modificar (vertical = alto, horizontal = ancho), con marcas a 45°
+              const hw = b.sx / 2000, hh = b.sz / 2000, zg = b.sy / 2000 + 0.006, t = 0.018, G = '#4f46e5';
+              const pts: [number, number, number][] = dimGuide.k === 'h' ? [[-hw + 0.05, -hh, zg], [-hw + 0.05, hh, zg]] : [[-hw, hh - 0.05, zg], [hw, hh - 0.05, zg]];
+              const tk = (q: [number, number, number]): [number, number, number][] => [[q[0] - t, q[1] - t, zg], [q[0] + t, q[1] + t, zg]];
+              return (
+                <>
+                  <Line points={pts} color={G} lineWidth={2} raycast={() => null} />
+                  <Line points={tk(pts[0])} color={G} lineWidth={2} raycast={() => null} />
+                  <Line points={tk(pts[1])} color={G} lineWidth={2} raycast={() => null} />
+                  <Line points={[[-hw, -hh, zg], [hw, -hh, zg], [hw, hh, zg], [-hw, hh, zg], [-hw, -hh, zg]]} color={G} lineWidth={1} dashed dashSize={0.03} gapSize={0.02} transparent opacity={0.6} raycast={() => null} />
+                </>
+              );
+            })()}
             {b.name.startsWith('Cuerpo ') && b.id.startsWith('fit-') && viewMode === 'frontal' && fitApi && (vis.dims !== false || dimFlash.includes(b.id)) && (
               <Html position={[0, 0, b.sy / 2000 + 0.01]} center occlude={false} zIndexRange={[60, 0]} style={{ pointerEvents: 'none' }}>
-                <FitDimLabel onHold={(on) => { if (on) { if (dimTimer.current) clearTimeout(dimTimer.current); } else if (vis.dims === false) hideDimsSoon(); }} w={b.sx} h={b.sz} lockW={fitLocked(b.id.replace(/-\d+$/, '-0'), 'w')} lockH={fitLocked(b.id, 'h')} onLock={(k) => { const key = k === 'w' ? b.id.replace(/-\d+$/, '-0') : b.id; setFitLocks(prev => ({ ...prev, [key]: { ...prev[key], [k]: !prev[key]?.[k] } })); }} canEditH={b.id.startsWith('fit-sup') || b.name.includes('.') || fitApi.fit.upperBodies > 0 || (fitApi.fit.altoMueble ?? 0) > 0} onCommit={(patch) => fitEdit(b.id, patch)} offset={fitLabelOff[b.id] ?? { x: 0, y: 0 }} onOffset={(o) => setFitLabelOff(prev => ({ ...prev, [b.id]: o }))} />
+                <FitDimLabel onGuide={(k) => setDimGuide(k ? { id: b.id, k } : null)} onHold={(on) => { if (on) { if (dimTimer.current) clearTimeout(dimTimer.current); } else if (vis.dims === false) hideDimsSoon(); }} w={b.sx} h={b.sz} lockW={fitLocked(b.id.replace(/-\d+$/, '-0'), 'w')} lockH={fitLocked(b.id, 'h')} onLock={(k) => { const key = k === 'w' ? b.id.replace(/-\d+$/, '-0') : b.id; setFitLocks(prev => ({ ...prev, [key]: { ...prev[key], [k]: !prev[key]?.[k] } })); }} canEditH={b.id.startsWith('fit-sup') || b.name.includes('.') || fitApi.fit.upperBodies > 0 || (fitApi.fit.altoMueble ?? 0) > 0} onCommit={(patch) => fitEdit(b.id, patch)} offset={fitLabelOff[b.id] ?? { x: 0, y: 0 }} onOffset={(o) => setFitLabelOff(prev => ({ ...prev, [b.id]: o }))} />
               </Html>
             )}
           </mesh>
         ))}
 
         {/* cotas de la vista frontal: del piso al borde de abajo del mueble (espacio al piso) y del piso a su borde de arriba (alto total del mueble) */}
+        {!fitApi && viewMode === 'frontal' && !measureMode && (() => {
+          // cotas técnicas del frontal para los productos que no son por cubos (cocinas, closet constructor, puertas): ancho general arriba y,
+          // a la izquierda, la cadena de alturas (cada nivel donde empieza o termina una pieza del muro A) y el alto general; se mueven y miden como las del Closet fit
+          const items = vBoxes.filter(b => b.wall === 'A' && !b.islandId && b.kind !== 'wall' && !b.name.startsWith('Chapa') && b.sx > 1 && b.sz > 1);
+          if (!items.length) return null;
+          const x0 = Math.min(...items.map(b => b.x)), x1 = Math.max(...items.map(b => b.x + b.sx)), zTop = Math.max(...items.map(b => b.z + b.sz));
+          const zf = offsetZ + Math.max(...items.map(b => b.y + b.sy)) / 1000 + 0.01;
+          const toXw = (X: number) => (X - wallA / 2) / 1000;
+          const levels: number[] = [];
+          // la cadena solo usa los cuerpos principales (zócalo, módulos bajos, mesón, aéreos, torres); las piezas sueltas (entrepaños, cajones) la llenarían de cotas
+          const main = items.filter(b => b.kind === 'zocalo' || b.kind === 'lower' || b.kind === 'upper' || b.kind === 'tall' || b.kind === 'counter');
+          [0, ...main.flatMap(b => [b.z, b.z + b.sz]), zTop].map(v => Math.round(v)).sort((a, b) => a - b).forEach(v => { if (!levels.length || v - levels[levels.length - 1] >= 20) levels.push(v); });
+          const xl = toXw(x0);
+          return (
+            <>
+              <MovableCota kind="h" from={toXw(x0)} to={toXw(x1)} at={(zTop + 120) / 1000} zf={zf} label={x1 - x0} ext={[zTop / 1000, 0]} controlsRef={controlsRef} />
+              <MovableCota kind="v" from={0} to={zTop / 1000} at={xl - 0.42} zf={zf} label={zTop} ext={[xl, 0]} controlsRef={controlsRef} />
+              {levels.length > 2 && levels.slice(0, -1).map((z, k) => (
+                <MovableCota key={`cad-${k}-${z}`} kind="v" from={z / 1000} to={levels[k + 1] / 1000} at={xl - 0.2} zf={zf} label={levels[k + 1] - z} ext={[xl, 0]} controlsRef={controlsRef} />
+              ))}
+            </>
+          );
+        })()}
         {fitApi && viewMode === 'frontal' && vis.dims !== false && !fitIsolate && vis.wallA !== false && (() => {
           const f = fitApi.fit;
           const cs = fitCells(f, wallA, spaceHeight);
@@ -3440,7 +3513,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               if (xr - (b.x + b.sx) > 3) out.push(<MovableCota key={`cota-der-${b.id}`} kind="h" from={toXw(b.x + b.sx)} to={toXw(xr)} at={(b.z + b.sz) / 1000 + 0.06} zf={zf} label={xr - (b.x + b.sx)} ext={[(b.z + b.sz) / 1000, 0]} controlsRef={controlsRef} />);
               return out;
             });
-            return <>{vs}{hz}</>;
+            void hz; // cotas horizontales de los lados: retiradas (en frontal quedan solo las verticales y la general horizontal de arriba)
+            return <>{vs}</>;
           })();
           return <>{gen}{huecos}{cota('cota-top', xl - 180, 0, top, top, editTop)}{base > 0 && cota('cota-base', xl - 90, 0, base, base, editBase)}</>;
         })()}

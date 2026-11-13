@@ -317,3 +317,9 @@ Pendiente: las posiciones del cajonero (35, 445, 605), la gola media (330) y el 
 - Cubo "Alistonado" (`FitBodyCfg.kind = 'alistonado'`, `liston`): listones verticales (65 x 15, separación 35) repartidos parejos de borde a borde, con fondo de 6, de 15 o sin fondo (`listonBoxes`).
 - Islas y penínsulas: "Espaldar alistonado" (`IslandItem.alistonado`) en la parte posterior de los módulos (el frente es el de las puertas), del piso al mesón.
 - Planos de referencia: Kevin Serrano (tablero TV con estructura y cuchilla, torre con entrepaños, cajonero de 3) y Andrés (tablero de 4 mm con listones al lado). Pendiente: cubo "Tablero" del TV con su estructura y cuchilla, separación habitual de los listones.
+
+## Cotas técnicas en todos los productos (2026-11-13)
+- Estilo de dibujo técnico: líneas de extensión finas, marcas a 45°, medida sobre la línea (girada en las verticales), sin cajetín. Negras con referencia, verdes si se mueve un extremo.
+- Frontal de los productos por cubos: solo verticales (alto general, espacios libres, mueble de abajo) y la general horizontal de arriba. Cocinas, closet constructor y puertas: ancho general, alto general y cadena de alturas de los cuerpos principales.
+- Notas de cada cubo: primero el alto y después el ancho; texto discreto que muestra campos y candados al pasar el mouse, con línea guía en el cubo. Formulario del cubo con "Altura desde el piso". Cubos sin sombras.
+- Hoja de ruta acordada: lista de piezas única → despiece → optimización de lámina → planos de ensamble → render → bosquejo a mano alzada; formularios más visuales en cada fase.
