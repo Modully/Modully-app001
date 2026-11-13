@@ -934,7 +934,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     const nH = hinged ? dv.doorCount : 0;
     const elems: Array<{ x0: number; x1: number; type: 'costado' | 'marco'; name: string }> = [];
     for (let k = 0; k < nH; k++) {
-      const h = closet.doorEdges?.[k]?.hinge ?? (k % 2 === 0 ? 'izq' : 'der'), t = closet.doorEdges?.[k]?.type ?? 'costado';
+      const h = closet.doorEdges?.[k]?.hinge ?? (k < nH / 2 ? 'izq' : 'der'), t = closet.doorEdges?.[k]?.type ?? 'costado';
       if (h === 'izq' && k > 0) elems.push({ x0: k * wallA / nH, x1: k * wallA / nH + E, type: t, name: `puerta ${k + 1} inicio` });
       if (h === 'der' && k < nH - 1) elems.push({ x0: (k + 1) * wallA / nH - E, x1: (k + 1) * wallA / nH, type: t, name: `puerta ${k + 1} cierre` });
     }
@@ -1301,10 +1301,11 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       return [l, r];
     };
     // un cuerpo (celda) puede dividirse en varios lado a lado sin tocar el resto de su columna (`subs`): cada parte es un cuerpo independiente
-    const emitCell = (low: boolean, i: number, j: number, hh: number, w: number, xa: number, top: number, count: number) => {
+    const emitCell = (low: boolean, i: number, j: number, hh: number, w: number, xa0: number, top: number, count: number) => {
       const nm = low ? 'inf' : 'sup', cellKey = `${pre}${nm}-${i}-${j}`, h = Math.abs(hh);
+      const xa = xa0 + (hh >= 0 ? (f.cellX?.[cellKey] ?? 0) : 0); // cuerpo movido: se desplaza y queda separado de sus vecinos
       const wc = hh >= 0 ? Math.min(w, f.cellW?.[cellKey] ?? w) : w;
-      const dc = hh >= 0 ? Math.max(100, f.cellD?.[cellKey] ?? dpt) : dpt;
+      const dc = hh >= 0 ? Math.max(15, f.cellD?.[cellKey] ?? dpt) : dpt;
       const label = `${low ? 'inferior' : 'superior'} ${i + 1}${count > 1 ? '.' + (j + 1) : ''}`;
       const subsW = hh >= 0 ? f.subs?.[cellKey] : undefined;
       if (subsW && subsW.length > 1) {
@@ -1373,6 +1374,9 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     arm('B', hasB, wallB);
     arm('C', hasC, wallC);
   }
+  // ajustes manuales de piezas sueltas (flechas en el módulo aislado)
+  const pAdj = input.fit?.pieceAdj;
+  if (pAdj) boxes.forEach(bx => { const a = pAdj[bx.id]; if (a) { if (a.sx != null) bx.sx = a.sx; if (a.sy != null) bx.sy = a.sy; if (a.sz != null) bx.sz = a.sz; } });
   (boxes as Box[] & { closetAlerts?: string[] }).closetAlerts = closetAlertsOut;
   return boxes;
 }
@@ -1455,12 +1459,11 @@ export function fitTop(fit: ClosetFit, spaceHeight: number) {
 }
 
 
-/** Abertura de la puerta k de n (lado a lado): por defecto simétrica (par: izquierda y derecha en espejo; impar: la del centro con bisagra arriba) o la que se haya cambiado con un clic */
+/** Abertura de la puerta k de n (lado a lado): por defecto en parejas, puerta izquierda con bisagra a la izquierda y puerta derecha con bisagra a la derecha (nunca se sugiere la abertura horizontal; la elige el usuario con un clic) */
 export function doorOpening(c: { aberturas?: Record<string, 'izq' | 'der' | 'sup'>; hinge?: 'izq' | 'der' }, k: number, n: number): 'izq' | 'der' | 'sup' {
   const o = c.aberturas?.[String(k)];
   if (o) return o;
   if (n <= 1) return c.hinge ?? 'izq';
-  if (n % 2 === 1 && k === (n - 1) / 2) return 'sup';
   return k < n / 2 ? 'izq' : 'der';
 }
 
@@ -1597,6 +1600,7 @@ export function fitBodyParts(c: FitBodyCfg, id: string, x: number, z: number, w:
   }
   // puertas lado a lado: pieza vertical en las uniones donde empieza una puerta (su bisagra) y, solo si se pide, en el cierre del medio
   // (donde se juntan las puertas de la izquierda con las de la derecha); dos pegadas: dos puentes verticales, o puente + costado
+  const vObst: number[] = []; // centros de las uniones con pieza vertical: los entrepaños se dividen ahí
   if (doors >= 2 && (c.doorDir !== 'horizontal' || doors > 2)) {
     const vh = h - zh - 2 * E;
     // simetría: con cantidad par, la mitad de la izquierda lleva la bisagra a la izquierda y la mitad de la derecha a la derecha; con cantidad impar la puerta
@@ -1606,6 +1610,7 @@ export function fitBodyParts(c: FitBodyCfg, id: string, x: number, z: number, w:
       const isClosure = !(hingeL(k) || hingeR(k - 1));
       const need = c.doorDir !== 'horizontal' ? (!isClosure || !!c.vertMedio) : (isClosure && !!c.vertMedio);
       if (!need) continue;
+      vObst.push(x + (w * k) / doors); // centro de la unión; el costado completo ocupa [centro − 15, centro] y el puente vertical (80 de fondo, al frente) [centro, centro + 15]
       const dx = x + (w * k) / doors - E / 2;
       add(`dv${k}a`, c.divider === 'costado' ? 'Costado vertical fit' : 'Puente vertical fit', dx - E / 2, c.divider === 'costado' ? yF : dpt - 80, z + zh + E, E, c.divider === 'costado' ? depth : 80, vh);
       add(`dv${k}b`, 'Puente vertical fit', dx + E / 2, dpt - 80, z + zh + E, E, 80, vh);
@@ -1615,7 +1620,13 @@ export function fitBodyParts(c: FitBodyCfg, id: string, x: number, z: number, w:
   const ns = marco ? 0 : Math.max(0, Math.round(c.shelves ?? 0));
   if (ns > 0 && drawers === 0) {
     const zb = z + zh + E, zt = z + h - E;
-    for (let k = 1; k <= ns; k++) add(`en${k}`, 'Entrepaño fit', x + E, yF, zb + ((zt - zb) * k) / (ns + 1) - E / 2, w - 2 * E, depth - 70, E);
+    // los entrepaños se dividen solo donde hay un costado completo (llegan a ras de él por cada lado); el puente vertical está solo al frente, así que el entrepaño pasa por detrás de él:
+    // por eso, con piezas verticales, todos los entrepaños tienen el mismo fondo (fondo − 80) y quedan detrás del puente
+    const segs: Array<[number, number]> = []; let st = x + E;
+    if (c.divider === 'costado') vObst.forEach(xc => { if (xc - E - st > 20) segs.push([st, xc - E]); st = xc; });
+    if (x + w - E - st > 20) segs.push([st, x + w - E]);
+    const shelfDepth = vObst.length > 0 ? depth - 80 : depth - 70;
+    for (let k = 1; k <= ns; k++) segs.forEach(([a0, a1], si) => add(`en${k}-${si}`, 'Entrepaño fit', a0, yF, zb + ((zt - zb) * k) / (ns + 1) - E / 2, a1 - a0, shelfDepth, E));
   }
   return out;
 }
@@ -1657,7 +1668,7 @@ export function fitCells(fit: ClosetFit, wallA: number, spaceHeight: number) {
   // sin choques: cada cuerpo de abajo llega hasta el más bajo de los cuerpos de arriba que le quedan encima (nunca se sobreponen)
   const lowerHs = lr.map(([a, b]) => { let t = 0, any = false; ur.forEach(([c, d], k) => { if (Math.min(b, d) - Math.max(a, c) > 0.5) { any = true; t = Math.max(t, upTotals[k]); } }); return Hf - (any ? t : baseUp); });
   const lower = rows.lower.map((_, i) => {
-    const c = fit.lowerCells?.[i], h = Math.max(50, lowerHs[i] - base); // los cuerpos de abajo arrancan sobre el zócalo
+    const c = fit.lowerCells?.[i], h = Math.max(15, lowerHs[i] - base); // los cuerpos de abajo arrancan sobre el zócalo
     if (c && c.length > 0) {
       // si el espacio disponible cambió (zócalo, flotado, cuerpos de arriba), los cuerpos de abajo conservan su alto y el de arriba absorbe la diferencia
       const tot = sum(c);

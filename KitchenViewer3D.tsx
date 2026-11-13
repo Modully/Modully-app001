@@ -10,7 +10,7 @@ import { closetSectionOf, closetCajoneroIndex, closetTorreIndex, fitRows, fitCel
 import type { ClosetConfig, ClosetFit, FitBodyCfg } from './types';
 import { Box, findModuleBox, boxesBounds, applianceCenter, counterTopZ, CORNER_BLIND_OFFSET, WALL_THICKNESS } from './boxes';
 import { COLORS } from './constants';
-import { X, Plus, Ruler } from 'lucide-react';
+import { X, Plus, Ruler, ArrowUp, ArrowLeft, ArrowRight, ArrowDownLeft } from 'lucide-react';
 
 // Constantes de elevación y espaciado (en milímetros)
 const COUNTER_HEIGHT = 800;      // Alto del módulo base; el mesón queda a zócalo + este valor
@@ -56,7 +56,8 @@ const HtmlScaled: React.FC<React.ComponentProps<typeof Html> & { zoomScale?: boo
     );
   }
   return (
-    <Html {...rest} transform distanceFactor={distanceFactor} style={{ ...rest.style, pointerEvents: 'none' }}>
+    // sin `transform`: el control mira siempre a la cámara; con transform es un plano fijo que se ve de canto (y desaparece) al girar la vista 3D
+    <Html {...rest} distanceFactor={distanceFactor} style={{ ...rest.style, pointerEvents: 'none' }}>
       <div style={{ pointerEvents: 'auto' }}>{children}</div>
     </Html>
   );
@@ -123,27 +124,24 @@ const FaceHandle: React.FC<{
   onClick: () => void;
 }> = ({ position, normal, meshPosition, meshRotation, label, title, onStart, onClick }) => {
   const { camera, size } = useThree();
-  const [angle, setAngle] = useState<number | null>(0);
   const [holding, setHolding] = useState(false);
-  useFrame(() => {
-    const eul = new THREE.Euler(...meshRotation);
-    const c = new THREE.Vector3(...position).applyEuler(eul).add(new THREE.Vector3(...meshPosition));
-    const d = new THREE.Vector3(...normal).applyEuler(eul).multiplyScalar(0.3);
-    const a = c.clone().project(camera);
-    const b = c.clone().add(d).project(camera);
-    const dx = ((b.x - a.x) * size.width) / 2;
-    const dy = (-(b.y - a.y) * size.height) / 2;
-    // La cara de frente a la cámara (flecha casi sin largo en pantalla) no se puede jalar desde esta vista
-    const next = Math.hypot(dx, dy) < 8 ? null : Math.round((Math.atan2(dy, dx) * 180) / Math.PI / 3) * 3;
-    if (next !== angle) setAngle(next);
-  });
-  if (angle === null) return null;
+  const [hover, setHover] = useState(false);
+  const [showVal, setShowVal] = useState(false);
+  const hideT = useRef<any>(null);
+  useEffect(() => () => { if (hideT.current) clearTimeout(hideT.current); }, []);
+  // flecha 3D hacia afuera de la cara (mismo estilo que las del Closet fit); la medida queda visible mientras se arrastra y 3 segundos después
+  const dir = useMemo(() => new THREE.Vector3(...normal), [normal[0], normal[1], normal[2]]);
+  const quat = useMemo(() => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir), [dir]);
+  const color = holding ? '#1d4ed8' : hover ? '#3b82f6' : '#2563eb';
+  const shaftL = 0.1, headL = 0.08;
 
-  const down = (e: React.PointerEvent) => {
+  const down = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
-    const x0 = e.clientX, y0 = e.clientY;
-    setHolding(true);
-    onStart(e);
+    const ne = e.nativeEvent as MouseEvent;
+    ne.preventDefault();
+    const x0 = ne.clientX, y0 = ne.clientY;
+    setHolding(true); setShowVal(true); if (hideT.current) clearTimeout(hideT.current);
+    onStart(ne);
     let done = false;
     const up = (ev: MouseEvent | PointerEvent) => {
       if (done) return;
@@ -151,6 +149,7 @@ const FaceHandle: React.FC<{
       document.removeEventListener('mouseup', up);
       document.removeEventListener('pointerup', up);
       setHolding(false);
+      hideT.current = setTimeout(() => setShowVal(false), 3000);
       if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) onClick(); // clic simple: estirar hasta la siguiente cara
     };
     document.addEventListener('mouseup', up);
@@ -158,24 +157,33 @@ const FaceHandle: React.FC<{
   };
 
   return (
-    // Las flechas de las caras libres no se ocultan por detrás del propio módulo: de canto, esa cara queda tapada por él mismo
-    <Html position={position} center zIndexRange={[115, 0]} occlude={false} style={{ pointerEvents: 'none' }}>
-      <div data-overlay className="relative">
-        {holding && (
-          <div className="absolute left-1/2 -translate-x-1/2 -top-8 whitespace-nowrap px-2 py-1 rounded-lg bg-blue-600 text-white text-[12px] leading-none font-black shadow-lg border-2 border-white">{label}</div>
-        )}
-        <button
-          onPointerDown={down}
-          title={title}
-          className={`pointer-events-auto flex items-center justify-center w-7 h-7 rounded-full border-2 border-white shadow-lg text-white transition-colors ${holding ? 'bg-blue-800' : 'bg-blue-600 hover:bg-blue-700'}`}
-          style={{ cursor: 'grab' }}
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" style={{ transform: `rotate(${angle}deg)` }}>
-            <path d="M2 8 H12 M8 3 L13 8 L8 13" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-      </div>
-    </Html>
+    <group
+      position={position}
+      quaternion={quat}
+      renderOrder={50}
+      onPointerOver={(e) => { e.stopPropagation(); setHover(true); document.body.style.cursor = 'grab'; }}
+      onPointerOut={() => { setHover(false); if (!holding) document.body.style.cursor = 'auto'; }}
+      onPointerDown={down}
+    >
+      <mesh position={[0, shaftL / 2, 0]} raycast={() => null}>
+        <cylinderGeometry args={[0.016, 0.016, shaftL, 16]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.35} roughness={0.4} />
+      </mesh>
+      <mesh position={[0, shaftL + headL / 2, 0]} raycast={() => null}>
+        <coneGeometry args={[0.042, headL, 20]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.35} roughness={0.4} />
+      </mesh>
+      {/* zona más ancha e invisible para agarrar la flecha con facilidad */}
+      <mesh position={[0, (shaftL + headL) / 2, 0]}>
+        <cylinderGeometry args={[0.06, 0.06, shaftL + headL, 8]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+      {(holding || showVal) && (
+        <HtmlScaled zoomScale position={[0, shaftL + headL + 0.09, 0]} center distanceFactor={1} zIndexRange={[120, 0]}>
+          <div data-overlay className="whitespace-nowrap px-3 py-1 rounded-lg bg-white text-blue-700 text-xl font-black shadow-xl border-2 border-blue-500">{label}</div>
+        </HtmlScaled>
+      )}
+    </group>
   );
 };
 
@@ -352,7 +360,7 @@ export function calcSimple(raw: string): number | null {
 }
 
 /** Campo de medida que acepta sumas y restas (por ejemplo 800-30); se aplica al salir del campo o con Enter y Escape cancela */
-const CalcInput: React.FC<{ value: number; onCommit: (n: number) => void; className?: string; disabled?: boolean; title?: string }> = ({ value, onCommit, className, disabled, title }) => {
+const CalcInput: React.FC<{ value: number; onCommit: (n: number) => void; className?: string; disabled?: boolean; title?: string; style?: React.CSSProperties }> = ({ value, onCommit, className, disabled, title, style }) => {
   const [draft, setDraft] = useState<string | null>(null);
   const finish = (apply: boolean) => {
     const raw = draft;
@@ -362,9 +370,226 @@ const CalcInput: React.FC<{ value: number; onCommit: (n: number) => void; classN
     if (n !== null && n > 0) onCommit(Math.round(n));
   };
   return (
-    <input type="text" inputMode="decimal" className={className} title={title ?? 'Puedes escribir sumas y restas, por ejemplo 800-30'} disabled={disabled} value={draft ?? String(Math.round(value))}
+    <input type="text" inputMode="decimal" className={className} style={style} title={title ?? 'Puedes escribir sumas y restas, por ejemplo 800-30'} disabled={disabled} value={draft ?? String(Math.round(value))}
       onFocus={(e) => e.currentTarget.select()} onChange={(e) => setDraft(e.target.value)} onBlur={() => finish(true)}
       onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') finish(false); }} />
+  );
+};
+
+
+/** Flechas azules en 3D del cubo seleccionado: arriba estira el alto, a los lados el ancho y adelante el fondo; son objetos de la escena (flecha con punta) que se arrastran con el ratón */
+const FitFaceHandle: React.FC<{ kind: 'up' | 'left' | 'right' | 'front'; position: [number, number, number]; axis: [number, number, number]; sign: 1 | -1; start: () => number; onValue: (v: number) => void; current?: number; min?: number; snaps?: number[]; targets?: { min: [number, number, number]; max: [number, number, number]; vals: number[] }[]; controlsRef?: React.RefObject<any> }> = ({ kind, position, axis, sign, start, onValue, current, min, snaps, targets, controlsRef }) => {
+  const { camera, size, gl } = useThree();
+  const [active, setActive] = useState(false);
+  // medida resultante: se muestra mientras se arrastra y queda activa 3 segundos (se puede escribir otra)
+  const [showVal, setShowVal] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null);
+  const hideT = useRef<any>(null);
+  useEffect(() => () => { if (hideT.current) clearTimeout(hideT.current); }, []);
+  const keepOpen = () => { setShowVal(true); if (hideT.current) clearTimeout(hideT.current); hideT.current = setTimeout(() => { setShowVal(false); setDraft(null); }, 3000); };
+  const [hover, setHover] = useState(false);
+  const st = useRef<{ sx: number; sy: number; v0: number } | null>(null);
+  const startDrag = useDocumentDrag(
+    (dx, dy, ev) => {
+      const t = st.current;
+      if (!t) return;
+      const d = pixelsToMm(dx, dy, t.sx, t.sy);
+      let v = Math.max(min ?? 15, Math.round((t.v0 + sign * d) / 5) * 5);
+      // tope magnético: si la cara llega a la altura de la cara de otro cubo, se queda ahí
+      const hit = (snaps ?? []).filter(x => x > (min ?? 15) && Math.abs(x - (t.v0 + sign * d)) <= 40).sort((a, b) => Math.abs(a - (t.v0 + sign * d)) - Math.abs(b - (t.v0 + sign * d)))[0];
+      if (hit != null) v = hit;
+      // si el mouse toca la cara de otro cubo, la cara que se estira llega hasta ahí (tiene prioridad sobre el imán)
+      if (targets && targets.length) {
+        const r = gl.domElement.getBoundingClientRect();
+        const rc = new THREE.Raycaster();
+        rc.setFromCamera(new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1), camera);
+        let best: { dist: number; vals: number[] } | null = null;
+        const tmp = new THREE.Vector3();
+        targets.forEach(tg => {
+          const hitP = rc.ray.intersectBox(new THREE.Box3(new THREE.Vector3(...tg.min), new THREE.Vector3(...tg.max)), tmp);
+          if (hitP) { const dist = hitP.distanceTo(rc.ray.origin); if (!best || dist < best.dist) best = { dist, vals: tg.vals }; }
+        });
+        const bv = best as { dist: number; vals: number[] } | null;
+        if (bv) { const raw = t.v0 + sign * d; const cand = bv.vals.filter(x => x > 100).sort((a, b) => Math.abs(a - raw) - Math.abs(b - raw))[0]; if (cand != null) v = cand; }
+      }
+      onValue(v);
+    },
+    () => { st.current = null; setActive(false); keepOpen(); if (controlsRef?.current) controlsRef.current.enabled = true; document.body.style.cursor = 'auto'; }
+  );
+  // la flecha apunta hacia afuera de la cara
+  const dir = useMemo(() => new THREE.Vector3(...(kind === 'up' ? [0, 1, 0] : kind === 'left' ? [-1, 0, 0] : kind === 'right' ? [1, 0, 0] : [0, 0, 1])), [kind]);
+  const quat = useMemo(() => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir), [dir]);
+  const color = active ? '#1d4ed8' : hover ? '#3b82f6' : '#2563eb';
+  const shaftL = 0.1, headL = 0.08;
+  return (
+    <group
+      position={position}
+      quaternion={quat}
+      renderOrder={50}
+      onPointerOver={(e) => { e.stopPropagation(); setHover(true); document.body.style.cursor = kind === 'up' ? 'ns-resize' : kind === 'front' ? 'move' : 'ew-resize'; }}
+      onPointerOut={() => { setHover(false); if (!st.current) document.body.style.cursor = 'auto'; }}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        const ne = e.nativeEvent as MouseEvent;
+        ne.preventDefault();
+        const { sx, sy } = screenPixelsPerMeter(camera, size, new THREE.Vector3(...position), new THREE.Vector3(...axis));
+        st.current = { sx, sy, v0: start() };
+        setActive(true); setShowVal(true); if (hideT.current) clearTimeout(hideT.current);
+        if (controlsRef?.current) controlsRef.current.enabled = false;
+        document.body.style.cursor = kind === 'up' ? 'ns-resize' : kind === 'front' ? 'move' : 'ew-resize';
+        startDrag(ne);
+      }}
+    >
+      <mesh position={[0, shaftL / 2, 0]}>
+        <cylinderGeometry args={[0.016, 0.016, shaftL, 16]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.35} roughness={0.4} />
+      </mesh>
+      <mesh position={[0, shaftL + headL / 2, 0]}>
+        <coneGeometry args={[0.042, headL, 20]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.35} roughness={0.4} />
+      </mesh>
+      {(showVal || active) && current != null && (
+        <HtmlScaled zoomScale position={[0, shaftL + headL + 0.09, 0]} center distanceFactor={1} zIndexRange={[120, 0]}>
+          <input
+            data-overlay
+            className="w-24 text-center text-xl font-black text-blue-700 bg-white border-2 border-blue-500 rounded-lg shadow-xl py-1 outline-none"
+            value={draft ?? String(Math.round(current))}
+            onPointerDown={(e) => e.stopPropagation()}
+            onFocus={() => { if (hideT.current) clearTimeout(hideT.current); }}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { const n = Number(String(draft ?? '').replace(',', '.')); if (isFinite(n) && n >= 15) onValue(Math.round(n)); setDraft(null); keepOpen(); (e.target as HTMLInputElement).blur(); } }}
+            onBlur={() => { if (draft !== null) { const n = Number(draft.replace(',', '.')); if (isFinite(n) && n >= 15) onValue(Math.round(n)); setDraft(null); } keepOpen(); }}
+          />
+        </HtmlScaled>
+      )}
+      {/* zona más ancha e invisible para agarrar la flecha con facilidad */}
+      <mesh position={[0, (shaftL + headL) / 2, 0]}>
+        <cylinderGeometry args={[0.06, 0.06, shaftL + headL, 8]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+    </group>
+  );
+};
+
+
+
+/** Cota verde de un espacio (vertical 'v' u horizontal 'h') que se puede mover: se arrastra la medida y la línea se corre a un lado */
+const MovableCota: React.FC<{ kind: 'v' | 'h'; from: number; to: number; at: number; zf: number; label: number; ext?: [number, number]; onEdit?: (n: number) => void; controlsRef?: React.RefObject<any> }> = ({ kind, from: from0, to: to0, at, zf, label: label0, ext, onEdit: onEdit0, controlsRef }) => {
+  const { camera, size } = useThree();
+  const [off, setOff] = useState(0);
+  // si se arrastra un extremo, la cota deja de seguir al espacio original y mide lo que quede entre los dos extremos (doble clic en la medida: vuelve a la referencia)
+  const [eo, setEo] = useState<[number, number]>([0, 0]);
+  const moved = eo[0] !== 0 || eo[1] !== 0;
+  const from = from0 + eo[0], to = to0 + eo[1];
+  const label = moved ? Math.abs(to - from) * 1000 : label0;
+  const onEdit = moved ? undefined : onEdit0;
+  const endRef = useRef<{ k: 0 | 1; sx: number; sy: number; e0: number; other: number } | null>(null);
+  const startEnd = useDocumentDrag(
+    (dx, dy) => {
+      const t = endRef.current; if (!t) return;
+      const d = Math.round(pixelsToMm(dx, dy, t.sx, t.sy) / 5) * 5 / 1000;
+      setEo(prev => (t.k === 0 ? [t.e0 + d, prev[1]] : [prev[0], t.e0 + d]));
+    },
+    () => { endRef.current = null; if (controlsRef?.current) controlsRef.current.enabled = true; document.body.style.cursor = 'auto'; }
+  );
+  const beginEnd = (k: 0 | 1, pos: [number, number, number]) => (e: React.MouseEvent) => {
+    e.stopPropagation(); e.preventDefault();
+    const { sx, sy } = screenPixelsPerMeter(camera, size, new THREE.Vector3(...pos), new THREE.Vector3(kind === 'v' ? 0 : 1, kind === 'v' ? 1 : 0, 0));
+    endRef.current = { k, sx, sy, e0: eo[k], other: 0 };
+    if (controlsRef?.current) controlsRef.current.enabled = false;
+    document.body.style.cursor = 'grabbing';
+    startEnd(e);
+  };
+  const [drag, setDrag] = useState(false);
+  const st = useRef<{ sx: number; sy: number; o0: number } | null>(null);
+  const startDrag = useDocumentDrag(
+    (dx, dy) => { const t = st.current; if (!t) return; setOff(t.o0 + pixelsToMm(dx, dy, t.sx, t.sy) / 1000); },
+    () => { st.current = null; setDrag(false); if (controlsRef?.current) controlsRef.current.enabled = true; document.body.style.cursor = 'auto'; }
+  );
+  const C = moved ? '#047857' : '#111827', tk = 0.03, p = at + off;
+  const tick = (a: number): [number, number, number][] => (kind === 'v' ? [[p, a, zf], [p + tk, a, zf]] : [[a, p, zf], [a, p + tk, zf]]); // solo media marca, hacia la derecha o hacia arriba
+  const mid: [number, number, number] = kind === 'v' ? [p, (from + to) / 2, zf] : [(from + to) / 2, p, zf];
+  return (
+    <>
+      {ext && <>
+        <Line points={kind === 'v' ? [[ext[0], from, zf], [p + tk, from, zf]] : [[from, ext[0], zf], [from, p + tk, zf]]} color={C} lineWidth={1} dashed dashSize={0.03} gapSize={0.03} raycast={() => null} />
+        <Line points={kind === 'v' ? [[ext[0], to, zf], [p + tk, to, zf]] : [[to, ext[0], zf], [to, p + tk, zf]]} color={C} lineWidth={1} dashed dashSize={0.03} gapSize={0.03} raycast={() => null} />
+      </>}
+      <Line points={[kind === 'v' ? [p, from, zf] : [from, p, zf], kind === 'v' ? [p, to, zf] : [to, p, zf]] as [number, number, number][]} color={C} lineWidth={1} raycast={() => null} />
+      {kind === 'v' && <Line points={tick(from)} color={C} lineWidth={1} raycast={() => null} />}
+      {kind === 'v' && <Line points={tick(to)} color={C} lineWidth={1} raycast={() => null} />}
+      {([0, 1] as const).map(k => {
+        const pos: [number, number, number] = kind === 'v' ? [p, k === 0 ? from : to, zf] : [k === 0 ? from : to, p, zf];
+        return (
+          <Html key={`end-${k}`} position={pos} center occlude={false} zIndexRange={[61, 0]} style={{ pointerEvents: 'none' }}>
+<div data-overlay title="Arrastra esta línea hasta donde quieras medir" onMouseDown={beginEnd(k, pos)} onPointerDown={(e) => e.stopPropagation()} className={`flex ${kind === 'v' ? 'w-10 h-4 items-center justify-end cursor-ns-resize' : 'w-4 h-10 items-start justify-center cursor-ew-resize'}`} style={{ pointerEvents: 'auto' }}><div className={`${moved ? 'bg-emerald-700' : 'bg-slate-900'} rounded-sm ${kind === 'v' ? 'w-5 h-[1.5px]' : 'w-[1.5px] h-5 opacity-0 hover:opacity-100'}`} /></div>
+          </Html>
+        );
+      })}
+      <Html position={mid} center occlude={false} zIndexRange={[60, 0]} style={{ pointerEvents: 'none' }}>
+        {(() => {
+          const beginDrag = (e: React.MouseEvent) => {
+            e.stopPropagation(); e.preventDefault();
+            const { sx, sy } = screenPixelsPerMeter(camera, size, new THREE.Vector3(...mid), new THREE.Vector3(kind === 'v' ? 1 : 0, kind === 'v' ? 0 : 1, 0));
+            st.current = { sx, sy, o0: off };
+            setDrag(true);
+            if (controlsRef?.current) controlsRef.current.enabled = false;
+            document.body.style.cursor = 'grabbing';
+            startDrag(e);
+          };
+          return (
+            <div
+              data-overlay
+              title={onEdit ? 'Cota editable (puedes escribir sumas y restas); arrastra el asa ⠿ para moverla' : 'Arrastra para mover esta cota'}
+              className={`select-none rounded bg-white/95 border-2 ${moved ? 'border-emerald-600 text-emerald-800' : 'border-slate-900 text-slate-900'} shadow-sm w-12 h-5 relative text-[11px] leading-none font-black flex items-center justify-center ${drag ? 'bg-slate-100' : ''}`}
+              style={{ pointerEvents: drag ? 'none' : 'auto', cursor: onEdit ? 'default' : 'grab' }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => { e.stopPropagation(); if (moved) setEo([0, 0]); }}
+              onMouseDown={onEdit ? (e) => e.stopPropagation() : beginDrag}
+            >
+              {onEdit && <span className="absolute left-0.5 cursor-grab text-slate-500 leading-none text-[9px]" onMouseDown={beginDrag}>⠿</span>}
+              {onEdit ? <CalcInput value={label} onCommit={onEdit} className="w-full pl-2 text-center bg-transparent text-[11px] leading-none font-black text-slate-900 outline-none" style={{ fontSize: 11, fontWeight: 900, lineHeight: 1 }} title="Cota editable: puedes escribir sumas y restas, por ejemplo 800-30" /> : Math.round(label)}
+            </div>
+          );
+        })()}
+      </Html>
+    </>
+  );
+};
+
+/** Flecha de mover un cuerpo (cruz verde): arrastrar lo desplaza a lo largo del muro y lo desune de sus vecinos */
+const FitMoveHandle: React.FC<{ position: [number, number, number]; begin: () => (dxMm: number, dyMm: number) => void; controlsRef?: React.RefObject<any> }> = ({ position, begin, controlsRef }) => {
+  const { camera, size } = useThree();
+  const st = useRef<{ sx: number; sy: number; vx: number; vy: number; apply: (dxMm: number, dyMm: number) => void } | null>(null);
+  const [on, setOn] = useState(false);
+  const startDrag = useDocumentDrag(
+    (dx, dy) => { const t = st.current; if (!t) return; t.apply(pixelsToMm(dx, dy, t.sx, t.sy), pixelsToMm(dx, dy, t.vx, t.vy)); },
+    () => { st.current = null; setOn(false); if (controlsRef?.current) controlsRef.current.enabled = true; document.body.style.cursor = 'auto'; }
+  );
+  return (
+    <HtmlScaled zoomScale position={position} center distanceFactor={1} zIndexRange={[110, 0]}>
+      <button
+        data-overlay
+        title="Arrastra para mover este cubo (se desune de los vecinos)"
+        style={{ pointerEvents: on ? 'none' : undefined }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => {
+          e.stopPropagation(); e.preventDefault();
+          const p3 = new THREE.Vector3(...position);
+          const { sx, sy } = screenPixelsPerMeter(camera, size, p3, new THREE.Vector3(1, 0, 0));
+          const { sx: vx, sy: vy } = screenPixelsPerMeter(camera, size, p3, new THREE.Vector3(0, 1, 0));
+          st.current = { sx, sy, vx, vy, apply: begin() };
+          setOn(true);
+          if (controlsRef?.current) controlsRef.current.enabled = false;
+          document.body.style.cursor = 'grabbing';
+          startDrag(e);
+        }}
+        className={`w-14 h-14 rounded-full border-2 border-white shadow-lg flex items-center justify-center ${on ? 'bg-emerald-800' : 'bg-emerald-700 hover:bg-emerald-800'} cursor-grab`}
+      >
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" /></svg>
+      </button>
+    </HtmlScaled>
   );
 };
 
@@ -574,9 +799,9 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
         const face: FaceKey = st.field === 'depth' ? 'front' : st.field === 'top' ? 'top' : 'bottom';
         const ref = resolveReference?.(module.uniqueId, face, hv.id, hv.point);
         if (ref) {
-          const clampH = (n: number) => Math.min(2400, Math.max(100, n));
+          const clampH = (n: number) => Math.min(2400, Math.max(15, n));
           if (st.field === 'top') { if (ref.height != null) onSetTop?.(module.uniqueId, clampH(ref.height), Math.max(0, ref.topGap ?? 0)); }
-          else onApplyMeasures(module.uniqueId, { width: module.width, depth: ref.depth != null ? Math.min(1200, Math.max(100, ref.depth)) : module.depth, height: ref.height != null ? clampH(ref.height) : module.height });
+          else onApplyMeasures(module.uniqueId, { width: module.width, depth: ref.depth != null ? Math.min(1200, Math.max(15, ref.depth)) : module.depth, height: ref.height != null ? clampH(ref.height) : module.height });
           return;
         }
       }
@@ -586,11 +811,11 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
         const d = st.sign * pixelsToMm(dx, dy, st.sx, st.sy);
         const upper = module.type === 'UPPER';
         const gap = upper ? Math.max(0, Math.round((st.gap - d) / 5) * 5) : 0;
-        const height = Math.min(2400, Math.max(100, Math.round((st.value + (upper ? st.gap - gap : d)) / 5) * 5));
+        const height = Math.min(2400, Math.max(15, Math.round((st.value + (upper ? st.gap - gap : d)) / 5) * 5));
         onSetTop?.(module.uniqueId, height, gap);
         return;
       }
-      const [lo, hi] = st.field === 'depth' ? [100, 1200] : [100, 2400];
+      const [lo, hi] = st.field === 'depth' ? [15, 1200] : [15, 2400];
       const value = Math.min(hi, Math.max(lo, Math.round((st.value + st.sign * pixelsToMm(dx, dy, st.sx, st.sy)) / 5) * 5));
       onApplyMeasures(module.uniqueId, { width: module.width, depth: st.field === 'depth' ? value : module.depth, height: st.field === 'height' ? value : module.height });
     },
@@ -752,9 +977,9 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
               const z = module.depth / 2000 + 0.01;
               return (
                 <>
-                  <Line points={[[sx, -hh, z], [sx, hh, z]]} color="#ef4444" lineWidth={2} />
-                  <Line points={[[sx - 0.03, -hh, z], [sx + 0.03, -hh, z]]} color="#ef4444" lineWidth={2} />
-                  <Line points={[[sx - 0.03, hh, z], [sx + 0.03, hh, z]]} color="#ef4444" lineWidth={2} />
+                  <Line points={[[sx, -hh, z], [sx, hh, z]]} color="#111827" lineWidth={2} />
+                  <Line points={[[sx - 0.03, -hh, z], [sx + 0.03, -hh, z]]} color="#111827" lineWidth={2} />
+                  <Line points={[[sx - 0.03, hh, z], [sx + 0.03, hh, z]]} color="#111827" lineWidth={2} />
                   <Html position={[sx, -hh * 0.6, z]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }} {...(viewMode === 'isometric' || viewMode === '3d' ? { transform: true, distanceFactor: 3 } : {})}>
                     <div data-overlay>
                       <DimLabel
@@ -776,9 +1001,9 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
               const y = labelPos[1];
               return (
                 <>
-                  <Line points={[[sx, y, -hd], [sx, y, hd]]} color="#ef4444" lineWidth={2} />
-                  <Line points={[[sx - 0.03, y, -hd], [sx + 0.03, y, -hd]]} color="#ef4444" lineWidth={2} />
-                  <Line points={[[sx - 0.03, y, hd], [sx + 0.03, y, hd]]} color="#ef4444" lineWidth={2} />
+                  <Line points={[[sx, y, -hd], [sx, y, hd]]} color="#111827" lineWidth={2} />
+                  <Line points={[[sx - 0.03, y, -hd], [sx + 0.03, y, -hd]]} color="#111827" lineWidth={2} />
+                  <Line points={[[sx - 0.03, y, hd], [sx + 0.03, y, hd]]} color="#111827" lineWidth={2} />
                   <Html position={[sx, y, 0]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
                     <div data-overlay>
                       <DimLabel
@@ -1463,12 +1688,12 @@ const Island3D: React.FC<{
       {viewMode === 'plan' && (
         <>
           {/* Cota X: del punto 0 a la esquina de la isla, a lo largo del muro A (la península está pegada al muro: sin cota X) */}
-          {isl.kind !== 'peninsula' && <Line points={[[ox, y, z0], [x0, y, z0]]} color="#6366f1" lineWidth={2} />}
+          {isl.kind !== 'peninsula' && <Line points={[[ox, y, z0], [x0, y, z0]]} color="#111827" lineWidth={2} />}
           {isl.kind !== 'peninsula' && <Html position={[(ox + x0) / 2, y, z0]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
             <div data-overlay><DimLabel text={String(Math.round(isl.dx))} value={isl.dx} onCommit={onEdit ? (typed) => onEdit(isl.id, { dx: Math.max(0, Math.round(typed)) }) : undefined} title={`${Math.round(isl.dx)} mm desde el punto 0. Clic para editar`} /></div>
           </Html>}
           {/* Cota Y: del muro A a la esquina de la isla, hacia el frente */}
-          <Line points={[[x0, y, oz], [x0, y, z0]]} color="#6366f1" lineWidth={2} />
+          <Line points={[[x0, y, oz], [x0, y, z0]]} color="#111827" lineWidth={2} />
           <Html position={[x0, y, (oz + z0) / 2]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
             <div data-overlay><DimLabel text={String(Math.round(isl.dy))} value={isl.dy} onCommit={onEdit ? (typed) => onEdit(isl.id, { dy: Math.max(0, Math.round(typed)) }) : undefined} title={`${Math.round(isl.dy)} mm desde el punto 0. Clic para editar`} /></div>
           </Html>
@@ -1480,19 +1705,19 @@ const Island3D: React.FC<{
             const tick = 0.05;
             return (
               <>
-                <Line points={[[yTotX, y, oz], [yTotX, y, z1]]} color="#6366f1" lineWidth={2} />
-                <Line points={[[yTotX - tick, y, oz], [yTotX + tick, y, oz]]} color="#6366f1" lineWidth={1.5} />
-                <Line points={[[yTotX - tick, y, z1], [yTotX + tick, y, z1]]} color="#6366f1" lineWidth={1.5} />
-                <Line points={[[x1, y, z1], [yTotX + tick, y, z1]]} color="#6366f1" lineWidth={1} dashed dashSize={0.03} gapSize={0.03} />
+                <Line points={[[yTotX, y, oz], [yTotX, y, z1]]} color="#111827" lineWidth={2} />
+                <Line points={[[yTotX - tick, y, oz], [yTotX + tick, y, oz]]} color="#111827" lineWidth={1.5} />
+                <Line points={[[yTotX - tick, y, z1], [yTotX + tick, y, z1]]} color="#111827" lineWidth={1.5} />
+                <Line points={[[x1, y, z1], [yTotX + tick, y, z1]]} color="#111827" lineWidth={1} dashed dashSize={0.03} gapSize={0.03} />
                 <Html position={[yTotX, y, (oz + z1) / 2]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
                   <div data-overlay><DimLabel text={String(Math.round(totalY))} value={totalY} tone="white" onCommit={onEdit ? (typed) => onEdit(isl.id, { dy: Math.max(0, Math.round(typed) - isl.width) }) : undefined} title={`${Math.round(totalY)} mm: del punto 0 al borde lejano. Clic para editar`} /></div>
                 </Html>
                 {isl.kind !== 'peninsula' && (
                   <>
-                    <Line points={[[ox, y, xTotZ], [x1, y, xTotZ]]} color="#6366f1" lineWidth={2} />
-                    <Line points={[[ox, y, xTotZ - tick], [ox, y, xTotZ + tick]]} color="#6366f1" lineWidth={1.5} />
-                    <Line points={[[x1, y, xTotZ - tick], [x1, y, xTotZ + tick]]} color="#6366f1" lineWidth={1.5} />
-                    <Line points={[[x1, y, z1], [x1, y, xTotZ + tick]]} color="#6366f1" lineWidth={1} dashed dashSize={0.03} gapSize={0.03} />
+                    <Line points={[[ox, y, xTotZ], [x1, y, xTotZ]]} color="#111827" lineWidth={2} />
+                    <Line points={[[ox, y, xTotZ - tick], [ox, y, xTotZ + tick]]} color="#111827" lineWidth={1.5} />
+                    <Line points={[[x1, y, xTotZ - tick], [x1, y, xTotZ + tick]]} color="#111827" lineWidth={1.5} />
+                    <Line points={[[x1, y, z1], [x1, y, xTotZ + tick]]} color="#111827" lineWidth={1} dashed dashSize={0.03} gapSize={0.03} />
                     <Html position={[(ox + x1) / 2, y, xTotZ]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
                       <div data-overlay><DimLabel text={String(Math.round(totalX))} value={totalX} tone="white" onCommit={onEdit ? (typed) => onEdit(isl.id, { dx: Math.max(0, Math.round(typed) - isl.length) }) : undefined} title={`${Math.round(totalX)} mm: del punto 0 al borde lejano. Clic para editar`} /></div>
                     </Html>
@@ -1582,6 +1807,15 @@ const DraftNum: React.FC<{ value: number; onCommit: (n: number) => void; min?: n
     <input type="number" min={min} max={max} className={className} value={draft ?? value} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setDraft(e.target.value)} onBlur={() => finish(true)}
       onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') finish(false); }} />
   );
+};
+
+
+/** Líneas de abertura de una puerta (norma de dibujo de arquitectura): dos líneas segmentadas y suaves con el vértice en el borde libre; `face` = en qué cara de la pieza se dibujan */
+const SwingLines: React.FC<{ hw: number; hh: number; op: 'izq' | 'der' | 'sup' | 'inf'; face: 'z+' | 'x+' | 'x-'; depth: number }> = ({ hw, hh, op, face, depth }) => {
+  const uv: [number, number][] = op === 'izq' ? [[-hw, hh], [hw, 0], [-hw, -hh]] : op === 'der' ? [[hw, hh], [-hw, 0], [hw, -hh]] : op === 'sup' ? [[-hw, hh], [0, -hh], [hw, hh]] : [[-hw, -hh], [0, hh], [hw, -hh]];
+  const f = depth + 0.002;
+  const pts = uv.map(([u, v]) => (face === 'z+' ? [u, v, f] : face === 'x+' ? [f, v, u] : [-f, v, u]) as [number, number, number]);
+  return <Line points={pts} color="#64748b" lineWidth={1} dashed dashSize={0.03} gapSize={0.025} transparent opacity={0.45} raycast={() => null} />;
 };
 
 /** Formulario de un cuerpo del Closet fit (doble clic): ¿marco puerta o surrón? y sus puertas, entrepaños y cajones */
@@ -1721,7 +1955,7 @@ const ClosetSectionForm: React.FC<{ section: string; api: ClosetFormApi; onClose
                 };
                 const btn = (on: boolean, label: string, onClick: () => void) => <button key={label} onClick={onClick} className={`py-1 rounded-lg text-[10px] font-black border-2 ${on ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>;
                 return Array.from({ length: N }, (_, k) => {
-                  const hinge = edges[k]?.hinge ?? (k % 2 === 0 ? 'izq' : 'der');
+                  const hinge = edges[k]?.hinge ?? (k < N / 2 ? 'izq' : 'der');
                   const type = edges[k]?.type ?? 'costado';
                   const extremo = (hinge === 'izq' && k === 0) || (hinge === 'der' && k === N - 1);
                   const extName = hinge === 'izq' ? (api.leftWall ? 'marco' : 'costado') : (api.rightWall ? 'marco' : 'costado');
@@ -2329,7 +2563,7 @@ const DimLabel: React.FC<{ text: string; value: number; onCommit?: (value: numbe
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const finished = useRef(false);
-  const base = 'whitespace-nowrap px-1.5 py-0.5 rounded border text-[11px] leading-none font-black shadow-sm';
+  const base = 'whitespace-nowrap w-12 h-5 inline-flex items-center justify-center rounded border-2 text-[11px] leading-none font-black shadow-sm'; // mismo tamaño que todas las cotas
 
   // Aplica o cancela una sola vez (Enter, Escape y perder el foco pueden llegar seguidos)
   const finish = (apply: boolean) => {
@@ -2360,7 +2594,7 @@ const DimLabel: React.FC<{ text: string; value: number; onCommit?: (value: numbe
   }
   return (
     <div
-      className={`${base} ${tone === 'white' ? 'bg-white text-slate-800 border-slate-400' : tone === 'red' ? 'bg-white text-red-600 border-red-500' : 'bg-indigo-50 text-indigo-700 border-indigo-300'} ${onCommit ? `pointer-events-auto cursor-text ${tone === 'white' ? 'hover:bg-slate-100' : tone === 'red' ? 'hover:bg-red-50' : 'hover:bg-indigo-100'}` : ''}`}
+      className={`${base} bg-white text-slate-900 border-slate-900 ${onCommit ? `pointer-events-auto cursor-text hover:bg-slate-100` : ''}`}
       title={onCommit ? title : undefined}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={() => { finished.current = false; setDraft(String(Math.round(value))); setEditing(true); }}
@@ -2404,9 +2638,9 @@ const PlanDimensions: React.FC<{ appliances: Appliance[]; wallA: number; offsetZ
           const pill = 'whitespace-nowrap px-1.5 py-0.5 rounded border text-[11px] leading-none font-black shadow-sm';
           return (
             <group key={`${wall}-${app.type}`}>
-              <Line points={[pt(0, off), pt(target, off)]} color="#4f46e5" lineWidth={2.5} />
-              <Line points={[pt(0, off - 60), pt(0, off + 60)]} color="#64748b" lineWidth={1.5} />
-              <Line points={[pt(target, off - 60), pt(target, off + 60)]} color="#4f46e5" lineWidth={1.5} />
+              <Line points={[pt(0, off), pt(target, off)]} color="#111827" lineWidth={2.5} />
+              <Line points={[pt(0, off - 60), pt(0, off + 60)]} color="#111827" lineWidth={1.5} />
+              <Line points={[pt(target, off - 60), pt(target, off + 60)]} color="#111827" lineWidth={1.5} />
               {row === 0 && (
                 <Html position={pt(0, off + 150)} center style={{ pointerEvents: 'none' }}>
                   <div className={`${pill} bg-white text-slate-500 border-slate-300`}>0</div>
@@ -2447,9 +2681,9 @@ const WallDimensions: React.FC<{ layout: LayoutType; lArm: 'left' | 'right'; app
               : toWorld(wallA + T + across, along);
         return (
           <group key={wall}>
-            <Line points={[pt(0, off), pt(length, off)]} color="#0f172a" lineWidth={2} />
-            <Line points={[pt(0, off - 60), pt(0, off + 60)]} color="#0f172a" lineWidth={1.5} />
-            <Line points={[pt(length, off - 60), pt(length, off + 60)]} color="#0f172a" lineWidth={1.5} />
+            <Line points={[pt(0, off), pt(length, off)]} color="#111827" lineWidth={2} />
+            <Line points={[pt(0, off - 60), pt(0, off + 60)]} color="#111827" lineWidth={1.5} />
+            <Line points={[pt(length, off - 60), pt(length, off + 60)]} color="#111827" lineWidth={1.5} />
             <Html position={pt(length / 2, off)} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
               <div data-overlay><DimLabel text={`Muro ${wall} ${Math.round(length)}`} value={length} tone="white" onCommit={onEditWall ? (typed) => onEditWall(wall, typed) : undefined} title={`Largo del muro ${wall}: ${Math.round(length)} mm. Clic para editar`} /></div>
             </Html>
@@ -2586,7 +2820,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   const [fitLocks, setFitLocks] = useState<Record<string, { w?: boolean; h?: boolean }>>({}); // candados: medidas que no deben cambiar al editar otras
   const fitLocked = (id: string, kind: 'w' | 'h') => !!fitLocks[id]?.[kind];
   // Editar las medidas de un cuerpo del Closet fit desde su nota: el ancho se reparte con el vecino y el alto con la celda vecina (o con el cuerpo de arriba / abajo)
-  const fitEdit = (id: string, patch: { width?: number; height?: number }): void => {
+  const fitEdit = (id: string, patch: { width?: number; height?: number }, side?: 'l' | 'r'): void => {
     if (!fitApi) return;
     const f = fitApi.fit;
     // parte de un cuerpo dividido (id-sN): el alto es el de su celda y el ancho se reparte solo con sus hermanas
@@ -2600,7 +2834,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         const ws = cur.map(x => (x * cellW) / tot);
         const nb = k < ws.length - 1 ? k + 1 : k - 1;
         const pair = ws[k] + ws[nb];
-        const nw = Math.min(Math.max(patch.width, 100), pair - 100);
+        const nw = Math.min(Math.max(patch.width, 15), pair - 15);
         ws[k] = nw; ws[nb] = pair - nw;
         fitApi.onChange({ ...f, subs: { ...(f.subs ?? {}), [cellKey]: ws } });
       }
@@ -2620,22 +2854,25 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
     if (patch.width != null && (lower ? cs.lower : cs.upper)[i]?.length > 1 && !fitLocked(id, 'w')) {
       const colW = row[i];
       const cw = { ...(f.cellW ?? {}) };
-      if (patch.width <= colW + 0.5) { cw[id] = Math.max(100, Math.round(patch.width)); fitApi.onChange({ ...f, cellW: cw }); return; }
+      if (patch.width <= colW + 0.5) { cw[id] = Math.max(15, Math.round(patch.width)); fitApi.onChange({ ...f, cellW: cw }); return; }
       (lower ? cs.lower : cs.upper)[i].forEach((_, k) => { const kid = idOf(lower, i, k); if (kid !== id && cw[kid] === undefined) cw[kid] = colW; });
       delete cw[id];
       cellWNext = cw;
     }
     if (patch.width != null && row.length === 1 && lower && f.mueble) {
       // baño con un solo cuerpo: el ancho que se pide es el ancho del mueble
-      fitApi.onChange({ ...f, cellW: cellWNext, mueble: { ...(f.mueble ?? { x0: 0, ancho: patch.width }), ancho: Math.max(200, Math.min(wallA, Math.round(patch.width))) } });
+      const m0 = f.mueble, nw = Math.max(200, Math.min(wallA, Math.round(patch.width)));
+      // estirar por la izquierda mueve el borde izquierdo (el mueble crece hacia el muro de ese lado); por la derecha crece hacia el otro
+      const x0n = side === 'l' ? Math.max(0, m0.x0 - (nw - m0.ancho)) : m0.x0;
+      fitApi.onChange({ ...f, cellW: cellWNext, mueble: { x0: x0n, ancho: Math.min(nw, wallA - x0n) } });
       return;
     }
     if (patch.width != null && row.length > 1) {
       // el ancho se reparte con el vecino que no tenga candado; si el cuerpo o todos sus vecinos están bloqueados, no cambia
-      const nb = [i + 1, i - 1].find(n => n >= 0 && n < row.length && !fitLocked(idOf(lower, n, 0), 'w'));
+      const nb = (side === 'l' ? [i - 1] : side === 'r' ? [i + 1] : [i + 1, i - 1]).find(n => n >= 0 && n < row.length && !fitLocked(idOf(lower, n, 0), 'w'));
       if (nb === undefined || fitLocked(idOf(lower, i, 0), 'w')) return;
       const total = row[i] + row[nb];
-      const wi = Math.min(Math.max(patch.width, 100), total - 100);
+      const wi = Math.min(Math.max(patch.width, 15), total - 15);
       row[i] = wi; row[nb] = total - wi;
     }
     if (patch.height != null) {
@@ -2647,15 +2884,15 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         if (nb === undefined) return;
         const sj = c[j] < 0 ? -1 : 1, sn = c[nb] < 0 ? -1 : 1;
         const total = Math.abs(c[j]) + Math.abs(c[nb]);
-        const nj = Math.min(Math.max(patch.height, 100), total - 100);
+        const nj = Math.min(Math.max(patch.height, 15), total - 15);
         c[j] = sj * nj; c[nb] = sn * (total - nj);
       } else if (!lower) {
-        c[0] = (c[0] < 0 ? -1 : 1) * Math.min(Math.max(patch.height, 100), cs.Hf - 300);
+        c[0] = (c[0] < 0 ? -1 : 1) * Math.min(Math.max(patch.height, 15), cs.Hf - 300);
       } else if (rows.upper.length > 0) {
         // el alto de un cuerpo de abajo lo definen los cuerpos de arriba que le quedan encima
         const a0 = rows.lower.slice(0, i).reduce((a, b) => a + b, 0), b0 = a0 + rows.lower[i];
         let acc = 0;
-        const nh = Math.min(Math.max(cs.Hf - cs.base - patch.height, 100), cs.Hf - 300);
+        const nh = Math.min(Math.max(cs.Hf - cs.base - patch.height, 15), cs.Hf - 300);
         rows.upper.forEach((w, k) => { if (Math.min(b0, acc + w) - Math.max(a0, acc) > 0.5) uc[k] = [(uc[k][0] < 0 ? -1 : 1) * nh]; acc += w; });
       } else if (f.altoMueble && f.altoMueble > 0) {
         // baño sin cuerpos arriba: el alto del cuerpo es el alto del mueble
@@ -2713,6 +2950,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   };
   const [isoHidden, setIsoHidden] = useState<string[]>([]); // piezas ocultadas con clic sostenido mientras el módulo está aislado
   const isoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isoSel, setIsoSel] = useState<string | null>(null); // pieza del módulo aislado con sus flechas
   // sanitario y espejo del baño son solo ambientación: se ven translúcidos, no se pueden seleccionar y no son piezas del mueble
   const isAmb = (n: string) => n === 'Espejo bano' || n.startsWith('Sanitario');
   // el zócalo del cubo (escalera) se ve translúcido mientras no se convierte a módulos
@@ -2762,14 +3000,16 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
     if (!body) return boxes;
     const cfgI = fitApi.fit.bodies?.[fitIsolate];
     const parts = cfgI ? fitBodyParts(cfgI, fitIsolate, body.x, body.z, body.sx, body.sz, body.sy, true) : [];
-    return [body, ...parts.filter(p => !isoHidden.includes(p.id))]; // sin muros: solo el cuerpo y sus piezas
+    const pa = fitApi.fit.pieceAdj;
+    return [body, ...parts.filter(p => !isoHidden.includes(p.id)).map(p => (pa?.[p.id] ? { ...p, ...pa[p.id] } : p))]; // sin muros: solo el cuerpo y sus piezas (con sus ajustes manuales)
   }, [boxes, fitIsolate, fitApi, isoHidden, vis.wallA, vis.wallB, vis.wallC]);
   useEffect(() => {
     if (!fitIsolate) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setFitIsolate(null); setFitForm(null); setIsoHidden([]); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { if (isoSel) { setIsoSel(null); return; } setFitIsolate(null); setFitForm(null); setIsoHidden([]); } };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [fitIsolate]);
+  }, [fitIsolate, isoSel]);
+  useEffect(() => { if (!fitIsolate) setIsoSel(null); }, [fitIsolate]);
   // Con las dimensiones ocultas, al arrastrar una flecha aparecen 2 segundos las notas de los cuerpos que cambian de medida (por si se quieren editar)
   const [dimFlash, setDimFlash] = useState<string[]>([]);
   const prevSizes = useRef<Record<string, string>>({});
@@ -3042,6 +3282,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               // clic sostenido sobre una pieza del módulo aislado: se oculta
               onPointerDown: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); if (isoTimer.current) clearTimeout(isoTimer.current); isoTimer.current = setTimeout(() => setIsoHidden(prev => (prev.includes(b.id) ? prev : [...prev, b.id])), 450); },
               onPointerUp: () => { if (isoTimer.current) clearTimeout(isoTimer.current); },
+              onClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); if ((e.nativeEvent as MouseEvent).detail >= 2) return; setIsoSel(prev => (prev === b.id ? null : b.id)); }, // un clic: la pieza muestra sus flechas
               onPointerOut: () => { if (isoTimer.current) clearTimeout(isoTimer.current); document.body.style.cursor = 'auto'; },
               onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; },
             } : {})}
@@ -3056,6 +3297,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             ) : (
             <Edges color={isFitBody(b.name) ? (fitCopySrc === b.id ? '#16a34a' : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? '#f97316' : b.name.startsWith('Hueco ') ? '#cbd5e1' : '#2563eb') : cajoneroSel !== 0 && closetSectionOf(b.name) === 'cajonero' && closetCajoneroIndex(b.name) === cajoneroSel ? '#ef4444' : b.moduleId && b.moduleId === selectedId ? '#ef4444' : (b.moduleId && pair.includes(b.moduleId) ? '#f59e0b' : '#5b4630')} linewidth={b.moduleId && (b.moduleId === selectedId || pair.includes(b.moduleId)) ? 3 : 1} />
             )}
+            {isoSel === b.id && fitIsolate && <Edges color="#f97316" linewidth={3} />}
             {b.name.startsWith('Cuerpo ') && fitApi && !fitApi.fit.converted && viewMode !== 'plan' && (() => {
               // en cubos: una línea por cada entrepaño del surrón (al convertir salen las piezas reales)
               const c = fitApi.fit.bodies?.[b.id];
@@ -3067,6 +3309,11 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
                 const yy = (zb + ((zt - zb) * (i + 1)) / (ns + 1) - b.sz / 2) / 1000;
                 return <Line key={`shelf-${i}`} points={[[-hw + E / 1000, yy, zf], [hw - E / 1000, yy, zf]]} color="#a8896a" lineWidth={1} transparent opacity={0.5} raycast={() => null} />;
               });
+            })()}
+            {b.name.startsWith('Puerta abatible') && closetForm && (() => {
+              const k = (Number(b.name.replace('Puerta abatible ', '').split(' ')[0]) || 1) - 1, N = closetForm.derived.doorCount;
+              const op: 'izq' | 'der' = (closetForm.config.doorEdges?.[k]?.hinge ?? (k < N / 2 ? 'izq' : 'der'));
+              return <SwingLines hw={b.sx / 2000} hh={b.sz / 2000} op={op} face="z+" depth={b.sy / 2000} />;
             })()}
             {(b.name === 'Puerta rep fit' || b.name === 'Puerta fit') && fitApi && (() => {
               // líneas de abertura (norma de dibujo de arquitectura): dos líneas segmentadas y suaves que convergen en el lado de la bisagra
@@ -3114,25 +3361,46 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           const xl = fitInsets(f, wallA).left;
           const zf = offsetZ + Math.max(200, f.depth) / 1000 + 0.003;
           const toXw = (X: number) => (X - wallA / 2) / 1000;
-          const cota = (key: string, xmm: number, z0: number, z1: number, label: number, onEdit: (n: number) => void) => {
-            const xw = toXw(xmm), tk = 0.025;
-            return (
-              <React.Fragment key={key}>
-                <Line points={[[xw, z0 / 1000, zf], [xw, z1 / 1000, zf]]} color="#06b6d4" lineWidth={2} raycast={() => null} />
-                <Line points={[[xw - tk, z0 / 1000, zf], [xw + tk, z0 / 1000, zf]]} color="#06b6d4" lineWidth={2} raycast={() => null} />
-                <Line points={[[xw - tk, z1 / 1000, zf], [xw + tk, z1 / 1000, zf]]} color="#06b6d4" lineWidth={2} raycast={() => null} />
-                <Html position={[xw, (z0 + z1) / 2000, zf]} center occlude={false} zIndexRange={[60, 0]} style={{ pointerEvents: 'none' }}>
-                  <div data-overlay className="select-none rounded bg-white/95 border border-cyan-500 shadow-sm" style={{ pointerEvents: 'auto' }} onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-                    <CalcInput value={label} onCommit={onEdit} className="w-12 text-center bg-transparent text-[10px] font-black text-cyan-700 outline-none py-px" title="Cota editable: puedes escribir sumas y restas, por ejemplo 800-30" />
-                  </div>
-                </Html>
-              </React.Fragment>
-            );
-          };
+          const cota = (key: string, xmm: number, z0: number, z1: number, label: number, onEdit: (n: number) => void) => (
+            <MovableCota key={key} kind="v" from={z0 / 1000} to={z1 / 1000} at={toXw(xmm)} zf={zf} label={label} ext={[toXw(xl), 0]} onEdit={onEdit} controlsRef={controlsRef} />
+          );
           // editar la cota de abajo cambia el espacio al piso (flotado o zócalo); editar la de arriba cambia el alto del cuerpo de abajo (el resto se ajusta con su vecino)
           const editBase = (n: number) => { if (f.flotado?.on) fitApi.onChange({ ...f, flotado: { ...f.flotado, alto: Math.max(0, Math.min(1200, n)) } }); else if (f.zocalo?.on) fitApi.onChange({ ...f, zocalo: { ...f.zocalo, alto: Math.max(30, Math.min(300, n)) } }); };
           const editTop = (n: number) => fitEdit(`fit-inf-0-${col.length - 1}`, { height: Math.max(50, n - base) });
-          return <>{cota('cota-top', xl - 180, 0, top, top, editTop)}{base > 0 && cota('cota-base', xl - 90, 0, base, base, editBase)}</>;
+          // cotas generales: ancho total y alto total del conjunto de cuerpos (de borde a borde, desde el piso)
+          const bodiesA = boxes.filter(b => b.id.startsWith('fit-') && b.name.startsWith('Cuerpo ') && b.wall === 'A');
+          const gen = (() => {
+            if (!bodiesA.length) return null;
+            const x0 = Math.min(...bodiesA.map(b => b.x)), x1 = Math.max(...bodiesA.map(b => b.x + b.sx)), zTop = Math.max(...bodiesA.map(b => b.z + b.sz));
+            const GC = '#111827', tk = 0.03, yTop = (zTop + 90) / 1000, xLeft = toXw(x0) - 0.55;
+            const chip = (txt: number) => <div data-overlay className="select-none rounded bg-white/95 border-2 border-emerald-600 shadow-sm px-1 text-[12px] font-black text-emerald-800" style={{ pointerEvents: 'none' }}>{Math.round(txt)}</div>;
+            return (
+              <React.Fragment key="cotas-generales">
+                <MovableCota kind="h" from={toXw(x0)} to={toXw(x1)} at={yTop} zf={zf} label={x1 - x0} ext={[zTop / 1000, 0]} controlsRef={controlsRef} />
+                <MovableCota kind="v" from={0} to={zTop / 1000} at={xLeft} zf={zf} label={zTop} ext={[toXw(x0), 0]} controlsRef={controlsRef} />
+              </React.Fragment>
+            );
+          })();
+          // cotas de los espacios libres (huecos): una cota vertical a la derecha por cada espacio, para referenciar los cubos
+          const huecos = (() => {
+            const hs = boxes.filter(b => b.id.startsWith('fit-') && b.name.startsWith('Hueco ') && b.wall === 'A' && b.sz >= 3);
+            if (!bodiesA.length) return null;
+            const xr = Math.max(...bodiesA.map(b => b.x + b.sx));
+            const seen = new Set<string>();
+            const vs = hs.filter(h => { const k = `${Math.round(h.z)}-${Math.round(h.sz)}`; if (seen.has(k)) return false; seen.add(k); return true; }).map(h => (
+              <MovableCota key={`cota-hueco-${h.id}`} kind="v" from={h.z / 1000} to={(h.z + h.sz) / 1000} at={toXw(xr) + 0.14} zf={zf} label={h.sz} ext={[toXw(xr), 0]} controlsRef={controlsRef} />
+            ));
+            // cotas horizontales: de dónde a dónde queda libre al lado de un cubo más angosto que el conjunto
+            const xl0 = Math.min(...bodiesA.map(b => b.x));
+            const hz = bodiesA.filter(b => b.x - xl0 > 3 || xr - (b.x + b.sx) > 3).flatMap(b => {
+              const out: React.ReactNode[] = [];
+              if (b.x - xl0 > 3) out.push(<MovableCota key={`cota-izq-${b.id}`} kind="h" from={toXw(xl0)} to={toXw(b.x)} at={(b.z + b.sz) / 1000 + 0.06} zf={zf} label={b.x - xl0} ext={[(b.z + b.sz) / 1000, 0]} controlsRef={controlsRef} />);
+              if (xr - (b.x + b.sx) > 3) out.push(<MovableCota key={`cota-der-${b.id}`} kind="h" from={toXw(b.x + b.sx)} to={toXw(xr)} at={(b.z + b.sz) / 1000 + 0.06} zf={zf} label={xr - (b.x + b.sx)} ext={[(b.z + b.sz) / 1000, 0]} controlsRef={controlsRef} />);
+              return out;
+            });
+            return <>{vs}{hz}</>;
+          })();
+          return <>{gen}{huecos}{cota('cota-top', xl - 180, 0, top, top, editTop)}{base > 0 && cota('cota-base', xl - 90, 0, base, base, editBase)}</>;
         })()}
         {/* al convertir a módulos se ocultan las flechas de arrastre y los botones de eliminar y dividir cubos */}
         {fitApi && !measureMode && !fitApi.fit.converted && !fitIsolate && vis.wallA !== false && (() => {
@@ -3177,8 +3445,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             if (!independent) for (let m = 0; m < other.length - 1; m++) { acc2 += other[m]; if (Math.abs(acc2 - pos) < 1) om = m; } // la flecha sencilla (espacio libre) es independiente: no arrastra la unión de la otra fila
             return (d: number, exact?: boolean) => {
               // la cara que da al espacio libre puede comerse casi todo ese espacio (1 mm); el cuerpo real conserva 100 mm
-              let lo = -(base[k] - (freeSide === 'l' ? 1 : 100)), hi = base[k + 1] - (freeSide === 'r' ? 1 : 100);
-              if (om >= 0) { lo = Math.max(lo, -(other[om] - 100)); hi = Math.min(hi, other[om + 1] - 100); }
+              let lo = -(base[k] - (freeSide === 'l' ? 1 : 15)), hi = base[k + 1] - (freeSide === 'r' ? 1 : 15);
+              if (om >= 0) { lo = Math.max(lo, -(other[om] - 15)); hi = Math.min(hi, other[om + 1] - 15); }
               const dd = Math.max(lo, Math.min(hi, d));
               if (dd !== d) exact = true; // en el límite: medida exacta
               const w = [...base]; w[k] = exact ? base[k] + dd : Math.round((base[k] + dd) / 5) * 5; w[k + 1] = base[k] + base[k + 1] - w[k];
@@ -3197,7 +3465,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             const base = [...(lower ? cs.lower[i] : cs.upper[i])];
             return (d: number, exact?: boolean) => {
               const aj = Math.abs(base[j]), an = Math.abs(base[j + 1]);
-              const dd = Math.max(-(an - (base[j + 1] < 0 ? 1 : 100)), Math.min(aj - (base[j] < 0 ? 1 : 100), d)); // el espacio libre puede reducirse hasta 1 mm
+              const dd = Math.max(-(an - (base[j + 1] < 0 ? 1 : 15)), Math.min(aj - (base[j] < 0 ? 1 : 15), d)); // el espacio libre puede reducirse hasta 1 mm
               if (dd !== d) exact = true;
               const nj = exact ? aj - dd : Math.round((aj - dd) / 5) * 5;
               const c = [...base]; c[j] = sgn(base[j]) * nj; c[j + 1] = sgn(base[j + 1]) * (aj + an - nj);
@@ -3212,7 +3480,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             const total = sum(base);
             return (d: number, exact?: boolean) => {
               const last = base.length - 1;
-              const dd = Math.min(Math.max(d, -(cs.Hf - (lowFree ? 1 : 300) - total)), Math.abs(base[last]) - (base[last] < 0 ? 1 : 100)); // si abajo hay espacio libre la cara puede bajar hasta casi el piso
+              const dd = Math.min(Math.max(d, -(cs.Hf - (lowFree ? 1 : 300) - total)), Math.abs(base[last]) - (base[last] < 0 ? 1 : 15)); // si abajo hay espacio libre la cara puede bajar hasta casi el piso
               if (dd !== d) exact = true;
               const c = [...base]; c[last] = sgn(base[last]) * (exact ? Math.abs(base[last]) - dd : Math.round((Math.abs(base[last]) - dd) / 5) * 5);
               const st = rowsAll(); st.uc[m] = c;
@@ -3224,7 +3492,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             const baseUc = cs.upper.map(c => [...c]);
             return (d: number, exact?: boolean) => {
               const nh0 = cs.upH - d;
-              const nh = Math.max(100, Math.min(cs.Hf - 300, exact ? nh0 : Math.round(nh0 / 5) * 5));
+              const nh = Math.max(15, Math.min(cs.Hf - 300, exact ? nh0 : Math.round(nh0 / 5) * 5));
               const st = rowsAll();
               st.uc = baseUc.map(cc => { const sm = sum(cc); return cc.map(x => (x * nh) / sm); });
               fitApi.onChange({ ...f, upperHeight: nh, lowerW: st.lw, lowerBodies: st.lw.length, lowerCells: st.lc, upperW: st.uw, upperBodies: st.uw.length, upperCells: st.uc });
@@ -3279,7 +3547,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
                       const beginSub = () => {
                         const baseWs = subsW.map(x => (x * wc0) / tot0);
                         return (d: number, exact?: boolean) => {
-                          const dd = Math.max(-(baseWs[kk2] - 100), Math.min(baseWs[kk2 + 1] - 100, d));
+                          const dd = Math.max(-(baseWs[kk2] - 15), Math.min(baseWs[kk2 + 1] - 15, d));
                           const ws = [...baseWs]; ws[kk2] = exact ? baseWs[kk2] + dd : Math.round((baseWs[kk2] + dd) / 5) * 5; ws[kk2 + 1] = baseWs[kk2] + baseWs[kk2 + 1] - ws[kk2];
                           fitApi.onChange({ ...f, subs: { ...(f.subs ?? {}), [cellKey]: ws } });
                         };
@@ -3296,6 +3564,26 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               for (let j = 0; j < cells[k].length - 1; j++) {
                 top -= Math.abs(cells[k][j]);
                 const aFree = cells[k][j] < 0, bFree = cells[k][j + 1] < 0;
+                // dos cuerpos separados por un espacio libre ya agotado (≤ 3 mm): las dos flechas sencillas se funden en un solo botón morado de unión
+                if (j > 0 && cells[k][j] < 0 && Math.abs(cells[k][j]) < 3 && cells[k][j - 1] > 0 && cells[k][j + 1] > 0) continue; // lo dibuja el botón de la unión anterior
+                if (!aFree && bFree && Math.abs(cells[k][j + 1]) < 3 && cells[k][j + 2] > 0) {
+                  const jj = j, lw = lower, kk0 = k;
+                  const beginMerged = () => {
+                    if (fitLocked(`fit-${lw ? 'inf' : 'sup'}-${kk0}-${jj}`, 'h') || fitLocked(`fit-${lw ? 'inf' : 'sup'}-${kk0}-${jj + 2}`, 'h')) return () => {};
+                    const base = [...(lw ? cs.lower[kk0] : cs.upper[kk0])];
+                    return (d: number, exact?: boolean) => {
+                      const aj = base[jj], bj = base[jj + 2];
+                      const dd = Math.max(-(bj - 15), Math.min(aj - 15, d));
+                      if (dd !== d) exact = true;
+                      const nj = exact ? aj - dd : Math.round((aj - dd) / 5) * 5;
+                      const c = [...base]; c[jj] = nj; c[jj + 2] = aj + bj - nj;
+                      const st = rowsAll(); (lw ? st.lc : st.uc)[kk0] = c;
+                      commit(st);
+                    };
+                  };
+                  nodes.push(<FitJunction key={`fc-${lower ? 'l' : 'u'}-${k}-${j}`} position={[toX(cx), top / 1000, frontZ]} axis={[0, 1, 0]} vertical locked={cellLocked(lower, k, j)} posMm={top} group={`${lower ? 'l' : 'u'}-${k}`} begin={beginMerged} controlsRef={controlsRef} />);
+                  continue;
+                }
                 if (aFree !== bFree && Math.abs(cells[k][aFree ? j : j + 1]) < 3) continue; // el espacio libre ya se agotó: el cuerpo toca al otro
                 nodes.push(<FitJunction key={`fc-${lower ? 'l' : 'u'}-${k}-${j}`} position={[toX(cx), top / 1000, frontZ]} axis={[0, 1, 0]} vertical locked={cellLocked(lower, k, j)} single={aFree !== bFree ? (bFree ? 1 : -1) : undefined} limit={aFree !== bFree ? { at: (bFree ? top - Math.abs(cells[k][j + 1]) : top + Math.abs(cells[k][j])) / 1000, from: toX(cx - row[k] / 2), to: toX(cx + row[k] / 2) } : undefined} posMm={top} group={`${lower ? 'l' : 'u'}-${k}`} begin={beginCell(lower, k, j)} controlsRef={controlsRef} />);
               }
@@ -3388,6 +3676,103 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               const st = rowsAll(); (lower ? st.lc : st.uc)[i][j] = Math.abs((lower ? st.lc : st.uc)[i][j]); setFitSel(null); commit(st); };
             const left = toX(sel.x) + 0.1, right = toX(sel.x + sel.sx) - 0.1, top = (sel.z + sel.sz) / 1000 - 0.1, bottom = sel.z / 1000 + 0.1;
             const bigBtn = 'w-14 h-14 rounded-full text-white shadow-lg border-2 border-white flex items-center justify-center';
+            // flechas azules de estirar (en isométrica y 3D): arriba el alto, a los lados el ancho
+            if (!isGap && (viewMode === 'isometric' || viewMode === '3d')) {
+              // las flechas quedan separadas de la cara (si están justo sobre ella titilan al taparse con el propio cubo)
+              const zMid = offsetZ + sel.sy / 2000, yTop = (sel.z + sel.sz) / 1000 + 0.02, yMid = (sel.z + sel.sz / 2) / 1000, off = 0.02;
+              // regla: si la cara toca (es tangente) a otro cubo, ese lado no se puede estirar y su flecha no sale
+              const ov = (a0: number, a1: number, b0: number, b1: number) => Math.min(a1, b1) - Math.max(a0, b0) > 1;
+              const others = boxes.filter(o => o.id !== sel.id && o.kind === 'panel' && o.name.startsWith('Cuerpo ') && o.wall === sel.wall);
+              const touches = (face: 'l' | 'r' | 'u' | 'f') => others.some(o => (
+                face === 'l' ? Math.abs(o.x + o.sx - sel.x) < 1 && ov(o.z, o.z + o.sz, sel.z, sel.z + sel.sz) && ov(o.y, o.y + o.sy, sel.y, sel.y + sel.sy)
+                : face === 'r' ? Math.abs(o.x - (sel.x + sel.sx)) < 1 && ov(o.z, o.z + o.sz, sel.z, sel.z + sel.sz) && ov(o.y, o.y + o.sy, sel.y, sel.y + sel.sy)
+                : face === 'u' ? Math.abs(o.z - (sel.z + sel.sz)) < 1 && ov(o.x, o.x + o.sx, sel.x, sel.x + sel.sx) && ov(o.y, o.y + o.sy, sel.y, sel.y + sel.sy)
+                : Math.abs(o.y - (sel.y + sel.sy)) < 1 && ov(o.x, o.x + o.sx, sel.x, sel.x + sel.sx) && ov(o.z, o.z + o.sz, sel.z, sel.z + sel.sz)));
+              // estirar hacia arriba solo se come el espacio libre (hueco) que hay encima: el alto de este cuerpo sube y el del hueco baja
+              const stretchUp = (newH: number) => {
+                const f2 = fitApi.fit, rs = fitRows(f2, wallA), cs2 = fitCells(f2, wallA, spaceHeight);
+                const lc2 = cs2.lower.map(c => [...c]), uc2 = cs2.upper.map(c => [...c]);
+                const cc = (lower ? lc2 : uc2)[i];
+                if (!cc || j < 1 || cc[j - 1] >= 0) return;
+                const total = Math.abs(cc[j]) + Math.abs(cc[j - 1]), nj = Math.min(Math.max(newH, 15), total - 20);
+                cc[j] = nj; cc[j - 1] = -(total - nj);
+                fitApi.onChange({ ...f2, lowerW: [...rs.lower], lowerBodies: rs.lower.length, lowerCells: lc2, upperW: [...rs.upper], upperBodies: rs.upper.length, upperCells: uc2 });
+              };
+              // restricciones de medida: si ese lado ya no tiene espacio para crecer (mínimo del vecino, medida bloqueada o tope) tampoco sale la flecha
+              const cellIdW = `fit-${lower ? 'inf' : 'sup'}-${i}-0`, wLocked = fitLocked(cellIdW, 'w') || fitLocked(sel.id, 'w');
+              const colStart = fo + row.slice(0, i).reduce((a2, b2) => a2 + b2, 0);
+              const nbL = i > 0 && !fitLocked(`fit-${lower ? 'inf' : 'sup'}-${i - 1}-0`, 'w') ? Math.max(0, row[i - 1] - 15) : 0;
+              const nbR = i < row.length - 1 && !fitLocked(`fit-${lower ? 'inf' : 'sup'}-${i + 1}-0`, 'w') ? Math.max(0, row[i + 1] - 15) : 0;
+              const mu = row.length === 1 && lower ? f.mueble : undefined;
+              // los cubos empiezan desde su borde fijo: por defecto el izquierdo (crecen hacia la derecha); el mueble pegado al muro derecho empieza desde ahí y crece hacia la izquierda.
+              // La flecha solo sale hacia el lado por el que puede crecer
+              const anchoredRight = !!mu && mu.x0 + mu.ancho >= wallA - 1 && mu.x0 > 1;
+              const inColR = Math.max(0, colStart + row[i] - (sel.x + sel.sx));
+              const roomR = wLocked ? 0 : inColR + (mu ? Math.max(0, wallA - (mu.x0 + mu.ancho)) : nbR);
+              const roomL = wLocked ? 0 : (mu ? Math.max(0, mu.x0) : nbL);
+              const upRoom = (j >= 1 && (lower ? cs.lower : cs.upper)[i]?.[j - 1] < 0) ? Math.abs((lower ? cs.lower : cs.upper)[i][j - 1]) - 20 : 0;
+              // regla: al estirar una cara, si choca con la cara de otro cubo el estiramiento llega hasta ahí (distancia libre hasta el cubo más cercano en esa dirección)
+              const freeTo = (face: 'l' | 'r' | 'u' | 'f') => others.reduce((m, o) => {
+                const d = face === 'l' ? (ov(o.z, o.z + o.sz, sel.z, sel.z + sel.sz) && ov(o.y, o.y + o.sy, sel.y, sel.y + sel.sy) ? sel.x - (o.x + o.sx) : Infinity)
+                  : face === 'r' ? (ov(o.z, o.z + o.sz, sel.z, sel.z + sel.sz) && ov(o.y, o.y + o.sy, sel.y, sel.y + sel.sy) ? o.x - (sel.x + sel.sx) : Infinity)
+                  : face === 'u' ? (ov(o.x, o.x + o.sx, sel.x, sel.x + sel.sx) && ov(o.y, o.y + o.sy, sel.y, sel.y + sel.sy) ? o.z - (sel.z + sel.sz) : Infinity)
+                  : (ov(o.x, o.x + o.sx, sel.x, sel.x + sel.sx) && ov(o.z, o.z + o.sz, sel.z, sel.z + sel.sz) ? o.y - (sel.y + sel.sy) : Infinity);
+                return d >= -1 && d < m ? Math.max(0, d) : m;
+              }, Infinity);
+              const fU = freeTo('u'), fL = freeTo('l'), fR = freeTo('r'), fF = freeTo('f');
+              // medidas a las que la cara queda a ras de la cara de otro cubo (tope magnético del arrastre)
+              const snapU = others.flatMap(o => [o.z - sel.z, o.z + o.sz - sel.z]);
+              const snapL = others.flatMap(o => [sel.x + sel.sx - o.x, sel.x + sel.sx - (o.x + o.sx)]);
+              const snapR = others.flatMap(o => [o.x - sel.x, o.x + o.sx - sel.x]);
+              const snapF = others.flatMap(o => [o.y - sel.y, o.y + o.sy - sel.y]);
+              const tgFor = (vals: (o: typeof others[number]) => number[]) => others.map(o => ({ min: [toX(o.x), o.z / 1000, offsetZ + o.y / 1000] as [number, number, number], max: [toX(o.x + o.sx), (o.z + o.sz) / 1000, offsetZ + (o.y + o.sy) / 1000] as [number, number, number], vals: vals(o) }));
+              const tgU = tgFor(o => [o.z - sel.z, o.z + o.sz - sel.z]), tgL = tgFor(o => [sel.x + sel.sx - o.x, sel.x + sel.sx - (o.x + o.sx)]), tgR = tgFor(o => [o.x - sel.x, o.x + o.sx - sel.x]), tgF = tgFor(o => [o.y - sel.y, o.y + o.sy - sel.y]);
+              const canUp = !touches('u') && !fitLocked(sel.id, 'h') && upRoom > 5;
+              const canFront = !touches('f') && sel.sy < 899;
+              nodes.push(
+                ...(canUp ? [<FitFaceHandle key="fh-up" kind="up" position={[toX(sel.x + sel.sx / 2), yTop, zMid]} axis={[0, 1, 0]} sign={1} start={() => sel.sz} onValue={(v) => stretchUp(Math.min(v, sel.sz + upRoom, sel.sz + fU))} current={sel.sz} snaps={snapU} targets={tgU} controlsRef={controlsRef} />] : []),
+                ...(anchoredRight && !touches('l') && roomL > 5 ? [<FitFaceHandle key="fh-left" kind="left" position={[toX(sel.x) - off, yMid, zMid]} axis={[1, 0, 0]} sign={-1} start={() => sel.sx} onValue={(v) => fitEdit(sel.id, { width: Math.min(v, sel.sx + roomL, sel.sx + fL) }, 'l')} current={sel.sx} snaps={snapL} targets={tgL} controlsRef={controlsRef} />] : []),
+                ...(!anchoredRight && !touches('r') && roomR > 5 ? [<FitFaceHandle key="fh-right" kind="right" position={[toX(sel.x + sel.sx) + off, yMid, zMid]} axis={[1, 0, 0]} sign={1} start={() => sel.sx} onValue={(v) => fitEdit(sel.id, { width: Math.min(v, sel.sx + roomR, sel.sx + fR) }, 'r')} current={sel.sx} snaps={snapR} targets={tgR} controlsRef={controlsRef} />] : []),
+                ...(canFront ? [<FitFaceHandle key="fh-front" kind="front" position={[toX(sel.x + sel.sx / 2), yMid, offsetZ + sel.sy / 1000 + off]} axis={[0, 0, 1]} sign={1} start={() => sel.sy} onValue={(v) => { const f2 = fitApi.fit; fitApi.onChange({ ...f2, cellD: { ...(f2.cellD ?? {}), [sel.id]: Math.min(v, 900, sel.sy + fF) } }); }} current={sel.sy} snaps={snapF} targets={tgF} controlsRef={controlsRef} />] : [])
+              );
+            }
+            // mover el cuerpo a lo largo del muro (se desune de sus vecinos): cruz verde, sin pasar a otros cuerpos ni los muros
+            if (!isGap && viewMode !== 'plan' && true) {
+              const ckey = sel.id.replace(/-s\d+$/, ''), subM0 = /-s\d+$/.test(sel.id);
+              const cur = f.cellX?.[ckey] ?? 0;
+              const oth = boxes.filter(o => o.id !== sel.id && o.kind === 'panel' && o.name.startsWith('Cuerpo ') && o.wall === sel.wall && !(o.id.startsWith(ckey + '-s')) && o.id !== ckey && Math.min(o.z + o.sz, sel.z + sel.sz) - Math.max(o.z, sel.z) > 1 && Math.min(o.y + o.sy, sel.y + sel.sy) - Math.max(o.y, sel.y) > 1);
+              const parts = boxes.filter(o => o.id === ckey || o.id.startsWith(ckey + '-s'));
+              const gx0 = Math.min(...parts.map(o => o.x)), gx1 = Math.max(...parts.map(o => o.x + o.sx));
+              const loX = Math.max(0, ...oth.filter(o => o.x + o.sx <= gx0 + 1).map(o => o.x + o.sx)), hiX = Math.min(wallA, ...oth.filter(o => o.x >= gx1 - 1).map(o => o.x));
+              const minC = cur + (loX - gx0), maxC = cur + (hiX - gx1);
+              // vertical: el cuerpo sube o baja comiéndose el espacio libre que tiene encima (o debajo) y dejando uno al otro lado, así se desune del cuerpo de abajo
+              const cellsCol = (lower ? cs.lower : cs.upper)[i];
+              const ua0 = cellsCol && j >= 1 && cellsCol[j - 1] < 0 ? Math.abs(cellsCol[j - 1]) : 0;
+              const ub0 = cellsCol && cellsCol[j + 1] !== undefined && cellsCol[j + 1] < 0 ? Math.abs(cellsCol[j + 1]) : 0;
+              const canVert = !!cellsCol && !subM0;
+              const beginMove = () => {
+                const f2 = fitApi.fit, rs = fitRows(f2, wallA), cs2 = fitCells(f2, wallA, spaceHeight);
+                const lc2 = cs2.lower.map(c => [...c]), uc2 = cs2.upper.map(c => [...c]);
+                const baseC = [...((lower ? cs2.lower : cs2.upper)[i] ?? [])];
+                const hasA = j >= 1 && baseC[j - 1] < 0, hasB = baseC[j + 1] !== undefined && baseC[j + 1] < 0;
+                const ua = hasA ? Math.abs(baseC[j - 1]) : 0, ub = hasB ? Math.abs(baseC[j + 1]) : 0;
+                const room = hasA ? ua - 1 : 0, roomD = hasB ? ub - 1 : 0;
+                return (dxMm: number, dyMm: number) => {
+                  const c = Math.min(maxC, Math.max(minC, cur + Math.round(dxMm / 5) * 5));
+                  const cx = Math.abs(c - minC) < 15 ? minC : Math.abs(c - maxC) < 15 ? maxC : c;
+                  let up = Math.round(dyMm / 5) * 5;
+                  up = canVert && Math.abs(dyMm) >= 8 ? Math.max(-roomD, Math.min(room, up)) : 0;
+                  const nc = [...baseC];
+                  if (up > 0) { nc[j - 1] = -(ua - up); if (hasB) nc[j + 1] = -(ub + up); else nc.splice(j + 1, 0, -up); }
+                  else if (up < 0) { const d = -up; nc[j + 1] = -(ub - d); if (hasA) nc[j - 1] = -(ua + d); else nc.splice(j, 0, -d); }
+                  (lower ? lc2 : uc2)[i] = nc;
+                  fitApi.onChange({ ...f2, cellX: { ...(f2.cellX ?? {}), [ckey]: cx }, lowerW: [...rs.lower], lowerBodies: rs.lower.length, lowerCells: lc2, upperW: [...rs.upper], upperBodies: rs.upper.length, upperCells: uc2 });
+                };
+              };
+              if (maxC - minC > 5 || (canVert && (ua0 > 6 || ub0 > 6))) nodes.push(
+                <FitMoveHandle key="fit-move" position={[toX(sel.x + sel.sx / 2), (sel.z + sel.sz * 0.22) / 1000, offsetZ + sel.sy / 1000 + 0.02]} begin={beginMove} controlsRef={controlsRef} />
+              );
+            }
             if (isGap) {
               nodes.push(
                 <HtmlScaled key="fit-x" zoomScale position={[left, top, frontZ]} center distanceFactor={1} zIndexRange={[110, 0]}>
@@ -3414,6 +3799,26 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           return <>{nodes}</>;
         })()}
 
+        {fitApi && fitIsolate && isoSel && (() => {
+          // pieza del módulo aislado: flechas 3D (derecha, arriba y frente) que cambian solo la medida de esa pieza
+          const pc = vBoxes.find(x => x.id === isoSel);
+          if (!pc) return null;
+          const [cx0, cy0, cz0] = boxCenter(pc);
+          const off = 0.02;
+          const setAdj = (patch: { sx?: number; sy?: number; sz?: number }) => {
+            const f2 = fitApi.fit;
+            fitApi.onChange({ ...f2, pieceAdj: { ...(f2.pieceAdj ?? {}), [pc.id]: { ...(f2.pieceAdj?.[pc.id] ?? {}), ...patch } } });
+          };
+          const clampV = (n: number) => Math.min(2400, Math.max(10, Math.round(n)));
+          return (
+            <>
+              <FitFaceHandle key={`pa-r-${pc.id}`} kind="right" position={[cx0 + pc.sx / 2000 + off, cy0, cz0]} axis={[1, 0, 0]} sign={1} start={() => pc.sx} onValue={(n) => setAdj({ sx: clampV(n) })} current={pc.sx} min={10} controlsRef={controlsRef} />
+              <FitFaceHandle key={`pa-u-${pc.id}`} kind="up" position={[cx0, cy0 + pc.sz / 2000 + off, cz0]} axis={[0, 1, 0]} sign={1} start={() => pc.sz} onValue={(n) => setAdj({ sz: clampV(n) })} current={pc.sz} min={10} controlsRef={controlsRef} />
+              <FitFaceHandle key={`pa-f-${pc.id}`} kind="front" position={[cx0, cy0, cz0 + pc.sy / 2000 + off]} axis={[0, 0, 1]} sign={1} start={() => pc.sy} onValue={(n) => setAdj({ sy: clampV(n) })} current={pc.sy} min={10} controlsRef={controlsRef} />
+            </>
+          );
+        })()}
+
         {closetForm && !measureMode && cajoneroSel !== 0 && (() => {
           const tapa = boxes.find(x => x.name === (cajoneroSel === 2 ? 'Tapa cajonero · 2' : 'Tapa cajonero'));
           if (!tapa) return null;
@@ -3436,6 +3841,14 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
             <meshStandardMaterial color={b.id.startsWith('front-upper-') ? '#d6b48a' : '#c19a6b'} roughness={0.55} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
             <Edges color={b.moduleId && b.moduleId === selectedId ? '#ef4444' : (b.moduleId && pair.includes(b.moduleId) ? '#f59e0b' : '#3b2a1a')} linewidth={b.moduleId && (b.moduleId === selectedId || pair.includes(b.moduleId)) ? 3 : 1} />
+            {b.name.startsWith('Puerta') && (b.wall === 'A' || b.wall === 'B' || b.wall === 'C') && (() => {
+              // mismas reglas de abertura que en el Closet fit: parejas puerta izquierda y puerta derecha (la bisagra en el borde exterior) y una sola puerta con bisagra a la izquierda
+              const doors = boxes.filter(q => q.kind === 'front' && q.moduleId === b.moduleId && q.name.startsWith('Puerta'));
+              const n = doors.length, k = doors.findIndex(q => q.id === b.id);
+              const op: 'izq' | 'der' | 'sup' | 'inf' = b.name.startsWith('Puerta superior') ? 'sup' : b.name.startsWith('Puerta inferior') ? 'inf' : n <= 1 ? 'izq' : k < n / 2 ? 'izq' : 'der';
+              const alongW = (b.wall === 'A' ? b.sx : b.sy) / 2000, thick = (b.wall === 'A' ? b.sy : b.sx) / 2000;
+              return <SwingLines hw={alongW} hh={b.sz / 2000} op={op} face={b.wall === 'A' ? 'z+' : b.wall === 'B' ? 'x+' : 'x-'} depth={thick} />;
+            })()}
           </mesh>
         ))}
 

@@ -242,6 +242,8 @@ export interface FitBodyCfg {
 export interface ClosetFit {
   altoMueble?: number;    // baño: alto de los cuerpos (el cubo mide el espacio al piso + este alto)
   cellW?: Record<string, number>; // ancho propio de un cuerpo (clave = id) cuando es menor que el de su columna; sin valor = el ancho de la columna
+  pieceAdj?: Record<string, { sx?: number; sy?: number; sz?: number }>; // ajuste manual de una pieza del módulo aislado (clave = id de la pieza): solo cambia esa pieza
+  cellX?: Record<string, number>; // desplazamiento horizontal de un cuerpo movido con su flecha (clave = id de la celda): se desune de sus vecinos
   gaps?: Record<string, boolean>; // partes de un cuerpo dividido que se eliminaron: quedan como espacio libre (clave = id-sN)
   subs?: Record<string, number[]>; // un cuerpo dividido en varios lado a lado, solo él (clave = id del cuerpo; valores = anchos en mm); sus partes se llaman id-s0, id-s1...
   cellD?: Record<string, number>; // fondo propio de un cuerpo (clave = id); sin valor = el fondo general

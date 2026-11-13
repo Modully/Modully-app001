@@ -56,7 +56,7 @@ Surrón de puertas 728 × 905 × 532: 2 puertas de parche, entrepaños a 298 y 6
 - El sanitario y el espejo del baño son ambientación: no son piezas del mueble ni van al listado de corte.
 
 ## Puertas: simetría y abertura (2026-11-12)
-- Por defecto las aberturas son simétricas: con cantidad par, la mitad de la izquierda con bisagra a la izquierda y la mitad de la derecha a la derecha; con cantidad impar, la del centro con abertura horizontal (bisagra arriba, líneas en V).
+- Por defecto las puertas se arman en parejas, puerta izquierda (bisagra a la izquierda) y puerta derecha (bisagra a la derecha); con cantidad impar, la que sobra queda del lado izquierdo. Nunca se sugiere la abertura horizontal: la elige el usuario.
 - Con más de 2 puertas, "Horizontal" es abertura horizontal (las puertas siguen lado a lado, bisagra arriba).
 - Un clic en una puerta (con el módulo seleccionado) cambia su abertura: izquierda, derecha o arriba.
 - Cada cubo es independiente: al dividirlo solo se divide él; al eliminar una parte queda un espacio libre.
@@ -64,3 +64,10 @@ Surrón de puertas 728 × 905 × 532: 2 puertas de parche, entrepaños a 298 y 6
 ## Preguntas abiertas
 - Medida de cada puerta con 2 o más hojas (reparto del ancho y luces entre hojas).
 - Cantidad y posición de los puentes en el surrón de cajones (la lista del plano trae 1 puente de 698 × 80).
+
+## Flechas, cotas y movimiento (2026-11-12, tarde)
+- Flechas 3D de estirar en el cubo seleccionado (arriba, lado y frente): se ocultan si la cara toca otro cubo o no hay espacio/está bloqueada; el cubo crece desde su borde de inicio (flecha del lado contrario); topan con la cara del cubo que toque el mouse o se pegan a menos de 40 mm; una casilla muestra la medida y queda 3 s. Mínimo de cualquier cubo o módulo: 15 mm (también en cocinas).
+- Cruz verde para mover un cubo (horizontal y vertical): se desune de sus vecinos (`fit.cellX`, y el vertical reparte espacio libre entre arriba y abajo).
+- En el módulo aislado (3 clics), un clic en una pieza muestra sus flechas: solo cambia esa pieza (`fit.pieceAdj`).
+- Cotas: generales (ancho y alto totales), de espacios libres y de lados, todas movibles y con línea segmentada a su referencia. Negras con referencia; verdes si se arrastra un extremo y pierde la referencia (doble clic la restaura). Mismo tamaño en todos los productos.
+- Controles Html de las caras en perspectiva miran siempre a la cámara (sin `transform`).

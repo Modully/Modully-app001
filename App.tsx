@@ -364,6 +364,7 @@ const Modal: React.FC<{ isOpen: boolean; onClose: () => void; onApply?: () => vo
   );
 };
 
+const COTA_COLOR = '#111827'; // negro: cota con referencia (un cubo, una línea o una medida general); si pierde la referencia se pinta verde
 const DimensionLine: React.FC<{ 
   x: number, 
   y: number, 
@@ -374,8 +375,9 @@ const DimensionLine: React.FC<{
   color?: string, 
   orientation?: 'top' | 'bottom',
   isGap?: boolean
-}> = ({ x, y, width, scale, label, onEdit, color = "#64748b", orientation = 'top', isGap = false }) => {
+}> = ({ x, y, width, scale, label, onEdit, orientation = 'top', isGap = false }) => {
   if (width < 1) return null;
+  const color = COTA_COLOR; // todas las cotas de todos los productos comparten color
   const w = width * scale;
   const extOffset = 2;
   const dimOffset = 10;
@@ -400,7 +402,7 @@ const DimensionLine: React.FC<{
         y={textY} 
         fontSize="4.5" 
         textAnchor="middle" 
-        fill={isGap ? "#f43f5e" : (onEdit ? "#4f46e5" : color)} 
+        fill={isGap ? "#f43f5e" : color} 
         className={`font-black transition-all ${onEdit ? 'cursor-pointer pointer-events-auto hover:scale-125' : ''}`}
         onDoubleClick={(e) => {
           if (onEdit) {
@@ -423,8 +425,9 @@ const VerticalDimensionLine: React.FC<{
   label: string, 
   color?: string,
   orientation?: 'left' | 'right'
-}> = ({ x, y, height, scale, label, color = "#64748b", orientation = 'left' }) => {
+}> = ({ x, y, height, scale, label, orientation = 'left' }) => {
   if (height < 1) return null;
+  const color = COTA_COLOR;
   const h = height * scale;
   const extOffset = 2;
   const dimOffset = 10;
@@ -1121,9 +1124,9 @@ export default function App() {
       if (field === 'height') {
         // No puede pasar del techo (queda TOP_MARGIN libre) ni hundirse bajo el zócalo
         const maxHeight = spaceHeight - TOP_MARGIN - (hasZocalo ? zocaloHeight : 0);
-        return { ...m, height: Math.min(Math.max(v, 100), maxHeight), heightLocked: true };
+        return { ...m, height: Math.min(Math.max(v, 15), maxHeight), heightLocked: true };
       }
-      return { ...m, depth: Math.min(Math.max(v, 100), 1200) };
+      return { ...m, depth: Math.min(Math.max(v, 15), 1200) };
     }));
   };
 
@@ -1677,10 +1680,10 @@ export default function App() {
       const armStart = ca.positionX ?? 0;
       const oldEnd = armStart + ca.width;
       const next = prev.filter(x => x.wall === ca.wall && x.type === m.type && x.uniqueId !== id && Math.abs(x.positionX - oldEnd) <= 1).sort((p, q) => p.positionX - q.positionX)[0];
-      let w = Math.max(100, Math.round(width / 5) * 5);
+      let w = Math.max(15, Math.round(width / 5) * 5);
       if (next) {
         // El siguiente conserva al menos 100 mm y queda pegado al brazo
-        w = Math.min(w, ca.width + next.width - 100);
+        w = Math.min(w, ca.width + next.width - 15);
       } else {
         w = Math.min(w, moduleWallLength(ca.wall, m.type) - armStart);
       }
@@ -1796,7 +1799,7 @@ export default function App() {
             if (m.uniqueId !== target.moduleId) return;
             const t = on ? s.thickness : counterThickness; // al quitarla se devuelve el espesor con el que se activó
             const dw = on ? -t : t;
-            if (next.width + dw < 100) return;
+            if (next.width + dw < 15) return;
             next = { ...next, width: next.width + dw, positionX: atStart ? next.positionX - dw : next.positionX };
           });
           return next;
@@ -1870,7 +1873,7 @@ export default function App() {
       const before = side(!!m.vistoLeft, !!m.vistoRight, m.vistoThickness ?? 15, !!m.dilatLeft, !!m.dilatRight, m.dilatThickness ?? 15);
       const after = side(v.visto.left, v.visto.right, v.visto.thickness, v.dilat.left, v.dilat.right, v.dilat.thickness);
       const delta = (after.start + after.end) - (before.start + before.end);
-      if (m.width - delta < 100) return m;
+      if (m.width - delta < 15) return m;
       // Si el mesón tiene frentero en ese extremo, el frentero ya le había restado un espesor al módulo; al aparecer el visto o la
       // dilatada, el frentero queda encima de ellos y ese espesor se devuelve (y se vuelve a restar si se quitan)
       const fr = frenteroEnds(m);
@@ -1901,12 +1904,12 @@ export default function App() {
       
       if (side === 'left') {
         // Redimensionar desde el borde izquierdo
-        const newWidth = Math.max(100, Math.round((initialWidth - deltaX) / 5) * 5);
+        const newWidth = Math.max(15, Math.round((initialWidth - deltaX) / 5) * 5);
         const positionChange = initialWidth - newWidth;
         return { ...m, positionX: Math.max(0, initialPositionX + positionChange), width: newWidth };
       } else {
         // Redimensionar desde el borde derecho
-        const newWidth = Math.max(100, Math.round((initialWidth + deltaX) / 5) * 5);
+        const newWidth = Math.max(15, Math.round((initialWidth + deltaX) / 5) * 5);
         return { ...m, width: newWidth };
       }
     }), id, side));
@@ -1922,7 +1925,7 @@ export default function App() {
     initialRightPositionX: number
   ) => {
     // La unión solo se mueve mientras ambos módulos queden de al menos 100mm; así el ancho total no cambia
-    const MIN_WIDTH = 100;
+    const MIN_WIDTH = 15;
     const clamped = Math.min(Math.max(deltaX, MIN_WIDTH - initialLeftWidth), initialRightWidth - MIN_WIDTH);
     const change = Math.round(clamped / 5) * 5; // snap a 5mm
     setModules(prev => prev.map(m => {
@@ -4676,8 +4679,8 @@ export default function App() {
                         <div className="grid grid-cols-2 gap-2">
                           {([
                             ['Fondo (mm)', cur.depth, (n: number) => patchCur({ depth: Math.max(200, Math.min(900, Math.round(n))) })],
-                            ['Cuerpos inferiores', cur.lowerBodies, (n: number) => patchCur({ lowerBodies: Math.max(1, Math.min(10, Math.round(n))), lowerW: undefined, lowerCells: undefined, cellW: undefined, cellD: undefined, subs: undefined, gaps: undefined })],
-                            ['Cuerpos superiores', cur.upperBodies, (n: number) => patchCur({ upperBodies: Math.max(0, Math.min(10, Math.round(n))), upperW: undefined, upperCells: undefined, cellW: undefined, cellD: undefined, subs: undefined, gaps: undefined })],
+                            ['Cuerpos inferiores', cur.lowerBodies, (n: number) => patchCur({ lowerBodies: Math.max(1, Math.min(10, Math.round(n))), lowerW: undefined, lowerCells: undefined, cellW: undefined, cellD: undefined, subs: undefined, gaps: undefined, cellX: undefined })],
+                            ['Cuerpos superiores', cur.upperBodies, (n: number) => patchCur({ upperBodies: Math.max(0, Math.min(10, Math.round(n))), upperW: undefined, upperCells: undefined, cellW: undefined, cellD: undefined, subs: undefined, gaps: undefined, cellX: undefined })],
                             ['Alto superior (mm)', cur.upperHeight, (n: number) => patchCur({ upperHeight: Math.max(100, Math.min(1200, Math.round(n))), upperCells: undefined })],
                           ] as Array<[string, number, (n: number) => void]>).map(([label, value, onCommit]) => (
                             <div key={label} className="space-y-1">
@@ -4690,11 +4693,11 @@ export default function App() {
                           <>
                             <div className="space-y-1">
                               <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Alto del mueble (mm)</label>
-                              <DeferredNumber value={fit.altoMueble ?? 600} onCommit={(n) => setFit(f => ({ ...f, altoMueble: Math.max(150, Math.min(1500, Math.round(n))), lowerCells: undefined, cellW: undefined, cellD: undefined, subs: undefined, gaps: undefined }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                              <DeferredNumber value={fit.altoMueble ?? 600} onCommit={(n) => setFit(f => ({ ...f, altoMueble: Math.max(150, Math.min(1500, Math.round(n))), lowerCells: undefined, cellW: undefined, cellD: undefined, subs: undefined, gaps: undefined, cellX: undefined }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
                             </div>
                             <div className="space-y-1">
                               <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Cuerpos sobre el mueble</label>
-                              <DeferredNumber value={fit.sobreMueble ?? 0} onCommit={(n) => setFit(f => ({ ...f, sobreMueble: Math.max(0, Math.min(8, Math.round(n))), lowerCells: undefined, cellW: undefined, cellD: undefined, subs: undefined, gaps: undefined }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                              <DeferredNumber value={fit.sobreMueble ?? 0} onCommit={(n) => setFit(f => ({ ...f, sobreMueble: Math.max(0, Math.min(8, Math.round(n))), lowerCells: undefined, cellW: undefined, cellD: undefined, subs: undefined, gaps: undefined, cellX: undefined }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
                             </div>
                             <div className="grid grid-cols-2 gap-2">
                               {([
