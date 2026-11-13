@@ -22,6 +22,7 @@ import { generateBOM, exportBOMToExcel } from './bomService';
 import { resizeSymmetric, snapToNeighbors } from './moduleResize';
 import type { CounterExtras, Box as BoxData } from './boxes';
 import { closetDerived } from './boxes';
+import { PuertaCfg, DEFAULT_PUERTA, conTapaluz } from './puertas';
 import type { IslandItem, ColumnItem, ClosetConfig } from './types';
 import { DEFAULT_CLOSET, DEFAULT_FIT, DEFAULT_ARM } from './types';
 import type { ClosetFit } from './types';
@@ -527,7 +528,7 @@ export default function App() {
   const [dilatationGap, setDilatationGap] = useState(DILATATION_GAP_DEFAULT);
   const [dilatationDepth, setDilatationDepth] = useState(DILATATION_DEPTH_DEFAULT);
   // Qué se ve en la escena (solo visual: no cambia el diseño, el despiece ni la exportación)
-  const [visibility, setVisibility] = useState({ upper: true, lower: true, counter: true, appliances: true, doors: true, shelves: true, cajonero: true, costado: true, dims: true, wallA: true, wallB: true, wallC: true });
+  const [visibility, setVisibility] = useState({ upper: true, lower: true, counter: true, appliances: true, doors: true, shelves: true, cajonero: true, costado: true, dims: true, wallA: true, wallB: true, wallC: true, hoja: true, marco: true, tapaluz: true });
   const [hasLeftClosure, setHasLeftClosure] = useState(false);
   const [hasRightClosure, setHasRightClosure] = useState(false);
 
@@ -599,6 +600,8 @@ export default function App() {
   const [columns, setColumns] = useState<ColumnItem[]>([]); // columnas o muros atravesados del espacio
   const [closet, setCloset] = useState<ClosetConfig>(DEFAULT_CLOSET); // formulario del closet
   const [fit, setFit] = useState<ClosetFit>(DEFAULT_FIT); // Closet fit: cubo por cuerpos
+  const [puerta, setPuerta] = useState<PuertaCfg>(DEFAULT_PUERTA); // sección Puertas: vano, tipo de hoja, marcos dilatados y cabezal
+  const [puertaHidden, setPuertaHidden] = useState(false);
   const [fitWall, setFitWall] = useState<'A' | 'B' | 'C'>('A'); // muro cuyo cubo se edita en la tarjeta
   const fitDrag = useDragOffset();
   const [fitHidden, setFitHidden] = useState(false); // tarjeta de cuerpos del Closet fit oculta (queda un botón para volver a abrirla)
@@ -616,10 +619,10 @@ export default function App() {
   // largo o varias teclas seguidas cuentan como un solo paso.
   const designSnapshot = useMemo(() => ({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
-    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, closet, fit, lArm, hasLeftClosure, hasRightClosure,
+    hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, closet, fit, puerta, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
     modules, specialModules, appliances, hasIsland, lineType, faceColor,
-  }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
+  }), [puerta, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
     hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, closet, fit, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
     modules, specialModules, appliances, hasIsland, lineType, faceColor]);
@@ -684,7 +687,7 @@ export default function App() {
   }, [layout, lArm]);
 
   const applySnapshot = (snap: DesignSnapshot) => {
-    setLayout(snap.layout); setWallA(snap.wallA); setWallB(snap.wallB); setWallC(snap.wallC);
+    setLayout(snap.layout); setWallA(snap.wallA); setPuerta(snap.puerta ?? DEFAULT_PUERTA); setWallB(snap.wallB); setWallC(snap.wallC);
     setSpaceHeight(snap.spaceHeight); setHasZocalo(snap.hasZocalo); setZocaloHeight(snap.zocaloHeight);
     setZocaloDepth(snap.zocaloDepth); setHasCounter(snap.hasCounter); setCounterThickness(snap.counterThickness);
     setCounterOverhang(snap.counterOverhang); setHasSplash(snap.hasSplash); setSplashHeight(snap.splashHeight); setCounterExtras(snap.counterExtras); setIslands(snap.islands); setColumns(snap.columns ?? []); setFit({ ...DEFAULT_FIT, ...(snap.fit ?? {}) }); setCloset({ ...DEFAULT_CLOSET, ...(snap.closet ?? {}) }); setLArm(snap.lArm); setHasLeftClosure(snap.hasLeftClosure); setHasRightClosure(snap.hasRightClosure);
@@ -701,7 +704,7 @@ export default function App() {
     const c = SECTIONS[id];
     const first = initialDesign.current!;
     return {
-      ...first, ...c.defaults,
+      ...first, ...c.defaults, puerta: { ...DEFAULT_PUERTA },
       modules: [], islands: [], columns: [], closet: { ...DEFAULT_CLOSET }, fit: id === 'bano' ? { ...DEFAULT_FIT, depth: 480, lowerBodies: 1, upperBodies: 0, altoMueble: 600, flotado: { on: true, alto: 250 }, mueble: { x0: 700, ancho: 1000 }, sobreMueble: 3, cubes: { B: false, C: false } } : { ...DEFAULT_FIT }, counterExtras: {}, hasLeftClosure: false, hasRightClosure: false, hasIsland: false, lArm: 'left',
       specialModules: first.specialModules.map((sm, i) => ({ ...sm, active: false, name: c.specials[i] ?? sm.name })),
       appliances: first.appliances.map(ap => ({ ...ap, active: false })),
@@ -955,10 +958,10 @@ export default function App() {
 
   // Lista única de cajas: la escena 3D, el BOM y la exportación a Fusion leen la geometría de aquí
   const boxes = useMemo(() => buildBoxes({
-    layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
+    puerta: cfg.id === 'puertas' ? puerta : undefined, wallThickness: cfg.id === 'puertas' ? puerta.espesor : undefined, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
     modules: labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, closet: closetInput, fit: fitInput, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
-  }), [layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, closetInput, fitInput, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
+  }), [cfg.id, puerta, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, closetInput, fitInput, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
 
   // Regla: ningún módulo puede ocupar el mismo espacio que un electrodoméstico (ni otro módulo)
   const collisions = useMemo(() => findCollisions(boxes), [boxes]);
@@ -4550,6 +4553,8 @@ export default function App() {
               {/* Las 4 vistas (planta, frontal, isométrica y 3D) son cámaras de la misma escena 3D */}
               {(
                 <KitchenViewer3D
+                  wallThickMm={cfg.id === 'puertas' ? puerta.espesor : undefined}
+                  puertaApi={cfg.id === 'puertas' ? { cfg: puerta, onChange: setPuerta, onOpenForm: () => setPuertaHidden(false) } : undefined}
                   layout={layout} 
                   wallA={wallA} 
                   wallB={wallB} 
@@ -4644,6 +4649,59 @@ export default function App() {
                 </div>
               )}
               
+              {cfg.id === 'puertas' && puertaHidden && (
+                <button onClick={() => setPuertaHidden(false)} className="absolute right-4 bottom-4 z-30 pointer-events-auto px-3 py-2 rounded-xl bg-white/95 shadow-xl border border-slate-200 text-[10px] font-black text-slate-700 uppercase tracking-tight">Puerta</button>
+              )}
+              {cfg.id === 'puertas' && !puertaHidden && (() => {
+                const P = puerta, up = (patch: Partial<PuertaCfg>) => setPuerta(p => ({ ...p, ...patch }));
+                const num = (label: string, v: number, f: (n: number) => void) => (
+                  <label className="block"><span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{label}</span>
+                    <DeferredNumber value={v} onCommit={n => f(Math.round(n))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" /></label>
+                );
+                const two = (label: string, val: boolean, a: [string, string], f: (b: boolean) => void) => (
+                  <div><span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{label}</span>
+                    <div className="grid grid-cols-2 gap-1.5">{[true, false].map(b => (
+                      <button key={String(b)} onClick={() => f(b)} className={`py-1.5 rounded-lg text-[11px] font-black border-2 ${val === b ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400'}`}>{b ? a[0] : a[1]}</button>
+                    ))}</div></div>
+                );
+                return (
+                  <div {...fitDrag.handle} className="absolute right-4 bottom-4 z-30 pointer-events-auto w-72 max-h-[80%] overflow-y-auto bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 p-4 space-y-3" style={{ ...fitDrag.handle.style, ...fitDrag.style }}>
+                    <div className="flex items-center justify-between">
+                      <span className="flex-1 text-[11px] font-black text-slate-800 uppercase tracking-tight select-none" title="Arrastra para mover la tarjeta">⠿ Puerta</span>
+                      <button onClick={() => setPuertaHidden(true)} className="p-1 text-slate-400 hover:text-red-500" title="Ocultar la tarjeta"><X size={16} /></button>
+                    </div>
+                    <div className="text-[10px] font-black text-slate-500 uppercase">Vano</div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {num('Alto', P.alto, n => up({ alto: Math.max(1000, Math.min(3000, n)) }))}
+                      {num('Ancho', P.ancho, n => up({ ancho: Math.max(400, Math.min(2000, n)) }))}
+                      {num('Espesor muro', P.espesor, n => up({ espesor: Math.max(60, Math.min(400, n)) }))}
+                    </div>
+                    {two('Hoja', P.tipo === 'maciza', ['Maciza', 'Entamborada'], b => up({ tipo: b ? 'maciza' : 'entamborada' }))}
+                    {two('Marcos dilatados', P.dilatados, ['Sí', 'No'], b => up({ dilatados: b }))}
+                    {P.dilatados ? two('Cabezal', P.cabezal, ['Sí', 'No'], b => up({ cabezal: b })) : (
+                      <div className="text-[10px] font-bold text-slate-500">Sin marcos dilatados: siempre con cabezal; el marco queda a 5 mm del muro por lado.</div>
+                    )}
+                    {two('Tapaluz', conTapaluz(P), ['Sí', 'No'], b => up({ tapaluz: b }))}
+                    {conTapaluz(P) && (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          {num('Ancho tapaluz', P.tapaluzAncho ?? 40, n => up({ tapaluzAncho: Math.max(10, Math.min(200, n)) }))}
+                          {num('Espesor tapaluz', P.tapaluzEsp ?? 15, n => up({ tapaluzEsp: Math.max(3, Math.min(30, n)) }))}
+                        </div>
+                        <div className="grid grid-cols-3 gap-1.5">{[15, 6, 3].map(t => (
+                          <button key={t} onClick={() => up({ tapaluzEsp: t })} className={`py-1 rounded-lg text-[10px] font-black border-2 ${(P.tapaluzEsp ?? 15) === t ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400'}`}>{t} mm</button>
+                        ))}</div>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-3 gap-2">
+                      {num('Cantidad', P.cantidad, n => up({ cantidad: Math.max(1, Math.min(50, n)) }))}
+                      {num('Esp. hoja', P.hojaEsp, n => up({ hojaEsp: Math.max(15, Math.min(60, n)) }))}
+                      {P.tipo === 'entamborada' && num('Travesaños', P.travesanos, n => up({ travesanos: Math.max(2, Math.min(12, n)) }))}
+                    </div>
+                    <button onClick={() => setPuertaHidden(true)} className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-wide">Aplicar</button>
+                  </div>
+                );
+              })()}
               {isFitSection && fitHidden && (
                 <button onClick={() => setFitHidden(false)} className="absolute right-4 bottom-4 z-30 pointer-events-auto px-3 py-2 rounded-xl bg-white/95 shadow-xl border border-slate-200 text-[10px] font-black text-slate-700 uppercase tracking-tight">Closet fit · cuerpos</button>
               )}
@@ -4917,7 +4975,7 @@ export default function App() {
                   )}
                   <div className="w-px h-6 bg-slate-200" />
                   <div className="flex gap-1">
-                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos'], ['doors', 'Puertas', 'las puertas corredizas'], ['shelves', 'Entrepaños', 'los entrepaños'], ['cajonero', 'Cajonero', 'el cajonero'], ['costado', 'Costado', 'el costado piso a techo'], ['dims', 'Dimensiones', 'las notas de dimensiones'], ['wallA', 'A', 'el muro A con sus cubos'], ['wallB', 'B', 'el muro B con sus cubos'], ['wallC', 'C', 'el muro C con sus cubos']] as const).filter(([key]) => (key !== 'dims' || isFitSection) && (key !== 'wallA' || (isFitSection && layout !== 'STRAIGHT')) && (key !== 'wallB' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')))) && (key !== 'wallC' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')))) && ((key !== 'doors' && key !== 'shelves' && key !== 'cajonero' && key !== 'costado') || isClosetSection || (key as string) === 'dims' || (key as string).startsWith('wall')) && (key !== 'upper' || (cfg.hasUpper && !isClosetSection && !isFitSection)) && (key !== 'lower' || !(isClosetSection || isFitSection)) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
+                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos'], ['doors', 'Puertas', 'las puertas corredizas'], ['shelves', 'Entrepaños', 'los entrepaños'], ['cajonero', 'Cajonero', 'el cajonero'], ['costado', 'Costado', 'el costado piso a techo'], ['hoja', 'Hoja', 'la hoja y la chapa'], ['marco', 'Marco', 'los marcos, batientes y dilatadas'], ['tapaluz', 'Tapaluz', 'el tapaluz'], ['dims', 'Dimensiones', 'las notas de dimensiones'], ['wallA', 'A', 'el muro A con sus cubos'], ['wallB', 'B', 'el muro B con sus cubos'], ['wallC', 'C', 'el muro C con sus cubos']] as const).filter(([key]) => ((key !== 'hoja' && key !== 'marco' && key !== 'tapaluz') || cfg.id === 'puertas') && (cfg.id !== 'puertas' || key === 'hoja' || key === 'marco' || key === 'tapaluz') && (key !== 'dims' || isFitSection) && (key !== 'wallA' || (isFitSection && layout !== 'STRAIGHT')) && (key !== 'wallB' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')))) && (key !== 'wallC' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')))) && ((key !== 'doors' && key !== 'shelves' && key !== 'cajonero' && key !== 'costado') || isClosetSection || (key as string) === 'dims' || (key as string).startsWith('wall')) && (key !== 'upper' || (cfg.hasUpper && !isClosetSection && !isFitSection)) && (key !== 'lower' || !(isClosetSection || isFitSection)) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
                       <button
                         key={key}
                         onClick={() => setVisibility(v => ({ ...v, [key]: !v[key] }))}

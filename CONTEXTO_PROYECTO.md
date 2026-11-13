@@ -305,3 +305,8 @@ Pendiente: las posiciones del cajonero (35, 445, 605), la gola media (330) y el 
 - En el módulo aislado (3 clics), un clic en una pieza muestra sus flechas: solo cambia esa pieza (`fit.pieceAdj`).
 - Cotas: generales (ancho y alto totales), de espacios libres y de lados, todas movibles y con línea segmentada a su referencia. Negras con referencia; verdes si se arrastra un extremo y pierde la referencia (doble clic la restaura). Mismo tamaño en todos los productos.
 - Controles Html de las caras en perspectiva miran siempre a la cámara (sin `transform`).
+
+## Puertas (2026-11-12, noche)
+- Formulario (`puertas.ts`, tarjeta "Puerta" con botón Aplicar): vano (alto, ancho, espesor del muro), hoja maciza o entamborada, marcos dilatados, cabezal, tapaluz (sí/no, ancho 40, espesor 15/6/3), cantidad, espesor de hoja (36) y travesaños.
+- Reglas: marco = alto del vano x espesor; batiente = alto − 31 (sin cabezal = alto) x espesor − 40; cabezal = ancho − 60 (con dilatados) o − 40 (sin dilatados); hoja con 5 de luz por lado, alto − 35 con cabezal o − 20 sin; dilatadas 4 por puerta + 2 de repuesto; sin dilatados el marco queda a 5 mm del muro, siempre con cabezal y tapaluz; tapaluz unido a 45°; entamborada = 2 tapas de 6 (+10) y bastidor de 30 x 25.
+- 3D: la puerta va dentro del vano (muro A con hueco, traslúcido), chapa a 900 del piso; chips Hoja, Marco y Tapaluz; un clic = flechas del vano (alto y ancho), doble clic = formulario. El despiece (`puertaDespiece`) existe pero aún no se muestra.

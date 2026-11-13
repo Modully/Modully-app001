@@ -64,6 +64,7 @@ export interface Box {
   mitreTop?: 'x-' | 'x+' | 'y-' | 'y+';           // cascada: lado (el del mesón) donde el canto de arriba baja un espesor
   polygon?: Array<[number, number]>; // pieza con cortes a 45° (salpicadero que rodea una columna): contorno en planta (x, y); la caja es su rectángulo envolvente
   notches?: Array<{ a0: number; a1: number; c: number }>; // mesón: muescas contra el muro por las columnas (a lo largo del muro de a0 a a1, c de profundidad)
+  face?: Array<[number, number]>; // contorno de la cara de frente (a lo largo del muro, alto) en mm desde la esquina de abajo a la izquierda: pieza con cortes a 45° (tapaluz)
   chamferY?: number;                               // cascada con chaflán: cuánto retrocede el canto de abajo por el frente (mm) respecto al de arriba
 }
 
@@ -147,7 +148,10 @@ export function armUpperOrigin(modules: KitchenModule[], wallA: number, arm: 'B'
   return atCorner.length ? Math.max(...atCorner.map(m => m.depth)) : UPPER_DEPTH;
 }
 
+import { PuertaCfg, puertaBoxes, muroConVano } from './puertas';
 export interface BuildBoxesInput {
+  puerta?: PuertaCfg; // sección Puertas: puerta de paso en el vano del muro A
+  wallThickness?: number; // espesor del muro (mm); por defecto 150
   layout: LayoutType;
   wallA: number;
   wallB: number;
@@ -183,7 +187,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   const counterOverhang = input.counterOverhang ?? COUNTER_OVERHANG_DEFAULT;
   const hasSplash = input.hasSplash ?? false;
   const splashHeight = input.splashHeight ?? SPLASH_HEIGHT_DEFAULT;
-  const T = WALL_THICKNESS;
+  const T = input.wallThickness ?? WALL_THICKNESS;
   const closet = input.closet;
   // En el closet la base la define su configuración: zócalo (tipo T o base completa), marco inferior acostado (15) o nada
   const zh = closet ? (hasZocalo ? zocaloHeight + PANEL_THICKNESS : closet.bottomFrame ? PANEL_THICKNESS : 0) : (hasZocalo ? zocaloHeight : 0);
@@ -193,7 +197,8 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   const hasC = layout === 'U_SHAPE' || (layout === 'L_SHAPE' && input.lArm === 'right');
 
   // --- Muros ---
-  boxes.push({ id: 'wall-A', name: 'Muro A', kind: 'wall', wall: 'A', x: 0, y: -T, z: 0, sx: wallA, sy: T, sz: spaceHeight, facing: null });
+  if (input.puerta) muroConVano(input.puerta, wallA, T, spaceHeight).forEach(b => boxes.push(b)); // puerta: el muro A lleva el hueco del vano
+  else boxes.push({ id: 'wall-A', name: 'Muro A', kind: 'wall', wall: 'A', x: 0, y: -T, z: 0, sx: wallA, sy: T, sz: spaceHeight, facing: null });
   if (hasB) {
     boxes.push({ id: 'wall-B', name: 'Muro B', kind: 'wall', wall: 'B', x: -T, y: -T, z: 0, sx: T, sy: wallB + T, sz: spaceHeight, facing: null });
   }
@@ -1374,6 +1379,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     arm('B', hasB, wallB);
     arm('C', hasC, wallC);
   }
+  if (input.puerta) puertaBoxes(input.puerta, input.wallA).forEach(b => boxes.push(b));
   // ajustes manuales de piezas sueltas (flechas en el módulo aislado)
   const pAdj = input.fit?.pieceAdj;
   if (pAdj) boxes.forEach(bx => { const a = pAdj[bx.id]; if (a) { if (a.sx != null) bx.sx = a.sx; if (a.sy != null) bx.sy = a.sy; if (a.sz != null) bx.sz = a.sz; } });

@@ -8,6 +8,7 @@ import { IslandItem, KitchenModule, Appliance, ApplianceType, LayoutType, WallNa
 import type { CounterEdge, CounterExtras, closetDerived } from './boxes';
 import { closetSectionOf, closetCajoneroIndex, closetTorreIndex, fitRows, fitCells, fitInsets, fitBodyParts, doorOpening } from './boxes';
 import type { ClosetConfig, ClosetFit, FitBodyCfg } from './types';
+import type { PuertaCfg } from './puertas';
 import { Box, findModuleBox, boxesBounds, applianceCenter, counterTopZ, CORNER_BLIND_OFFSET, WALL_THICKNESS } from './boxes';
 import { COLORS } from './constants';
 import { X, Plus, Ruler, ArrowUp, ArrowLeft, ArrowRight, ArrowDownLeft } from 'lucide-react';
@@ -556,6 +557,20 @@ const MovableCota: React.FC<{ kind: 'v' | 'h'; from: number; to: number; at: num
       </Html>
     </>
   );
+};
+
+/** Geometría de una pieza con su contorno de frente (cortes a 45°): se extruye a lo largo de su espesor; reemplaza la caja */
+const FaceExtrude: React.FC<{ b: Box }> = ({ b }) => {
+  const geo = useMemo(() => {
+    const sh = new THREE.Shape();
+    (b.face ?? []).forEach(([u, v], i) => { const x = (u - b.sx / 2) / 1000, y = (v - b.sz / 2) / 1000; if (i === 0) sh.moveTo(x, y); else sh.lineTo(x, y); });
+    sh.closePath();
+    const g = new THREE.ExtrudeGeometry(sh, { depth: b.sy / 1000, bevelEnabled: false });
+    g.translate(0, 0, -b.sy / 2000);
+    return g;
+  }, [b.face, b.sx, b.sy, b.sz]);
+  useEffect(() => () => geo.dispose(), [geo]);
+  return <primitive object={geo} attach="geometry" />;
 };
 
 /** Flecha de mover un cuerpo (cruz verde): arrastrar lo desplaza a lo largo del muro y lo desune de sus vecinos */
@@ -2750,6 +2765,7 @@ const CameraController: React.FC<{ viewMode: 'plan' | 'frontal' | 'isometric' | 
 };
 
 interface KitchenViewer3DProps {
+  wallThickMm?: number; // espesor del muro (mm); por defecto 150
   layout: LayoutType;
   lArm?: 'left' | 'right';
   wallA: number;
@@ -2767,6 +2783,7 @@ interface KitchenViewer3DProps {
   onEditIsland?: (id: string, patch: Partial<IslandItem>) => void;
   onEditWall?: (wall: 'A' | 'B' | 'C', value: number) => void;
   closetForm?: ClosetFormApi; // closet: doble clic en una de sus secciones abre su formulario
+  puertaApi?: { cfg: PuertaCfg; onChange: (p: PuertaCfg) => void; onOpenForm: () => void }; // Puertas: clic = flechas del vano, doble clic = formulario
   fitApi?: { fit: ClosetFit; onChange: (f: ClosetFit) => void }; // Closet fit: seleccionar un cuerpo, arrastrar sus bordes, dividirlo o eliminarlo
   onDeleteIsland?: (id: string) => void;
   viewMode: 'plan' | 'frontal' | 'isometric' | '3d';
@@ -2793,13 +2810,14 @@ interface KitchenViewer3DProps {
   onDragModule?: (id: string, newPositionX: number) => void;
   onResizeEdge?: (id: string, side: 'left' | 'right', deltaX: number, initialWidth: number, initialPositionX: number) => void;
   onMoveAppliance?: (type: ApplianceType, wall: WallName, distance: number) => void;
-  visibility?: { upper: boolean; lower: boolean; counter: boolean; appliances: boolean; doors?: boolean; shelves?: boolean; cajonero?: boolean; costado?: boolean; dims?: boolean; wallA?: boolean; wallB?: boolean; wallC?: boolean };
+  visibility?: { upper: boolean; lower: boolean; counter: boolean; appliances: boolean; doors?: boolean; shelves?: boolean; cajonero?: boolean; costado?: boolean; dims?: boolean; wallA?: boolean; wallB?: boolean; wallC?: boolean; hoja?: boolean; marco?: boolean; tapaluz?: boolean };
   collisions?: Box[]; // cajas que chocan: se marcan en rojo
   measureMode?: boolean; // cinta métrica activa: la escena solo se mira y se mide
   onResizeJunction?: (leftId: string, rightId: string, deltaX: number, initialLeftWidth: number, initialRightWidth: number, initialLeftPositionX: number, initialRightPositionX: number) => void;
 }
 
 export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
+  wallThickMm, puertaApi,
   layout, lArm, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules, boxes, appliances, hasIsland, island, islands = [], onEditIsland, onEditWall, closetForm, fitApi, onDeleteIsland, viewMode, hasZocalo, zocaloHeight = 100,
   hasLeftClosure, hasRightClosure, counterExtras, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSetModuleFronts, onSplitHorizontal, onSplitDepth, onExtendFace, onJoinCorner, onSplitCorner, onEditCornerArm, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
 }) => {
@@ -2950,7 +2968,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   };
   const [isoHidden, setIsoHidden] = useState<string[]>([]); // piezas ocultadas con clic sostenido mientras el módulo está aislado
   const isoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [isoSel, setIsoSel] = useState<string | null>(null); // pieza del módulo aislado con sus flechas
+  const [isoSel, setIsoSel] = useState<string | null>(null);
+  const [puertaSel, setPuertaSel] = useState(false); // Puertas: la puerta seleccionada muestra las flechas del vano // pieza del módulo aislado con sus flechas
   // sanitario y espejo del baño son solo ambientación: se ven translúcidos, no se pueden seleccionar y no son piezas del mueble
   const isAmb = (n: string) => n === 'Espejo bano' || n.startsWith('Sanitario');
   // el zócalo del cubo (escalera) se ve translúcido mientras no se convierte a módulos
@@ -2994,7 +3013,9 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   const vis = visibility ?? { upper: true, lower: true, counter: true, appliances: true };
   // Aislamiento de un módulo del Closet fit: solo se dibujan los muros, el cuerpo y sus piezas reales
   const wallHidden = (w: string | undefined) => (w === 'A' && vis.wallA === false) || (w === 'B' && vis.wallB === false) || (w === 'C' && vis.wallC === false);
-  const vBoxes = useMemo(() => {
+  // puertas: chips Hoja, Marco y Tapaluz para ocultar o mostrar cada grupo de piezas
+  const puertaHidden = (n: string) => (vis.hoja === false && (n.startsWith('Hoja ') || n === 'Chapa puerta')) || (vis.marco === false && (n === 'Marco puerta' || n === 'Batiente puerta' || n === 'Marco cabezal puerta' || n === 'Dilatada puerta')) || (vis.tapaluz === false && n === 'Tapaluz puerta');
+  const vBoxes0 = useMemo(() => {
     if (!fitIsolate || !fitApi) return fitApi && (vis.wallA === false || vis.wallB === false || vis.wallC === false) ? boxes.filter(x => !wallHidden(x.wall)) : boxes;
     const body = boxes.find(x => x.id === fitIsolate);
     if (!body) return boxes;
@@ -3003,6 +3024,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
     const pa = fitApi.fit.pieceAdj;
     return [body, ...parts.filter(p => !isoHidden.includes(p.id)).map(p => (pa?.[p.id] ? { ...p, ...pa[p.id] } : p))]; // sin muros: solo el cuerpo y sus piezas (con sus ajustes manuales)
   }, [boxes, fitIsolate, fitApi, isoHidden, vis.wallA, vis.wallB, vis.wallC]);
+  const vBoxes = useMemo(() => (vis.hoja === false || vis.marco === false || vis.tapaluz === false ? vBoxes0.filter(b => !puertaHidden(b.name)) : vBoxes0), [vBoxes0, vis.hoja, vis.marco, vis.tapaluz]);
   useEffect(() => {
     if (!fitIsolate) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { if (isoSel) { setIsoSel(null); return; } setFitIsolate(null); setFitForm(null); setIsoHidden([]); } };
@@ -3031,7 +3053,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   modules = modules.filter(m => (m.type === 'UPPER' ? vis.upper : m.type === 'LOWER' ? vis.lower : true));
   // Electrodoméstico que se está arrastrando (datos del momento en que se agarró)
   const [dragApp, setDragApp] = useState<ApplianceDrag | null>(null);
-  const wallThickness = 0.15; // Grosor constante de 150mm
+  const wallThickness = (wallThickMm ?? 150) / 1000; // espesor del muro (por defecto 150 mm)
   const closureThickness = 0.12;
   const closureDepth = 0.6; // 60cm de profundidad
   const fridge = appliances.find(a => a.active && a.type === 'fridge');
@@ -3150,6 +3172,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           setSelectedId(null);
           setEditingId(null);
           setContextId(null);
+          setPuertaSel(false);
           setClosetSection(null);
           setCajoneroSel(0);
           setFitSel(null);
@@ -3196,8 +3219,9 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
             <meshStandardMaterial
               color={viewMode === 'plan' ? '#64748b' : (b.id.startsWith('closure') ? '#e2e8f0' : (b.wall === 'A' ? '#ffffff' : '#f8fafc'))}
-              opacity={viewMode === 'plan' ? 0.6 : 1}
-              transparent={viewMode === 'plan'}
+              opacity={viewMode === 'plan' ? 0.6 : b.name === 'Muro vano' ? 0.3 : 1}
+              transparent={viewMode === 'plan' || b.name === 'Muro vano'}
+              depthWrite={b.name !== 'Muro vano'}
             />
             {viewMode !== 'frontal' && <Edges color={viewMode === 'plan' ? '#1e293b' : '#94a3b8'} linewidth={viewMode === 'plan' ? 2 : 1} />}
           </mesh>
@@ -3258,7 +3282,13 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               onClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setCajoneroSel(closetSectionOf(b.name) === 'cajonero' ? closetCajoneroIndex(b.name) : 0); },
               onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; },
               onPointerOut: () => { document.body.style.cursor = 'auto'; },
-            } : closetForm ? {} : fitApi && (b.name.startsWith('Cuerpo ') || b.name.startsWith('Hueco ')) ? {} : fitIsolate && b.id.startsWith(fitIsolate + '-') ? {} : (b.name === 'Puerta rep fit' || b.name === 'Puerta fit') && fitApi && !measureMode ? {} : { raycast: () => null })}
+            } : closetForm ? {} : puertaApi && b.id.startsWith('puerta-') ? {
+              // puerta: un clic muestra las flechas del vano; doble clic abre el formulario
+              onClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); if ((e.nativeEvent as MouseEvent).detail >= 2) return; setPuertaSel(true); },
+              onDoubleClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setPuertaSel(false); puertaApi.onOpenForm(); },
+              onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; },
+              onPointerOut: () => { document.body.style.cursor = 'auto'; },
+            } : fitApi && (b.name.startsWith('Cuerpo ') || b.name.startsWith('Hueco ')) ? {} : fitIsolate && b.id.startsWith(fitIsolate + '-') ? {} : (b.name === 'Puerta rep fit' || b.name === 'Puerta fit') && fitApi && !measureMode ? {} : { raycast: () => null })}
             {...((b.name === 'Puerta rep fit' || b.name === 'Puerta fit') && fitApi && !measureMode && !fitIsolate ? {
               // clic en una puerta: si su cuerpo está seleccionado cambia la abertura de esa puerta (bisagra izquierda, derecha o arriba); si no, selecciona el cuerpo
               onClick: (e: ThreeEvent<MouseEvent>) => {
@@ -3287,8 +3317,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; },
             } : {})}
           >
-            <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
-            <meshStandardMaterial color={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? '#bfdbfe' : fitCopySrc === b.id ? '#22c55e' : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? '#fb923c' : '#60a5fa') : b.name.startsWith('Sanitario') ? '#f8fafc' : isAmb(b.name) ? '#bae6fd' : b.name.startsWith('Espaldar') || b.name.includes('fondo') ? '#e5e7eb' : isClosetDoor(b.name) ? '#cdb592' : b.name.startsWith('Tubo') ? '#9ca3af' : b.name.startsWith('Entrepaño') ? '#f3e8d2' : (b.id.startsWith('panel-upper-') ? '#e8d3b0' : '#dcc5a0')} roughness={0.7} key={isFitBody(b.name) ? 'fit' : (doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name) || isAmb(b.name) ? 'ghost' : 'solid'} transparent={isFitBody(b.name) || isAmb(b.name) || ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name))} opacity={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? 0.08 : (fitApi?.fit.converted && fitApi.fit.bodies?.[b.id] && fitCopySrc !== b.id) ? 0.03 : b.name.startsWith('Hueco ') ? ((fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? 0.25 : 0.02) : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? 0.4 : 0.22) : isAmb(b.name) ? 0.5 : ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name)) ? 0.25 : 1} depthWrite={!(isFitBody(b.name) || isAmb(b.name) || ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name)))}  polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+            {b.face ? <FaceExtrude b={b} /> : <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />}
+            <meshStandardMaterial color={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? '#bfdbfe' : fitCopySrc === b.id ? '#22c55e' : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? '#fb923c' : '#60a5fa') : b.name.startsWith('Sanitario') ? '#f8fafc' : isAmb(b.name) ? '#bae6fd' : b.name.startsWith('Espaldar') || b.name.includes('fondo') ? '#e5e7eb' : isClosetDoor(b.name) ? '#cdb592' : (b.name.startsWith('Tubo') || b.name === 'Chapa puerta') ? '#9ca3af' : b.name.startsWith('Entrepaño') ? '#f3e8d2' : (b.id.startsWith('panel-upper-') ? '#e8d3b0' : '#dcc5a0')} roughness={0.7} key={isFitBody(b.name) ? 'fit' : (doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name) || isAmb(b.name) ? 'ghost' : 'solid'} transparent={isFitBody(b.name) || isAmb(b.name) || ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name))} opacity={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? 0.08 : (fitApi?.fit.converted && fitApi.fit.bodies?.[b.id] && fitCopySrc !== b.id) ? 0.03 : b.name.startsWith('Hueco ') ? ((fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? 0.25 : 0.02) : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? 0.4 : 0.22) : isAmb(b.name) ? 0.5 : ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name)) ? 0.25 : 1} depthWrite={!(isFitBody(b.name) || isAmb(b.name) || ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name)))}  polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
             {isFitBody(b.name) && viewMode === 'frontal' ? (
               // En frontal solo se dibuja el contorno de la cara frontal (una línea), sin las aristas de profundidad que se ven dobles
               b.name !== 'Cubo closet fit' && (() => { const hw = b.sx / 2000, hh = b.sz / 2000, zf = b.sy / 2000 + 0.002; return (
@@ -3298,6 +3328,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             <Edges color={isFitBody(b.name) ? (fitCopySrc === b.id ? '#16a34a' : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? '#f97316' : b.name.startsWith('Hueco ') ? '#cbd5e1' : '#2563eb') : cajoneroSel !== 0 && closetSectionOf(b.name) === 'cajonero' && closetCajoneroIndex(b.name) === cajoneroSel ? '#ef4444' : b.moduleId && b.moduleId === selectedId ? '#ef4444' : (b.moduleId && pair.includes(b.moduleId) ? '#f59e0b' : '#5b4630')} linewidth={b.moduleId && (b.moduleId === selectedId || pair.includes(b.moduleId)) ? 3 : 1} />
             )}
             {isoSel === b.id && fitIsolate && <Edges color="#f97316" linewidth={3} />}
+            {puertaSel && puertaApi && b.id.startsWith('puerta-') && b.name !== 'Chapa puerta' && <Edges color="#f97316" linewidth={2} />}
             {b.name.startsWith('Cuerpo ') && fitApi && !fitApi.fit.converted && viewMode !== 'plan' && (() => {
               // en cubos: una línea por cada entrepaño del surrón (al convertir salen las piezas reales)
               const c = fitApi.fit.bodies?.[b.id];
@@ -3797,6 +3828,18 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             }
           }
           return <>{nodes}</>;
+        })()}
+
+        {puertaApi && puertaSel && viewMode !== 'plan' && (() => {
+          // flechas del vano: arriba el alto y a la derecha el ancho (el vano sigue centrado en el muro); la puerta se recalcula con él
+          const P = puertaApi.cfg, x1 = (wallA + P.ancho) / 2, zf = offsetZ + 0.03;
+          const set = (patch: Partial<PuertaCfg>) => puertaApi.onChange({ ...puertaApi.cfg, ...patch });
+          return (
+            <>
+              <FitFaceHandle key="pv-up" kind="up" position={[0, P.alto / 1000 + 0.02, zf]} axis={[0, 1, 0]} sign={1} start={() => P.alto} onValue={(n) => set({ alto: Math.max(1000, Math.min(Math.min(3000, spaceHeight - 50), Math.round(n))) })} current={P.alto} controlsRef={controlsRef} />
+              <FitFaceHandle key="pv-r" kind="right" position={[(x1 - wallA / 2) / 1000 + 0.02, P.alto / 2000, zf]} axis={[1, 0, 0]} sign={1} start={() => P.ancho} onValue={(n) => set({ ancho: Math.max(400, Math.min(Math.min(2000, wallA - 100), Math.round(n))) })} current={P.ancho} controlsRef={controlsRef} />
+            </>
+          );
         })()}
 
         {fitApi && fitIsolate && isoSel && (() => {
