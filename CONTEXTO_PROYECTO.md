@@ -310,3 +310,10 @@ Pendiente: las posiciones del cajonero (35, 445, 605), la gola media (330) y el 
 - Formulario (`puertas.ts`, tarjeta "Puerta" con botón Aplicar): vano (alto, ancho, espesor del muro), hoja maciza o entamborada, marcos dilatados, cabezal, tapaluz (sí/no, ancho 40, espesor 15/6/3), cantidad, espesor de hoja (36) y travesaños.
 - Reglas: marco = alto del vano x espesor; batiente = alto − 31 (sin cabezal = alto) x espesor − 40; cabezal = ancho − 60 (con dilatados) o − 40 (sin dilatados); hoja con 5 de luz por lado, alto − 35 con cabezal o − 20 sin; dilatadas 4 por puerta + 2 de repuesto; sin dilatados el marco queda a 5 mm del muro, siempre con cabezal y tapaluz; tapaluz unido a 45°; entamborada = 2 tapas de 6 (+10) y bastidor de 30 x 25.
 - 3D: la puerta va dentro del vano (muro A con hueco, traslúcido), chapa a 900 del piso; chips Hoja, Marco y Tapaluz; un clic = flechas del vano (alto y ancho), doble clic = formulario. El despiece (`puertaDespiece`) existe pero aún no se muestra.
+
+## Centro de entretenimiento y alistonados (2026-11-12, noche)
+- La sección "Centros de TV" pasó a "Centro de entretenimiento" y funciona por cubos como el Closet fit (mover, estirar, convertir). Arranca con torres de 500 x 1450 (fondo 350), mueble bajo de 450 (fondo 450) y puente de 350 (fondo 300) sobre el espacio del televisor (1100).
+- Televisor de ambientación (`fit.tv`): por pulgadas (16:9) o ancho/alto, y altura desde el piso; no va al listado de corte.
+- Cubo "Alistonado" (`FitBodyCfg.kind = 'alistonado'`, `liston`): listones verticales (65 x 15, separación 35) repartidos parejos de borde a borde, con fondo de 6, de 15 o sin fondo (`listonBoxes`).
+- Islas y penínsulas: "Espaldar alistonado" (`IslandItem.alistonado`) en la parte posterior de los módulos (el frente es el de las puertas), del piso al mesón.
+- Planos de referencia: Kevin Serrano (tablero TV con estructura y cuchilla, torre con entrepaños, cajonero de 3) y Andrés (tablero de 4 mm con listones al lado). Pendiente: cubo "Tablero" del TV con su estructura y cuchilla, separación habitual de los listones.

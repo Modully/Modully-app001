@@ -705,7 +705,14 @@ export default function App() {
     const first = initialDesign.current!;
     return {
       ...first, ...c.defaults, puerta: { ...DEFAULT_PUERTA },
-      modules: [], islands: [], columns: [], closet: { ...DEFAULT_CLOSET }, fit: id === 'bano' ? { ...DEFAULT_FIT, depth: 480, lowerBodies: 1, upperBodies: 0, altoMueble: 600, flotado: { on: true, alto: 250 }, mueble: { x0: 700, ancho: 1000 }, sobreMueble: 3, cubes: { B: false, C: false } } : { ...DEFAULT_FIT }, counterExtras: {}, hasLeftClosure: false, hasRightClosure: false, hasIsland: false, lArm: 'left',
+      modules: [], islands: [], columns: [], closet: { ...DEFAULT_CLOSET }, fit: id === 'bano' ? { ...DEFAULT_FIT, depth: 480, lowerBodies: 1, upperBodies: 0, altoMueble: 600, flotado: { on: true, alto: 250 }, mueble: { x0: 700, ancho: 1000 }, sobreMueble: 3, cubes: { B: false, C: false } } : id === 'tv' ? {
+        // centro de entretenimiento: torre, centro (puente arriba, espacio libre del televisor y mueble bajo) y torre; los cubos se mueven y se convierten como en el Closet fit
+        ...DEFAULT_FIT, depth: 450, lowerBodies: 3, upperBodies: 0, lowerW: [500, 1400, 500],
+        // de abajo hacia arriba: mueble bajo de 450, torres de 1450 y puente de 350 sobre el espacio del televisor (1100); arriba queda espacio libre hasta el techo
+        lowerCells: [[-500, 1450, 450], [-500, 350, -1100, 450], [-500, 1450, 450]],
+        cellD: { 'fit-inf-0-1': 350, 'fit-inf-1-1': 300, 'fit-inf-2-1': 350 },
+        cubes: { B: false, C: false },
+      } : { ...DEFAULT_FIT }, counterExtras: {}, hasLeftClosure: false, hasRightClosure: false, hasIsland: false, lArm: 'left',
       specialModules: first.specialModules.map((sm, i) => ({ ...sm, active: false, name: c.specials[i] ?? sm.name })),
       appliances: first.appliances.map(ap => ({ ...ap, active: false })),
     } as DesignSnapshot;
@@ -932,7 +939,7 @@ export default function App() {
   // la forma queda guardada pero no se dibuja
   // Closet: los lados con muro o con costado salen del Espacio (muros auxiliares, L o U); el lado sin muro lleva costado propio
   const isClosetSection = cfg.id === 'closets';
-  const isFitSection = cfg.id === 'closetfit' || cfg.id === 'walking' || cfg.id === 'bano'; // el walking closet y el baño arrancan como el Closet fit: cubos por cuerpos
+  const isFitSection = cfg.id === 'closetfit' || cfg.id === 'walking' || cfg.id === 'bano' || cfg.id === 'tv'; // el walking closet y el baño arrancan como el Closet fit: cubos por cuerpos
   const isBano = cfg.id === 'bano';
   const closetInput = useMemo(() => (isClosetSection ? {
     ...closet,
@@ -4392,6 +4399,36 @@ export default function App() {
                                 <input type="number" disabled={isl.kind === 'peninsula' && key === 'dx'} value={isl[key]} onChange={(e) => updateIsland(isl.id, { [key]: Math.max(key === 'length' || key === 'width' ? 300 : 0, parseInt(e.target.value) || 0) })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
                             ))}
                           </div>
+                          {(() => {
+                            // espaldar alistonado de la isla o península (parte posterior de los módulos): listones del piso al mesón, con fondo de 6 o 15 o sin fondo
+                            const L = isl.alistonado;
+                            const setL = (p: Partial<NonNullable<typeof L>>) => updateIsland(isl.id, { alistonado: { ancho: 65, esp: 15, sep: 35, fondo: 0, ...(L ?? {}), ...p } });
+                            return (
+                              <div className="space-y-2">
+                                <button type="button" onClick={() => updateIsland(isl.id, { alistonado: L ? undefined : { ancho: 65, esp: 15, sep: 35, fondo: 0 } })} className={`w-full flex items-center justify-between px-3 py-1.5 rounded-full border text-[10px] font-black uppercase transition-colors ${L ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                                  <span>Espaldar alistonado</span>
+                                  <span className={`flex items-center w-8 h-4 rounded-full p-0.5 ${L ? 'bg-white/40 justify-end' : 'bg-slate-200 justify-start'}`}><span className="w-3 h-3 rounded-full bg-white shadow" /></span>
+                                </button>
+                                {L && (
+                                  <>
+                                    <div className="grid grid-cols-3 gap-2">
+                                      {([['ancho', 'Ancho listón'], ['esp', 'Espesor'], ['sep', 'Separación']] as const).map(([k, label]) => (
+                                        <div key={k} className="space-y-1">
+                                          <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
+                                          <DeferredNumber value={L[k]} onCommit={(n) => setL({ [k]: Math.max(k === 'sep' ? 0 : 3, Math.round(n)) })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-1.5">
+                                      {([[0, 'Sin fondo'], [6, 'Fondo 6'], [15, 'Fondo 15']] as const).map(([v, label]) => (
+                                        <button key={v} type="button" onClick={() => setL({ fondo: v })} className={`py-1.5 rounded-lg text-[9px] font-black uppercase border-2 ${(L.fondo ?? 0) === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+                                      ))}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })()}
                           <IslandApplianceFields
                             stove={isl.stove}
                             sink={isl.sink}
@@ -4703,12 +4740,12 @@ export default function App() {
                 );
               })()}
               {isFitSection && fitHidden && (
-                <button onClick={() => setFitHidden(false)} className="absolute right-4 bottom-4 z-30 pointer-events-auto px-3 py-2 rounded-xl bg-white/95 shadow-xl border border-slate-200 text-[10px] font-black text-slate-700 uppercase tracking-tight">Closet fit · cuerpos</button>
+                <button onClick={() => setFitHidden(false)} className="absolute right-4 bottom-4 z-30 pointer-events-auto px-3 py-2 rounded-xl bg-white/95 shadow-xl border border-slate-200 text-[10px] font-black text-slate-700 uppercase tracking-tight">{isBano ? 'Mueble de baño · cuerpos' : cfg.id === 'tv' ? 'Centro de entretenimiento · cuerpos' : 'Closet fit · cuerpos'}</button>
               )}
               {isFitSection && !fitHidden && (
                 <div {...fitDrag.handle} className="absolute right-4 bottom-4 z-30 pointer-events-auto w-64 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 p-4 space-y-3" style={{ ...fitDrag.handle.style, ...fitDrag.style }}>
                   <div className="flex items-center justify-between">
-                    <span className="flex-1 text-[11px] font-black text-slate-800 uppercase tracking-tight select-none" title="Arrastra para mover la tarjeta">⠿ {isBano ? 'Mueble de baño · cuerpos' : 'Closet fit · cuerpos'}</span>
+                    <span className="flex-1 text-[11px] font-black text-slate-800 uppercase tracking-tight select-none" title="Arrastra para mover la tarjeta">⠿ {isBano ? 'Mueble de baño · cuerpos' : cfg.id === 'tv' ? 'Centro de entretenimiento · cuerpos' : 'Closet fit · cuerpos'}</span>
                     <button onClick={() => setFitHidden(true)} className="p-1 text-slate-400 hover:text-red-500" title="Ocultar la tarjeta"><X size={16} /></button>
                   </div>
                   {(() => {
@@ -4747,6 +4784,35 @@ export default function App() {
                             </div>
                           ))}
                         </div>
+                        {cfg.id === 'tv' && sel === 'A' && (() => {
+                          // televisor de ambientación: se pide por pulgadas (16:9) o por ancho y alto; desde = altura de su borde de abajo
+                          const T = fit.tv ?? { on: false, pulgadas: 55, ancho: 1218, alto: 685, desde: 700 };
+                          const setT = (p: Partial<typeof T>) => setFit(f => ({ ...f, tv: { ...(f.tv ?? T), ...p } }));
+                          const porPulgadas = (inch: number) => { const d = inch * 25.4; return { pulgadas: inch, ancho: Math.round(d * 0.8716), alto: Math.round(d * 0.4903) }; };
+                          return (
+                            <>
+                              <button type="button" onClick={() => setT({ on: !T.on })} className={`w-full flex items-center justify-between px-3 py-1.5 rounded-full border text-[10px] font-black uppercase transition-colors ${T.on ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                                <span>Televisor</span>
+                                <span className={`flex items-center w-8 h-4 rounded-full p-0.5 ${T.on ? 'bg-white/40 justify-end' : 'bg-slate-200 justify-start'}`}><span className="w-3 h-3 rounded-full bg-white shadow" /></span>
+                              </button>
+                              {T.on && (
+                                <div className="grid grid-cols-2 gap-2">
+                                  {([
+                                    ['Pulgadas', T.pulgadas, (n: number) => setT(porPulgadas(Math.max(20, Math.min(110, Math.round(n)))))],
+                                    ['Desde el piso (mm)', T.desde, (n: number) => setT({ desde: Math.max(0, Math.min(2500, Math.round(n))) })],
+                                    ['Ancho (mm)', T.ancho, (n: number) => setT({ ancho: Math.max(200, Math.min(3000, Math.round(n))) })],
+                                    ['Alto (mm)', T.alto, (n: number) => setT({ alto: Math.max(100, Math.min(2000, Math.round(n))) })],
+                                  ] as Array<[string, number, (n: number) => void]>).map(([label, value, onCommit]) => (
+                                    <div key={label} className="space-y-1">
+                                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
+                                      <DeferredNumber value={value} onCommit={onCommit} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                         {isBano && sel === 'A' && (
                           <>
                             <div className="space-y-1">

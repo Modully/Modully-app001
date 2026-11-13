@@ -825,6 +825,11 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         mitreBottom: islMitre.length ? islMitre : undefined,
       });
       addEdgePieces(islId, 'A', { x: isl.dx, y: isl.dy, sx: isl.length, sy: isl.width, z: islTop, sz: counterThickness }, islEdgePlan, isl.id);
+      // espaldar alistonado: del piso al mesón, contra la parte posterior de los módulos (el frente es el de las puertas, hacia +Y)
+      if (isl.alistonado) {
+        const yBackMods = Math.min(...lowers.map(bx => bx.y));
+        listonBoxes(`isla-liston-${isl.id}`, isl.alistonado, isl.dx, yBackMods, 0, isl.length, islTop, { islandId: isl.id }, -1).forEach(b => boxes.push(b));
+      }
       // Visto o dilatada en un extremo de la isla con frentero o reengruese: pierde la altura de esa pieza y queda al ras
       if (islEdgePlan.edge) {
         const drop = islEdgePlan.edge.kind === 'frentero' ? Math.max(0, islEdgePlan.edge.height - counterThickness) : islEdgePlan.edge.height;
@@ -1347,6 +1352,11 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     const cubesOn = { A: true, B: true, C: true, ...(f0.cubes ?? {}) };
     const dptA = cubesOn.A ? Math.max(200, f0.depth) : 0;
     if (cubesOn.A) buildFitCube(f0, wallA, 'fit-', boxes);
+    // centro de entretenimiento: televisor de ambientación (no es parte del mueble), centrado en el muro y pegado a él
+    if (f0.tv?.on) {
+      const insT = fitInsets(f0, wallA), cubeW = wallA - insT.left - insT.right, tw = Math.max(200, Math.min(f0.tv.ancho, cubeW));
+      boxes.push({ id: 'tv-pantalla', name: 'Televisor', kind: 'panel', wall: 'A', x: insT.left + (cubeW - tw) / 2, y: 0, z: f0.tv.desde, sx: tw, sy: 60, sz: Math.max(100, f0.tv.alto), facing: null } as Box);
+    }
     // baño: sanitario y espejo para ambientar el entorno (solo si se activan); no son parte del mueble
     const insA = fitInsets(f0, wallA);
     if (f0.sanitario?.on) {
@@ -1478,9 +1488,33 @@ export function doorOpening(c: { aberturas?: Record<string, 'izq' | 'der' | 'sup
  * Sin convertir solo salen las placas representativas (puertas y frentes de cajón); al convertir salen todas las piezas reales.
  * Medidas en mm: x a lo largo del muro, y fondo (el frente es dpt), z altura.
  */
+/**
+ * Listones verticales de un alistonado sobre una cara (a lo largo de x, del alto h), con su fondo opcional (6 o 15) detrás.
+ * yBack = cara donde se apoya el fondo; los listones quedan delante del fondo (hacia +y). La cantidad sale de la separación y se reparten
+ * parejos de borde a borde (los de las puntas al ras de los lados).
+ */
+export function listonBoxes(id: string, L: { ancho: number; esp: number; sep: number; fondo?: number } | undefined, x: number, yBack: number, z: number, w: number, h: number, extra?: Partial<Box>, dir: 1 | -1 = 1): Box[] {
+  const lw = Math.max(10, L?.ancho ?? 65), le = Math.max(3, L?.esp ?? 15), sep = Math.max(0, L?.sep ?? 35), fondo = L?.fondo ?? 0;
+  const out: Box[] = [];
+  // dir = 1: el alistonado crece hacia +y desde yBack; dir = -1: hacia -y (espaldar de un módulo que mira hacia +y)
+  if (fondo > 0) out.push({ id: `${id}-fondo`, name: 'Fondo alistonado', kind: 'panel', wall: 'A', x, y: dir > 0 ? yBack : yBack - fondo, z, sx: w, sy: fondo, sz: h, facing: null, ...extra } as Box);
+  const n = Math.max(1, Math.floor((w + sep) / (lw + sep)));
+  const gap = n > 1 ? (w - n * lw) / (n - 1) : 0;
+  for (let k = 0; k < n; k++) {
+    const px = n > 1 ? x + k * (lw + gap) : x + (w - lw) / 2;
+    out.push({ id: `${id}-li${k}`, name: 'Listón', kind: 'panel', wall: 'A', x: px, y: dir > 0 ? yBack + fondo : yBack - fondo - le, z, sx: lw, sy: le, sz: h, facing: null, ...extra } as Box);
+  }
+  return out;
+}
+
 export function fitBodyParts(c: FitBodyCfg, id: string, x: number, z: number, w: number, h: number, dpt: number, converted: boolean, span?: [number, number]): Box[] {
   const E = PANEL_THICKNESS, ZOC = 80;
   const out: Box[] = [];
+  if (c.kind === 'alistonado') {
+    // espaldar alistonado: al frente del cubo, con su fondo (6 o 15) detrás o sin fondo
+    const le = Math.max(3, c.liston?.esp ?? 15), fondo = c.liston?.fondo ?? 0;
+    return listonBoxes(id, c.liston, x, dpt - le - fondo, z, w, h);
+  }
   // dilatada o visto a cada lado: restan ancho al módulo (como en la cocina); la dilatada es de 15 x 70 y el visto cubre todo el fondo
   const sideT = (v?: string) => (v === 'dilatada' || v === 'visto15' ? 15 : v === 'visto19' ? 19 : 0);
   const eL = sideT(c.ladoIzq), eR = sideT(c.ladoDer);

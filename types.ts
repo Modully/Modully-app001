@@ -205,6 +205,9 @@ export interface BOM {
 }
 
 /** Isla o península: medida general (largo x ancho) y su esquina superior izquierda a (dx, dy) del punto 0 */
+/** Alistonado: listones verticales (ancho x espesor) repartidos parejos con la separación pedida; con fondo de 6 o 15 detrás, o sin fondo (0) */
+export interface Liston { ancho: number; esp: number; sep: number; fondo?: 0 | 6 | 15 }
+
 export interface IslandItem {
   id: string;
   kind: 'isla' | 'peninsula';
@@ -214,13 +217,15 @@ export interface IslandItem {
   dy: number;     // mm desde el punto 0 hacia el frente
   stove?: { distance: number };  // lleva estufa: distancia (mm) desde el punto 0 de la isla (su extremo izquierdo) al inicio del mueble
   sink?: { distance: number };   // lleva poceta / fregadero: igual
+  alistonado?: Liston; // espaldar de la isla o península (parte posterior de los módulos; el frente es el de las puertas) forrado con listones, del piso al mesón
   bar?: number;   // barra: voladizo del mesón por el frente (mm); los módulos miden ancho - barra de fondo y el zócalo retrocede la barra
 }
 
 /** Closet fit (closet personalizado): un cubo que cubre el área y se arma por cuerpos (inferiores y superiores), paso a paso */
 /** Configuración de un cuerpo del Closet fit (doble clic): marco puerta o surrón, con sus puertas, entrepaños y cajones */
 export interface FitBodyCfg {
-  kind: 'marco' | 'surron';
+  kind: 'marco' | 'surron' | 'alistonado';
+  liston?: Liston; // espaldar alistonado: listones verticales del alto del cubo (ancho 65, espesor 15) repartidos con la separación pedida
   zocalo?: boolean;                       // zócalo de 80 abajo (si el cuerpo va al piso)
   ladoIzq?: 'ninguno' | 'dilatada' | 'visto15' | 'visto19'; // lado izquierdo del módulo: dilatada (15 x 70) o visto (15 / 19); restan ancho al módulo
   ladoDer?: 'ninguno' | 'dilatada' | 'visto15' | 'visto19'; // lado derecho
@@ -251,6 +256,7 @@ export interface ClosetFit {
   flotado?: { on: boolean; alto: number }; // baño: mueble flotado; alto = espacio del mueble al piso (mm)
   mueble?: { x0: number; ancho: number }; // baño: posición del mueble medida desde el punto 0 (esquina izquierda del muro) y su ancho propio, sin depender de la medida del muro
   sanitario?: { on: boolean; x0: number; ancho: number }; // baño: x0 = distancia del muro auxiliar (o del extremo izquierdo del muro A si no hay) al lado del sanitario que mira a ese muro; ancho = ancho del sanitario (mm)
+  tv?: { on: boolean; pulgadas: number; ancho: number; alto: number; desde: number }; // centro de entretenimiento: televisor de ambientación (no es pieza del mueble); desde = altura de su borde de abajo
   espejo?: { on: boolean; alto: number; ancho: number; desde: number }; // baño: espejo sobre el mueble; desde = altura desde el piso a su borde de abajo (mm)
   unirZocalos?: boolean;  // une los zócalos: los de los muros B y C se alargan hasta tocar el zócalo transversal del muro A (por defecto sí)
   cubes?: { A?: boolean; B?: boolean; C?: boolean }; // cubos activos por muro (por defecto los tres; B y C solo si el espacio tiene esos muros)

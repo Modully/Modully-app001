@@ -98,15 +98,15 @@ export const SECTIONS: Record<SectionId, SectionConfig> = {
     note: 'Mueble de baño por cubos, con el mismo principio del Closet fit: casi siempre flotado y hacia un muro; se puede añadir un sanitario y un espejo para ambientar.',
   },
   tv: {
-    id: 'tv', name: 'Centros de TV', singular: 'centro de TV',
-    layouts: ['STRAIGHT'],
-    defaults: { layout: 'STRAIGHT', wallA: 2400, wallB: 2400, wallC: 2400, spaceHeight: 2400, hasZocalo: false, zocaloHeight: 0, zocaloDepth: 0, hasCounter: false },
-    baseModuleHeight: 450, upperGap: 800, hasUpper: true,
-    lowerName: 'Base', upperName: 'Repisa',
+    id: 'tv', name: 'Centro de entretenimiento', singular: 'centro de entretenimiento',
+    layouts: ['STRAIGHT', 'L_SHAPE', 'U_SHAPE'],
+    defaults: { layout: 'STRAIGHT', wallA: 2400, wallB: 1800, wallC: 1800, spaceHeight: 2400, hasZocalo: false, zocaloHeight: 80, zocaloDepth: 400, hasCounter: false },
+    baseModuleHeight: 450, upperGap: 0, hasUpper: false,
+    lowerName: 'Cuerpo', upperName: 'Repisa',
     features: { counter: false, islands: false },
     accessories: [],
-    specials: ['Columna lateral', 'Columna con repisas'],
-    note: 'Aún no hay reglas propias de centros de TV: arranca con las de la cocina adaptadas (base baja y repisas arriba).',
+    specials: ['', ''],
+    note: 'Centro de entretenimiento por cubos, con el mismo principio del Closet fit: torres a los lados, mueble bajo, puente arriba y el espacio del televisor libre.',
   },
 };
 
