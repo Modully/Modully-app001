@@ -192,6 +192,8 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   // En el closet la base la define su configuración: zócalo (tipo T o base completa), marco inferior acostado (15) o nada
   const zh = closet ? (hasZocalo ? zocaloHeight + PANEL_THICKNESS : closet.bottomFrame ? PANEL_THICKNESS : 0) : (hasZocalo ? zocaloHeight : 0);
   const boxes: Box[] = [];
+  // mesón con nariz: algún tramo lleva canto (frentero o reengruese)
+  const conNariz = hasCounter && Object.values(input.counterExtras ?? {}).some(e => !!e?.edge && e.edge.kind !== 'none');
   // En L el brazo es el muro B (izquierda) o el muro C (derecha); en U están los dos
   const hasB = layout === 'U_SHAPE' || (layout === 'L_SHAPE' && input.lArm !== 'right');
   const hasC = layout === 'U_SHAPE' || (layout === 'L_SHAPE' && input.lArm === 'right');
@@ -396,7 +398,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
           piece('Gola media horizontal', inner, GOLA_WIDTH, E, E, 0, 330);
           piece('Gola media vertical', inner, E, GOLA_WIDTH, E, E, 330 + E);
           const luz = 13, prof = Math.min(500, D - 20), ext = inner - 2 * luz, xl = E + luz;
-          ([['Inferior', 35, 180, 0], ['Medio', 445, 100, 0], ['Cubiertero', 605, 80, 18]] as const).forEach(([nm, zb, hh, ov]) => {
+          ([['Inferior', 35, 180, 0], ['Medio', 445, 100, 0], ['Cubiertero', 605, 70, 18]] as const).forEach(([nm, zb, hh, ov]) => {
             piece(`Cajón ${nm} lateral izquierdo`, E, prof, hh, xl, ov, zb);
             piece(`Cajón ${nm} lateral derecho`, E, prof, hh, xl + ext - E, ov, zb);
             piece(`Cajón ${nm} testero frontal`, ext - 2 * E, E, hh, xl + E, ov, zb);
@@ -404,7 +406,8 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
             piece(`Cajón ${nm} fondo`, ext - 20, prof - 20, PANEL_BACK, xl + E - 5, ov + 10, zb + 15);
           });
         } else if (W >= 450) {
-          piece('Entrepaño', inner, D - 20, E, E, 0, SHELF_Z);
+          // regla del carpintero: en el bajo el entrepaño mide el fondo del lateral − 90 y va atrás, contra los amarres
+          piece('Entrepaño', inner, D - 90, E, E, 90 - E, SHELF_Z);
         }
       } else {
         // Aéreo (y torres): piso, techo, espaldar retranqueado y dos amarres arriba (cuchillas)
@@ -413,7 +416,8 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         piece('Espaldar', inner, PANEL_BACK, H - 2 * E + 5, E, D - E - PANEL_BACK, E);
         piece('Amarre superior 1', inner, E, TIE_UPPER, E, D - E, H - E - TIE_UPPER);
         piece('Amarre superior 2', inner, E, TIE_UPPER, E, D - E, H - E - 2 * TIE_UPPER);
-        if (W >= 450) piece('Entrepaño', inner, D - 20, E, E, 0, SHELF_Z);
+        // regla del carpintero: en el aéreo el entrepaño mide el fondo del lateral − 60 y va atrás, contra el espaldar (las torres siguen con − 20)
+        if (W >= 450) { if (mod.type === 'UPPER') piece('Entrepaño', inner, D - 60, E, E, 60 - E - PANEL_BACK, SHELF_Z); else piece('Entrepaño', inner, D - 20, E, E, 0, SHELF_Z); }
       }
     }
     // Módulo convertido: sus puertas o frentes de cajón (afuera de la cara frontal, con las luces del generador de Fusion)
@@ -422,33 +426,36 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       type Fr = { name: string; a0: number; a1: number; z0: number; h: number };
       const fronts: Fr[] = [];
       const W = mod.width, H = mod.height;
-      const full = mod.type === 'UPPER' ? H : H - FRONT_LOWER_BOTTOM_CUT;
+      // regla del carpintero: la puerta del bajo mide el lateral − 30 con mesón sin nariz y − 50 con nariz (frentero o reengruese)
+      const full = mod.type === 'UPPER' ? H : H - (conNariz ? FRONT_LOWER_BOTTOM_CUT : 30);
+      // ancho: una sola puerta o frente = ancho del módulo − 2; dos puertas = cada una la mitad − 1
+      const G1 = 1, G2 = 0.5;
       if (mod.frontsLayout === 'door1') {
-        fronts.push({ name: 'Puerta', a0: G, a1: W - G, z0: 0, h: mod.type === 'TALL' ? H - 20 : full });
+        fronts.push({ name: 'Puerta', a0: G1, a1: W - G1, z0: 0, h: mod.type === 'TALL' ? H - 20 : full });
       } else if (mod.frontsLayout === 'door2') {
-        const w = (W - 3 * G) / 2, h = mod.type === 'TALL' ? H - 20 : full;
-        fronts.push({ name: 'Puerta izquierda', a0: G, a1: G + w, z0: 0, h }, { name: 'Puerta derecha', a0: 2 * G + w, a1: 2 * G + 2 * w, z0: 0, h });
+        const w = W / 2 - 1, h = mod.type === 'TALL' ? H - 20 : full;
+        fronts.push({ name: 'Puerta izquierda', a0: G2, a1: G2 + w, z0: 0, h }, { name: 'Puerta derecha', a0: W / 2 + G2, a1: W / 2 + G2 + w, z0: 0, h });
       } else if (mod.frontsLayout === 'drawers') {
         const h = (full - FRONT_DRAWER_GAP) / 2;
-        fronts.push({ name: 'Frente inferior', a0: G, a1: W - G, z0: 0, h }, { name: 'Frente superior', a0: G, a1: W - G, z0: h + FRONT_DRAWER_GAP, h });
+        fronts.push({ name: 'Frente inferior', a0: G1, a1: W - G1, z0: 0, h }, { name: 'Frente superior', a0: G1, a1: W - G1, z0: h + FRONT_DRAWER_GAP, h });
       } else if (mod.frontsLayout === 'upper-door1') {
-        fronts.push({ name: 'Puerta', a0: G, a1: W - G, z0: -UPPER_DOOR_TAB, h: H + UPPER_DOOR_TAB });
+        fronts.push({ name: 'Puerta', a0: G1, a1: W - G1, z0: -UPPER_DOOR_TAB, h: H + UPPER_DOOR_TAB });
       } else if (mod.frontsLayout === 'upper-door2-v') {
-        const w = (W - 3 * G) / 2;
-        fronts.push({ name: 'Puerta izquierda', a0: G, a1: G + w, z0: -UPPER_DOOR_TAB, h: H + UPPER_DOOR_TAB }, { name: 'Puerta derecha', a0: 2 * G + w, a1: 2 * G + 2 * w, z0: -UPPER_DOOR_TAB, h: H + UPPER_DOOR_TAB });
+        const w = W / 2 - 1;
+        fronts.push({ name: 'Puerta izquierda', a0: G2, a1: G2 + w, z0: -UPPER_DOOR_TAB, h: H + UPPER_DOOR_TAB }, { name: 'Puerta derecha', a0: W / 2 + G2, a1: W / 2 + G2 + w, z0: -UPPER_DOOR_TAB, h: H + UPPER_DOOR_TAB });
       } else if (mod.frontsLayout === 'upper-door2-h') {
         const h = (H + UPPER_DOOR_TAB - G) / 2;
-        fronts.push({ name: 'Puerta inferior', a0: G, a1: W - G, z0: -UPPER_DOOR_TAB, h }, { name: 'Puerta superior', a0: G, a1: W - G, z0: -UPPER_DOOR_TAB + h + G, h });
+        fronts.push({ name: 'Puerta inferior', a0: G1, a1: W - G1, z0: -UPPER_DOOR_TAB, h }, { name: 'Puerta superior', a0: G1, a1: W - G1, z0: -UPPER_DOOR_TAB + h + G, h });
       } else if (mod.frontsLayout === 'hood-h') {
         // Campana con puertas horizontales: la de arriba copia la altura de la del aéreo vecino (HOOD_CUT más alto); la de abajo absorbe el resto
         const hSup = (H + HOOD_CUT + UPPER_DOOR_TAB - G) / 2;
         const hInf = (H - HOOD_DOOR_GAP) - hSup - G;
-        fronts.push({ name: 'Puerta inferior', a0: G, a1: W - G, z0: HOOD_DOOR_GAP, h: hInf }, { name: 'Puerta superior', a0: G, a1: W - G, z0: HOOD_DOOR_GAP + hInf + G, h: hSup });
+        fronts.push({ name: 'Puerta inferior', a0: G1, a1: W - G1, z0: HOOD_DOOR_GAP, h: hInf }, { name: 'Puerta superior', a0: G1, a1: W - G1, z0: HOOD_DOOR_GAP + hInf + G, h: hSup });
       } else if (mod.frontsLayout === 'hood') {
         // Campana con puertas verticales: arrancan HOOD_DOOR_GAP sobre la base (sin pestaña) y llegan al techo del módulo
         const h = H - HOOD_DOOR_GAP;
-        if (W < 450) fronts.push({ name: 'Puerta', a0: G, a1: W - G, z0: HOOD_DOOR_GAP, h });
-        else { const w = (W - 3 * G) / 2; fronts.push({ name: 'Puerta izquierda', a0: G, a1: G + w, z0: HOOD_DOOR_GAP, h }, { name: 'Puerta derecha', a0: 2 * G + w, a1: 2 * G + 2 * w, z0: HOOD_DOOR_GAP, h }); }
+        if (W < 450) fronts.push({ name: 'Puerta', a0: G1, a1: W - G1, z0: HOOD_DOOR_GAP, h });
+        else { const w = W / 2 - 1; fronts.push({ name: 'Puerta izquierda', a0: G2, a1: G2 + w, z0: HOOD_DOOR_GAP, h }, { name: 'Puerta derecha', a0: W / 2 + G2, a1: W / 2 + G2 + w, z0: HOOD_DOOR_GAP, h }); }
       }
       fronts.forEach((f, i) => {
         const along = boxWall === 'A' ? 'x' : 'y';

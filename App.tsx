@@ -19,6 +19,9 @@ import {
 import { KitchenViewer3D } from './KitchenViewer3D';
 import { getAgentAdvice, type KitchenAgentContext } from './agentService';
 import { generateBOM, exportBOMToExcel } from './bomService';
+import { listaDePiezas, exportarListadoDeCorte, bordesDeCanto } from './piezas';
+import { Optimizador } from './PanelLaminas';
+import { PlanosEnsamble } from './PlanosEnsamble';
 import { resizeSymmetric, snapToNeighbors } from './moduleResize';
 import type { CounterExtras, Box as BoxData } from './boxes';
 import { closetDerived } from './boxes';
@@ -970,6 +973,8 @@ export default function App() {
     hasDilatation, dilatationGap, dilatationDepth,
   }), [cfg.id, puerta, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, closetInput, fitInput, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
 
+  // Fase 0: lista de piezas única, sacada de las mismas cajas que se dibujan
+  const lista = useMemo(() => listaDePiezas(boxes, { lineType, faceColor, puerta: cfg.id === 'puertas' ? puerta : undefined }), [boxes, lineType, faceColor, cfg.id, puerta]);
   // Regla: ningún módulo puede ocupar el mismo espacio que un electrodoméstico (ni otro módulo)
   const collisions = useMemo(() => findCollisions(boxes), [boxes]);
   const collidingBoxes = useMemo(() => {
@@ -5149,13 +5154,68 @@ export default function App() {
                   <Download size={16} />
                   Cajas para Fusion
                 </button>
-                <button onClick={() => bom && exportBOMToExcel(bom)} disabled={!bom} className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-2 rounded-2xl font-black text-xs uppercase disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-700 transition-colors shadow-lg">
+                <button onClick={() => { if (lista.piezas.length > 0) exportarListadoDeCorte(lista, `Listado_${cfg.name.replace(/\s+/g, '_')}`); else if (bom) exportBOMToExcel(bom); }} disabled={lista.piezas.length === 0 && !bom} className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-2 rounded-2xl font-black text-xs uppercase disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-700 transition-colors shadow-lg">
                   <Download size={16} />
                   Descargar Excel
                 </button>
               </div>
             </div>
-            {bom && bom.pieces.length > 0 ? (
+            {lista.piezas.length > 0 ? (
+              <div className="space-y-3">
+                {/* lista de piezas única (fase 0): sale de las mismas piezas que se dibujan en 3D */}
+                {lista.piezas.some(p => p.confirmar) && (
+                  <div className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">Las filas marcadas con ● tienen canto o veta por confirmar con el carpintero.</div>
+                )}
+                <div className="bg-slate-100 rounded-2xl overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-slate-200">
+                          <th className="px-3 py-2 text-left font-black text-slate-700">ITEM</th>
+                          <th className="px-3 py-2 text-left font-black text-slate-700">PARTE</th>
+                          <th className="px-3 py-2 text-center font-black text-slate-700">C/D</th>
+                          <th className="px-3 py-2 text-right font-black text-slate-700">LAR</th>
+                          <th className="px-3 py-2 text-right font-black text-slate-700">AN</th>
+                          <th className="px-3 py-2 text-right font-black text-slate-700">CAL</th>
+                          <th className="px-3 py-2 text-left font-black text-slate-700">COLOR</th>
+                          <th className="px-3 py-2 text-left font-black text-slate-700">CANTO</th>
+                          <th className="px-2 py-2 text-left font-black text-slate-500">L1</th>
+                          <th className="px-2 py-2 text-left font-black text-slate-500">L2</th>
+                          <th className="px-2 py-2 text-left font-black text-slate-500">a1</th>
+                          <th className="px-2 py-2 text-left font-black text-slate-500">a2</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {lista.piezas.map(piece => (
+                          <tr key={piece.item} className="hover:bg-slate-50" title={`Sale de: ${piece.modulos.join(', ')}`}>
+                            <td className="px-3 py-2 font-black text-slate-700">{piece.item}</td>
+                            <td className="px-3 py-2 text-slate-600 max-w-xs truncate">{piece.name}{piece.confirmar && <span className="ml-1 text-amber-500" title="Canto o veta por confirmar">●</span>}</td>
+                            <td className="px-3 py-2 text-center font-bold text-slate-700">{piece.quantity}</td>
+                            <td className="px-3 py-2 text-right text-slate-600">{piece.length}</td>
+                            <td className="px-3 py-2 text-right text-slate-600">{piece.width}</td>
+                            <td className="px-3 py-2 text-right text-slate-600">{piece.thickness}</td>
+                            <td className="px-3 py-2 text-slate-600">{piece.color}</td>
+                            <td className="px-3 py-2 text-slate-600">{piece.edgeType || '—'}</td>
+                            {(() => { const b = bordesDeCanto(piece.edgeType || '', piece.color); return [b.l1, b.l2, b.a1, b.a2].map((t, i) => <td key={i} className="px-2 py-2 text-[10px] text-slate-500 whitespace-nowrap">{t}</td>); })()}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                {lista.herrajes.length > 0 && (
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4">
+                    <div className="text-[11px] font-black text-slate-500 uppercase mb-2">Herrajes</div>
+                    {lista.herrajes.map((h, i) => <div key={i} className="text-xs text-slate-700 font-bold">{h.cant} × {h.nombre}{h.medida ? ` (${h.medida})` : ''}</div>)}
+                  </div>
+                )}
+                <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-200">
+                  <p className="text-sm font-black text-slate-700">Total: <span className="text-indigo-600">{lista.piezas.reduce((a, p) => a + p.quantity, 0)} piezas</span> en {lista.piezas.length} referencias</p>
+                </div>
+                <Optimizador piezas={lista.piezas} />
+                <PlanosEnsamble boxes={boxes} ctx={{ lineType, faceColor }} proyecto={cfg.name} />
+              </div>
+            ) : bom && bom.pieces.length > 0 ? (
               <div className="space-y-3">
                 <div className="bg-slate-100 rounded-2xl overflow-hidden">
                   <div className="overflow-x-auto">
@@ -5202,7 +5262,7 @@ export default function App() {
         )}
         {activeTab === 'config' && (<div className="flex-1 overflow-y-auto p-6 pb-24"><h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-4">Ajustes</h2><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Largo Muro A (mm)</span><input type="number" value={wallA} onChange={e => setWallA(parseInt(e.target.value))} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Línea de Producto</span><select value={lineType} onChange={e => setLineType(e.target.value as any)} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800"><option>Básica</option><option>Media</option><option>Alta</option></select></label><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Color de Fachada</span><input type="text" value={faceColor} onChange={e => setFaceColor(e.target.value)} placeholder="Ej: Blanco, Ámbar, Gris" className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label></div>)}
       </main>
-      <nav className="h-20 bg-white border-t border-slate-200 flex items-center px-4 pb-2 shadow-2xl z-[70]"><BottomNavItem active={activeTab === 'design'} onClick={() => setActiveTab('design')} icon={<Layout />} label="DISEÑO" /><BottomNavItem active={activeTab === 'catalog'} onClick={() => setActiveTab('catalog')} icon={<Component />} label="MÓDULOS" /><BottomNavItem active={activeTab === 'quote'} onClick={() => setActiveTab('quote')} icon={<ShoppingCart />} label="PRECIOS" /><BottomNavItem active={activeTab === 'listado'} onClick={() => setActiveTab('listado')} icon={<Table />} label="LISTADO" badge={bom ? bom.pieces.length.toString() : undefined} /><BottomNavItem active={activeTab === 'config'} onClick={() => setActiveTab('config')} icon={<Settings />} label="AJUSTES" /></nav>
+      <nav className="h-20 bg-white border-t border-slate-200 flex items-center px-4 pb-2 shadow-2xl z-[70]"><BottomNavItem active={activeTab === 'design'} onClick={() => setActiveTab('design')} icon={<Layout />} label="DISEÑO" /><BottomNavItem active={activeTab === 'catalog'} onClick={() => setActiveTab('catalog')} icon={<Component />} label="MÓDULOS" /><BottomNavItem active={activeTab === 'quote'} onClick={() => setActiveTab('quote')} icon={<ShoppingCart />} label="PRECIOS" /><BottomNavItem active={activeTab === 'listado'} onClick={() => setActiveTab('listado')} icon={<Table />} label="LISTADO" badge={lista.piezas.length > 0 ? lista.piezas.reduce((a, p) => a + p.quantity, 0).toString() : bom ? bom.pieces.length.toString() : undefined} /><BottomNavItem active={activeTab === 'config'} onClick={() => setActiveTab('config')} icon={<Settings />} label="AJUSTES" /></nav>
     </div>
   );
 }
