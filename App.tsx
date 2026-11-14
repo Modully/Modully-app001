@@ -7,7 +7,7 @@ import {
   Flame, Droplets, Refrigerator, Wind, Component, X, List, Layers, Info,
   ZoomIn, ZoomOut, Zap, Maximize, Ruler, ArrowRight, MoveHorizontal, Move,
   TowerControl as Tower, AlertCircle, CheckCircle2, ChevronDown, Puzzle, Shirt, DoorOpen, Bath, Tv, Warehouse, ToggleLeft as Toggle,
-  Construction, Minus, Utensils, Target, ZapIcon, Layers2, Archive, Download, Table, Undo2, Redo2, LayoutGrid, FileText, Image as ImageIcon
+  Construction, Minus, Utensils, Target, ZapIcon, Layers2, Archive, Download, Table, Undo2, Redo2, Home, LayoutGrid, FileText, Image as ImageIcon
 } from 'lucide-react';
 import {
   KitchenModule, LayoutType, WallName,
@@ -24,6 +24,7 @@ import { Optimizador } from './PanelLaminas';
 import { PlanosEnsamble } from './PlanosEnsamble';
 import { RenderVista } from './RenderVista';
 import { Bosquejo, DatosBosquejo } from './Bosquejo';
+import { Inicio } from './Inicio';
 import { resizeSymmetric, snapToNeighbors } from './moduleResize';
 import type { CounterExtras, Box as BoxData } from './boxes';
 import { closetDerived } from './boxes';
@@ -469,7 +470,7 @@ const VerticalDimensionLine: React.FC<{
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'design' | 'catalog' | 'quote' | 'config' | 'listado' | 'laminas' | 'planos' | 'render' | 'bosquejo'>('design');
+  const [activeTab, setActiveTab] = useState<'design' | 'catalog' | 'quote' | 'config' | 'listado' | 'laminas' | 'planos' | 'render' | 'bosquejo' | 'inicio'>('inicio');
   const [activeView, setActiveView] = useState<'plan' | 'frontal' | 'isometric' | '3d'>('plan');
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
@@ -1183,7 +1184,7 @@ export default function App() {
   /**
    * Refactor: Lógica de modulación automática (Matemática) con Estrategias, SOBRENEVERA, MUEBLE ESTUFA, ALACENAS y MUEBLE CAMPANA
    */
-  const runAutoModulation = useCallback((currentAppliances: Appliance[], strategy: OptimizationStrategy = 'efficiency') => {
+  const runAutoModulation = useCallback((currentAppliances: Appliance[], strategy: OptimizationStrategy = 'efficiency', cortesA?: number[]) => {
     const newModules: KitchenModule[] = [];
     
     // Preservar módulos especiales activos (tipo TALL)
@@ -1367,6 +1368,22 @@ export default function App() {
           let remaining = gapWidth; 
           let x = startX;
           
+          // Bosquejo: si el boceto trae los anchos de los módulos del muro A, el espacio se parte en esas divisiones (no con los anchos de la estrategia)
+          if (cortesA && cortesA.length > 0 && currentWall === 'A') {
+            const fin = startX + gapWidth;
+            const bordes = [startX, ...cortesA.filter(c => c > startX + 1 && c < fin - 1), fin];
+            for (let k = 0; k < bordes.length - 1; k++) {
+              const w = Math.round(bordes[k + 1] - bordes[k]);
+              if (w < 120) continue;
+              const template = MODULE_TEMPLATES.find(t => t.type === (isUpper ? 'UPPER' : 'LOWER') && t.width === w) || MODULE_TEMPLATES.find(t => t.type === (isUpper ? 'UPPER' : 'LOWER'))!;
+              newModules.push({
+                ...template, uniqueId: Math.random().toString(36).substr(2, 9), wall: currentWall, positionX: Math.round(bordes[k]), width: w,
+                height: isUpper ? currentUpperModuleHeight : currentBaseModuleHeight, quantity: 1, doorType: 'vertical', configType: 'doors', hasPlateRack: false, drawerCount: 0,
+              });
+            }
+            return;
+          }
+
           // Si el gap es menor a 120mm (mínimo permitido), buscar módulo adyacente para extender
           if (remaining < 120) {
             if (remaining > 0) {
@@ -1602,19 +1619,33 @@ export default function App() {
     const largo = (m: 'A' | 'B' | 'C') => (m === 'A' ? d.A : m === 'B' ? d.B : d.C);
     // el equipo se centra en el punto (su mueble mide mínimo 600), sin salirse del muro
     const centrar = (pt: { muro: 'A' | 'B' | 'C'; dist: number }, ancho = 600) => Math.max(0, Math.min(Math.round(pt.dist - ancho / 2), largo(pt.muro) - Math.max(600, ancho)));
+    // anchos de módulo del boceto (muro A, de izquierda a derecha): la cocina se parte en esas divisiones, y la poceta y la estufa
+    // se acomodan al módulo donde cae su punto
+    const mods = d.modulos.filter(w => w > 0);
+    const cortes: number[] = []; mods.reduce((x, w) => { cortes.push(x + w); return x + w; }, 0);
+    const moduloEn = (dist: number) => { let x = 0; for (const w of mods) { if (dist >= x && dist < x + w) return { x, w }; x += w; } return null; };
+    const enModulo = (pt: { muro: 'A' | 'B' | 'C'; dist: number }, ancho: number) => { const m = pt.muro === 'A' ? moduloEn(pt.dist) : null; return m && m.w >= 600 ? { distance: m.x, width: m.w } : { distance: centrar(pt, ancho), width: ancho }; };
+    const anchoNevera = (w?: number) => (w && w >= 400 ? w - 2 * FRIDGE_CLEARANCE : undefined); // el espacio de la nevera deja 5 cm libres a cada lado
     setAppliances(prev => prev.map(a => {
-      if (a.type === 'sink') return d.desague ? { ...a, active: true, wall: d.desague.muro, distance: centrar(d.desague, a.width) } : { ...a, active: false };
-      if (a.type === 'stove') return d.gas ? { ...a, active: true, wall: d.gas.muro, width: 600, distance: centrar(d.gas) } : { ...a, active: false };
-      if (a.type === 'hood-under') return d.gas && d.campana ? { ...a, active: true, wall: d.gas.muro, width: 600, distance: centrar(d.gas) } : { ...a, active: false };
-      if (a.type === 'fridge') return d.nevera === 'no' ? { ...a, active: false } : { ...a, active: true, wall: 'A', distance: d.nevera === 'inicio' ? 0 : Math.max(0, d.A - a.width) };
+      if (a.type === 'sink') return d.desague ? { ...a, active: true, wall: d.desague.muro, distance: enModulo(d.desague, a.width).distance } : { ...a, active: false };
+      if (a.type === 'stove') return d.gas ? { ...a, active: true, wall: d.gas.muro, ...enModulo(d.gas, 600) } : { ...a, active: false };
+      if (a.type === 'hood-under') return d.gas && d.campana ? { ...a, active: true, wall: d.gas.muro, ...enModulo(d.gas, 600) } : { ...a, active: false };
+      if (a.type === 'fridge') {
+        if (d.nevera === 'no') return { ...a, active: false };
+        const w = anchoNevera(d.nevera === 'inicio' ? mods[0] : mods[mods.length - 1]) ?? a.width;
+        return { ...a, active: true, wall: 'A', width: w, distance: d.nevera === 'inicio' ? (mods.length ? FRIDGE_CLEARANCE : 0) : Math.max(0, d.A - w - (mods.length ? FRIDGE_CLEARANCE : 0)) };
+      }
       return a;
     }));
+    bosquejoCortes.current = cortes;
     setBosquejoPend(true);
   };
+  const bosquejoCortes = useRef<number[]>([]);
   useEffect(() => {
     if (!bosquejoPend) return;
     setBosquejoPend(false);
-    runAutoModulation(appliances, 'efficiency');
+    runAutoModulation(appliances, 'efficiency', bosquejoCortes.current);
+    bosquejoCortes.current = [];
     setActiveTab('design');
   }, [bosquejoPend, runAutoModulation, appliances]);
 
@@ -5288,10 +5319,17 @@ export default function App() {
             )}
           </div>
         )}
+        {activeTab === 'inicio' && (
+          <div className="flex-1 overflow-y-auto p-6 pb-24">
+            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-1">Inicio</h2>
+            <p className="text-xs font-bold text-slate-400 mb-6">Elige el producto y la fase en la que quieres trabajar.</p>
+            <Inicio section={section} icons={SECTION_ICONS} piezas={lista.piezas.length} onProducto={id => switchSection(id)} onFase={f => setActiveTab(f)} />
+          </div>
+        )}
         {activeTab === 'bosquejo' && (
           <div className="flex-1 overflow-y-auto p-6 pb-24">
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-1">Bosquejo</h2>
-            <p className="text-xs font-bold text-slate-400 mb-6">Arma un diseño solo con las medidas del espacio.</p>
+            <p className="text-xs font-bold text-slate-400 mb-6">De un boceto a mano alzada al producto del cliente: adjunta la foto o escribe las medidas.</p>
             <Bosquejo actual={section} onCrear={crearDesdeBosquejo} />
           </div>
         )}
@@ -5316,7 +5354,7 @@ export default function App() {
         )}
         {activeTab === 'config' && (<div className="flex-1 overflow-y-auto p-6 pb-24"><h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-4">Ajustes</h2><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Largo Muro A (mm)</span><input type="number" value={wallA} onChange={e => setWallA(parseInt(e.target.value))} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Línea de Producto</span><select value={lineType} onChange={e => setLineType(e.target.value as any)} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800"><option>Básica</option><option>Media</option><option>Alta</option></select></label><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Color de Fachada</span><input type="text" value={faceColor} onChange={e => setFaceColor(e.target.value)} placeholder="Ej: Blanco, Ámbar, Gris" className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label></div>)}
       </main>
-      <nav className="h-20 bg-white border-t border-slate-200 flex items-center px-4 pb-2 shadow-2xl z-[70]"><BottomNavItem active={activeTab === 'bosquejo'} onClick={() => setActiveTab('bosquejo')} icon={<Pencil />} label="BOSQUEJO" /><BottomNavItem active={activeTab === 'design'} onClick={() => setActiveTab('design')} icon={<Layout />} label="DISEÑO" /><BottomNavItem active={activeTab === 'catalog'} onClick={() => setActiveTab('catalog')} icon={<Component />} label="MÓDULOS" /><BottomNavItem active={activeTab === 'quote'} onClick={() => setActiveTab('quote')} icon={<ShoppingCart />} label="PRECIOS" /><BottomNavItem active={activeTab === 'listado'} onClick={() => setActiveTab('listado')} icon={<Table />} label="LISTADO" badge={lista.piezas.length > 0 ? lista.piezas.reduce((a, p) => a + p.quantity, 0).toString() : bom ? bom.pieces.length.toString() : undefined} /><BottomNavItem active={activeTab === 'laminas'} onClick={() => setActiveTab('laminas')} icon={<LayoutGrid />} label="LÁMINAS" /><BottomNavItem active={activeTab === 'planos'} onClick={() => setActiveTab('planos')} icon={<FileText />} label="PLANOS" /><BottomNavItem active={activeTab === 'render'} onClick={() => setActiveTab('render')} icon={<ImageIcon />} label="RENDER" /><BottomNavItem active={activeTab === 'config'} onClick={() => setActiveTab('config')} icon={<Settings />} label="AJUSTES" /></nav>
+      <nav className="h-20 bg-white border-t border-slate-200 flex items-center px-4 pb-2 shadow-2xl z-[70]"><BottomNavItem active={activeTab === 'inicio'} onClick={() => setActiveTab('inicio')} icon={<Home />} label="INICIO" /><BottomNavItem active={activeTab === 'bosquejo'} onClick={() => setActiveTab('bosquejo')} icon={<Pencil />} label="BOSQUEJO" /><BottomNavItem active={activeTab === 'design'} onClick={() => setActiveTab('design')} icon={<Layout />} label="DISEÑO" /><BottomNavItem active={activeTab === 'catalog'} onClick={() => setActiveTab('catalog')} icon={<Component />} label="MÓDULOS" /><BottomNavItem active={activeTab === 'quote'} onClick={() => setActiveTab('quote')} icon={<ShoppingCart />} label="PRECIOS" /><BottomNavItem active={activeTab === 'listado'} onClick={() => setActiveTab('listado')} icon={<Table />} label="LISTADO" badge={lista.piezas.length > 0 ? lista.piezas.reduce((a, p) => a + p.quantity, 0).toString() : bom ? bom.pieces.length.toString() : undefined} /><BottomNavItem active={activeTab === 'laminas'} onClick={() => setActiveTab('laminas')} icon={<LayoutGrid />} label="LÁMINAS" /><BottomNavItem active={activeTab === 'planos'} onClick={() => setActiveTab('planos')} icon={<FileText />} label="PLANOS" /><BottomNavItem active={activeTab === 'render'} onClick={() => setActiveTab('render')} icon={<ImageIcon />} label="RENDER" /><BottomNavItem active={activeTab === 'config'} onClick={() => setActiveTab('config')} icon={<Settings />} label="AJUSTES" /></nav>
     </div>
   );
 }
