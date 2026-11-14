@@ -7,7 +7,7 @@ import {
   Flame, Droplets, Refrigerator, Wind, Component, X, List, Layers, Info,
   ZoomIn, ZoomOut, Zap, Maximize, Ruler, ArrowRight, MoveHorizontal, Move,
   TowerControl as Tower, AlertCircle, CheckCircle2, ChevronDown, Puzzle, Shirt, DoorOpen, Bath, Tv, Warehouse, ToggleLeft as Toggle,
-  Construction, Minus, Utensils, Target, ZapIcon, Layers2, Archive, Download, Table, Undo2, Redo2
+  Construction, Minus, Utensils, Target, ZapIcon, Layers2, Archive, Download, Table, Undo2, Redo2, LayoutGrid, FileText, Image as ImageIcon
 } from 'lucide-react';
 import {
   KitchenModule, LayoutType, WallName,
@@ -22,6 +22,8 @@ import { generateBOM, exportBOMToExcel } from './bomService';
 import { listaDePiezas, exportarListadoDeCorte, bordesDeCanto } from './piezas';
 import { Optimizador } from './PanelLaminas';
 import { PlanosEnsamble } from './PlanosEnsamble';
+import { RenderVista } from './RenderVista';
+import { Bosquejo, DatosBosquejo } from './Bosquejo';
 import { resizeSymmetric, snapToNeighbors } from './moduleResize';
 import type { CounterExtras, Box as BoxData } from './boxes';
 import { closetDerived } from './boxes';
@@ -467,7 +469,7 @@ const VerticalDimensionLine: React.FC<{
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'design' | 'catalog' | 'quote' | 'config' | 'listado'>('design');
+  const [activeTab, setActiveTab] = useState<'design' | 'catalog' | 'quote' | 'config' | 'listado' | 'laminas' | 'planos' | 'render' | 'bosquejo'>('design');
   const [activeView, setActiveView] = useState<'plan' | 'frontal' | 'isometric' | '3d'>('plan');
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
@@ -1587,6 +1589,34 @@ export default function App() {
     setIsSuggesting(false); 
     setActiveTab('design');
   };
+
+  // Fase 5 · Bosquejo: arma el diseño de cualquier producto solo con las medidas. En cocinas, la poceta va sobre el desagüe y la estufa sobre el gas,
+  // y el resto se llena con la modulación automática (se lanza en el siguiente render, cuando ya están puestas las medidas nuevas)
+  const [bosquejoPend, setBosquejoPend] = useState(false);
+  const crearDesdeBosquejo = (d: DatosBosquejo) => {
+    switchSection(d.producto);
+    setWallA(d.A); setSpaceHeight(d.alto);
+    if (d.producto === 'puertas') { setActiveTab('design'); return; }
+    setLayout(d.forma); setLArm(d.brazo); setWallB(d.B); setWallC(d.C);
+    if (d.producto !== 'cocinas') { setActiveTab('design'); return; }
+    const largo = (m: 'A' | 'B' | 'C') => (m === 'A' ? d.A : m === 'B' ? d.B : d.C);
+    // el equipo se centra en el punto (su mueble mide mínimo 600), sin salirse del muro
+    const centrar = (pt: { muro: 'A' | 'B' | 'C'; dist: number }, ancho = 600) => Math.max(0, Math.min(Math.round(pt.dist - ancho / 2), largo(pt.muro) - Math.max(600, ancho)));
+    setAppliances(prev => prev.map(a => {
+      if (a.type === 'sink') return d.desague ? { ...a, active: true, wall: d.desague.muro, distance: centrar(d.desague, a.width) } : { ...a, active: false };
+      if (a.type === 'stove') return d.gas ? { ...a, active: true, wall: d.gas.muro, width: 600, distance: centrar(d.gas) } : { ...a, active: false };
+      if (a.type === 'hood-under') return d.gas && d.campana ? { ...a, active: true, wall: d.gas.muro, width: 600, distance: centrar(d.gas) } : { ...a, active: false };
+      if (a.type === 'fridge') return d.nevera === 'no' ? { ...a, active: false } : { ...a, active: true, wall: 'A', distance: d.nevera === 'inicio' ? 0 : Math.max(0, d.A - a.width) };
+      return a;
+    }));
+    setBosquejoPend(true);
+  };
+  useEffect(() => {
+    if (!bosquejoPend) return;
+    setBosquejoPend(false);
+    runAutoModulation(appliances, 'efficiency');
+    setActiveTab('design');
+  }, [bosquejoPend, runAutoModulation, appliances]);
 
   // Modula solo las islas y penínsulas (el resto de la cocina no se toca): reemplaza los módulos de cada una por una hilera nueva
   const modulateIslandsOnly = async () => {
@@ -5212,8 +5242,6 @@ export default function App() {
                 <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-200">
                   <p className="text-sm font-black text-slate-700">Total: <span className="text-indigo-600">{lista.piezas.reduce((a, p) => a + p.quantity, 0)} piezas</span> en {lista.piezas.length} referencias</p>
                 </div>
-                <Optimizador piezas={lista.piezas} />
-                <PlanosEnsamble boxes={boxes} ctx={{ lineType, faceColor }} proyecto={cfg.name} />
               </div>
             ) : bom && bom.pieces.length > 0 ? (
               <div className="space-y-3">
@@ -5260,9 +5288,35 @@ export default function App() {
             )}
           </div>
         )}
+        {activeTab === 'bosquejo' && (
+          <div className="flex-1 overflow-y-auto p-6 pb-24">
+            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-1">Bosquejo</h2>
+            <p className="text-xs font-bold text-slate-400 mb-6">Arma un diseño solo con las medidas del espacio.</p>
+            <Bosquejo actual={section} onCrear={crearDesdeBosquejo} />
+          </div>
+        )}
+        {/* cada fase en su sección: láminas (optimización), planos de ensamble y render */}
+        {activeTab === 'laminas' && (
+          <div className="flex-1 overflow-y-auto p-6 pb-24">
+            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-6">Láminas</h2>
+            {lista.piezas.length > 0 ? <Optimizador piezas={lista.piezas} /> : <div className="text-sm font-bold text-slate-400">Todavía no hay piezas para acomodar. En cocinas, convierte los cubos a módulos en Diseño.</div>}
+          </div>
+        )}
+        {activeTab === 'planos' && (
+          <div className="flex-1 overflow-y-auto p-6 pb-24">
+            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-6">Planos de ensamble</h2>
+            {lista.piezas.length > 0 ? <PlanosEnsamble boxes={boxes} ctx={{ lineType, faceColor }} proyecto={cfg.name} /> : <div className="text-sm font-bold text-slate-400">Todavía no hay piezas para dibujar. En cocinas, convierte los cubos a módulos en Diseño.</div>}
+          </div>
+        )}
+        {activeTab === 'render' && (
+          <div className="flex-1 overflow-y-auto p-6 pb-24">
+            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-6">Render</h2>
+            <RenderVista boxes={boxes} faceColor={faceColor} lineType={lineType} nombre={cfg.name} />
+          </div>
+        )}
         {activeTab === 'config' && (<div className="flex-1 overflow-y-auto p-6 pb-24"><h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-4">Ajustes</h2><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Largo Muro A (mm)</span><input type="number" value={wallA} onChange={e => setWallA(parseInt(e.target.value))} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Línea de Producto</span><select value={lineType} onChange={e => setLineType(e.target.value as any)} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800"><option>Básica</option><option>Media</option><option>Alta</option></select></label><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Color de Fachada</span><input type="text" value={faceColor} onChange={e => setFaceColor(e.target.value)} placeholder="Ej: Blanco, Ámbar, Gris" className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label></div>)}
       </main>
-      <nav className="h-20 bg-white border-t border-slate-200 flex items-center px-4 pb-2 shadow-2xl z-[70]"><BottomNavItem active={activeTab === 'design'} onClick={() => setActiveTab('design')} icon={<Layout />} label="DISEÑO" /><BottomNavItem active={activeTab === 'catalog'} onClick={() => setActiveTab('catalog')} icon={<Component />} label="MÓDULOS" /><BottomNavItem active={activeTab === 'quote'} onClick={() => setActiveTab('quote')} icon={<ShoppingCart />} label="PRECIOS" /><BottomNavItem active={activeTab === 'listado'} onClick={() => setActiveTab('listado')} icon={<Table />} label="LISTADO" badge={lista.piezas.length > 0 ? lista.piezas.reduce((a, p) => a + p.quantity, 0).toString() : bom ? bom.pieces.length.toString() : undefined} /><BottomNavItem active={activeTab === 'config'} onClick={() => setActiveTab('config')} icon={<Settings />} label="AJUSTES" /></nav>
+      <nav className="h-20 bg-white border-t border-slate-200 flex items-center px-4 pb-2 shadow-2xl z-[70]"><BottomNavItem active={activeTab === 'bosquejo'} onClick={() => setActiveTab('bosquejo')} icon={<Pencil />} label="BOSQUEJO" /><BottomNavItem active={activeTab === 'design'} onClick={() => setActiveTab('design')} icon={<Layout />} label="DISEÑO" /><BottomNavItem active={activeTab === 'catalog'} onClick={() => setActiveTab('catalog')} icon={<Component />} label="MÓDULOS" /><BottomNavItem active={activeTab === 'quote'} onClick={() => setActiveTab('quote')} icon={<ShoppingCart />} label="PRECIOS" /><BottomNavItem active={activeTab === 'listado'} onClick={() => setActiveTab('listado')} icon={<Table />} label="LISTADO" badge={lista.piezas.length > 0 ? lista.piezas.reduce((a, p) => a + p.quantity, 0).toString() : bom ? bom.pieces.length.toString() : undefined} /><BottomNavItem active={activeTab === 'laminas'} onClick={() => setActiveTab('laminas')} icon={<LayoutGrid />} label="LÁMINAS" /><BottomNavItem active={activeTab === 'planos'} onClick={() => setActiveTab('planos')} icon={<FileText />} label="PLANOS" /><BottomNavItem active={activeTab === 'render'} onClick={() => setActiveTab('render')} icon={<ImageIcon />} label="RENDER" /><BottomNavItem active={activeTab === 'config'} onClick={() => setActiveTab('config')} icon={<Settings />} label="AJUSTES" /></nav>
     </div>
   );
 }
