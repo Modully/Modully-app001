@@ -682,7 +682,7 @@ interface Module3DProps {
   contextOpen?: boolean; // clic derecho: formulario del módulo (por ahora, si lleva puertas o cajones)
   onContext?: (id: string) => void;
   onCloseContext?: () => void;
-  onChooseFronts?: (id: string, kind: 'doors' | 'drawers' | 'vertical' | 'horizontal') => void;
+  onChooseFronts?: (id: string, kind: 'doors' | 'drawers' | 'vertical' | 'horizontal' | 'open') => void;
   onApplyMeasures?: (id: string, m: { width: number; depth: number; height: number }) => void;
   onSetTop?: (id: string, height: number, topGap: number) => void;
   onSetVistos?: (id: string, v: SideConfig) => void;
@@ -1123,11 +1123,11 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
         <Html position={[0, module.height / 2000 + 0.01, 0]} center zIndexRange={[210, 0]} occlude={false} style={{ pointerEvents: 'none' }}>
           <div data-overlay data-module-editor className="pointer-events-auto w-52 p-3 space-y-2 rounded-xl bg-white border border-slate-300 shadow-xl" onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
             <div className="text-[10px] font-black uppercase tracking-wide text-slate-500 truncate">{module.label ? `${module.label} · ` : ''}{Math.round(module.width)} mm</div>
-            <div className="text-[12px] font-black text-slate-800">{module.type === 'UPPER' ? '¿Puertas verticales u horizontales?' : '¿Lleva puertas o cajones?'}</div>
-            <div className="grid grid-cols-2 gap-1.5">
-              {(module.type === 'UPPER' ? [['vertical', 'Verticales'], ['horizontal', 'Horizontales']] as const : [['doors', 'Puertas'], ['drawers', 'Cajones']] as const).map(([k, label]) => {
+            <div className="text-[12px] font-black text-slate-800">{module.type === 'UPPER' ? '¿Puertas verticales, horizontales o abierto?' : '¿Puertas, cajones o abierto?'}</div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(module.type === 'UPPER' ? [['vertical', 'Verticales'], ['horizontal', 'Horizontales'], ['open', 'Abierto']] as const : [['doors', 'Puertas'], ['drawers', 'Cajones'], ['open', 'Abierto']] as const).map(([k, label]) => {
                 const horizontal = module.frontsLayout === 'upper-door2-h' || module.frontsLayout === 'hood-h';
-                const current = !module.detailed ? null : module.type === 'UPPER' ? (horizontal ? 'horizontal' : 'vertical') : (module.frontsLayout === 'drawers' ? 'drawers' : 'doors');
+                const current = !module.detailed ? null : module.frontsLayout === 'open' ? 'open' : module.type === 'UPPER' ? (horizontal ? 'horizontal' : 'vertical') : (module.frontsLayout === 'drawers' ? 'drawers' : 'doors');
                 return (
                   <button key={k} onClick={() => { onChooseFronts(module.uniqueId, k); onCloseContext(); }} className={`py-2 rounded-lg text-[11px] font-black border-2 transition-colors ${current === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400'}`}>{label}</button>
                 );
@@ -1141,7 +1141,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
       {/* Doble clic: editor de largo, ancho (fondo) y alto */}
       {editing && onApplyMeasures && onCloseEditor && (
         <Html position={[0, module.height / 2000 + 0.01, 0]} center zIndexRange={[200, 0]} occlude={false} style={{ pointerEvents: 'none' }}>
-          <ModuleEditor module={source ?? module} onApply={(m) => { onApplyMeasures(module.uniqueId, { width: m.width, depth: m.depth, height: m.height }); onSetVistos?.(module.uniqueId, m.sides); }} onClose={onCloseEditor} />
+          <ModuleEditor module={source ?? module} onApply={(m) => { onApplyMeasures(module.uniqueId, { width: m.width, depth: m.depth, height: m.height }); onSetVistos?.(module.uniqueId, m.sides); }} onClose={onCloseEditor} onChooseFronts={onChooseFronts} />
         </Html>
       )}
 
@@ -2508,7 +2508,8 @@ const ModuleEditor: React.FC<{
   module: KitchenModule;
   onApply: (m: { width: number; depth: number; height: number; sides: SideConfig }) => void;
   onClose: () => void;
-}> = ({ module, onApply, onClose }) => {
+  onChooseFronts?: (id: string, kind: 'doors' | 'drawers' | 'vertical' | 'horizontal' | 'open') => void;
+}> = ({ module, onApply, onClose, onChooseFronts }) => {
   const [visto, setVisto] = useState({ left: !!module.vistoLeft, right: !!module.vistoRight, thickness: module.vistoThickness ?? 15 });
   const [dilat, setDilat] = useState({ left: !!module.dilatLeft, right: !!module.dilatRight, thickness: String(module.dilatThickness ?? 15), depth: String(module.dilatDepth ?? 70), height: String(module.dilatHeight ?? module.height) });
   const [vals, setVals] = useState({ width: String(Math.round(module.width)), depth: String(Math.round(module.depth)), height: String(Math.round(module.height)) });
@@ -2552,6 +2553,22 @@ const ModuleEditor: React.FC<{
       {field('width', 'Largo', true)}
       {field('depth', 'Ancho (fondo)')}
       {field('height', 'Alto')}
+      {/* frentes: lo mismo que el clic derecho (bajo: puertas o cajones; aéreo: puertas verticales u horizontales); se aplica al momento */}
+      {onChooseFronts && (module.type === 'LOWER' || module.type === 'UPPER') && !module.cornerArm && (() => {
+        const horizontal = module.frontsLayout === 'upper-door2-h' || module.frontsLayout === 'hood-h';
+        const current = !module.detailed ? null : module.frontsLayout === 'open' ? 'open' : module.type === 'UPPER' ? (horizontal ? 'horizontal' : 'vertical') : (module.frontsLayout === 'drawers' ? 'drawers' : 'doors');
+        const ops = module.type === 'UPPER' ? [['vertical', 'Verticales'], ['horizontal', 'Horizontales'], ['open', 'Abierto']] as const : [['doors', 'Puertas'], ['drawers', 'Cajones'], ['open', 'Abierto']] as const;
+        return (
+          <div className="pt-1 border-t border-slate-200 space-y-1">
+            <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">{module.type === 'UPPER' ? 'Puertas' : 'Frente'}</div>
+            <div className="grid grid-cols-1 gap-1">
+              {ops.map(([k, label]) => (
+                <button key={k} onClick={() => onChooseFronts(module.uniqueId, k)} className={`py-1 rounded-lg text-[11px] font-black border-2 ${current === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-400'}`}>{label}</button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
       <div className="pt-1 border-t border-slate-200 space-y-1">
         <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">Visto (lado sin muro)</div>
         <div className="flex items-center gap-3 text-[11px] font-bold text-slate-600">
@@ -2825,7 +2842,7 @@ interface KitchenViewer3DProps {
   onEditCounter?: (s: CounterSettings, counterId: string, extras: CounterExtras) => void;
   counterExtras?: Record<string, CounterExtras>;
   onSetModuleVistos?: (id: string, v: SideConfig) => void;
-  onSetModuleFronts?: (id: string, kind: 'doors' | 'drawers' | 'vertical' | 'horizontal') => void;
+  onSetModuleFronts?: (id: string, kind: 'doors' | 'drawers' | 'vertical' | 'horizontal' | 'open') => void;
   onSplitHorizontal?: (id: string) => void;
   onSplitDepth?: (id: string) => void;
   onExtendFace?: (id: string, face: FaceKey) => void;
@@ -3250,9 +3267,10 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             </mesh>
             {/* El techo es translúcido: no tapa las herramientas y medidas (no cuenta al ocultar lo que no se ve). En la vista frontal no se dibuja: solo sumaba líneas */}
             {viewMode !== 'frontal' && (
+              // solo el contorno: con relleno blanco translúcido, sobre los muebles altos (la sobrenevera) parecía una tabla flotando encima
               <mesh position={[slabX, spaceHeight / 1000 + 0.06, slabZ]} raycast={() => null}>
                 <boxGeometry args={[slabW, 0.12, slabD]} />
-                <meshStandardMaterial color="#ffffff" transparent opacity={0.3} />
+                <meshBasicMaterial visible={false} />
                 <Edges color="#cbd5e1" />
               </mesh>
             )}

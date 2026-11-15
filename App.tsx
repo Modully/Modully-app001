@@ -745,9 +745,11 @@ export default function App() {
   };
 
   // Clic derecho en un módulo base: con puertas (una o dos, según el ancho) o con cajones (3 cajones reales); convierte ese módulo
-  const setModuleFronts = (id: string, kind: 'doors' | 'drawers' | 'vertical' | 'horizontal') => {
+  const setModuleFronts = (id: string, kind: 'doors' | 'drawers' | 'vertical' | 'horizontal' | 'open') => {
     setModules(prev => prev.map(m => {
       if (m.uniqueId !== id || m.cornerArm) return m;
+      // abierto: sin puertas ni cajones; va todo en el material de la fachada
+      if (kind === 'open' && (m.type === 'UPPER' || m.type === 'LOWER')) return { ...m, detailed: true, frontsLayout: 'open' as const, configType: 'doors' as const, drawerCount: 0 };
       if (m.type === 'UPPER') {
         // Aéreo: puertas verticales (una si es angosto, dos si es ancho) u horizontales (una sobre otra); la campana mantiene su regla
         const layout = kind === 'horizontal' ? (m.isHood ? 'hood-h' : 'upper-door2-h') : (m.isHood ? 'hood' : (m.width < 450 ? 'upper-door1' : 'upper-door2-v'));
@@ -970,14 +972,17 @@ export default function App() {
     .map(i => (i.kind === 'peninsula' ? { ...i, dx: lArm === 'right' ? Math.max(0, wallA - i.length) : 0 } : i)), [islands, layout, lArm, wallA]);
 
   // Lista única de cajas: la escena 3D, el BOM y la exportación a Fusion leen la geometría de aquí
+  // Opción del carpintero (no se guarda con el diseño): puente L corrido entre los bajos y costados internos 80 mm más cortos
+  const [costadosCortos, setCostadosCortos] = useState(false);
+  const [corredera, setCorredera] = useState<{ tipo: 'full' | 'oculta'; menos10?: boolean; fondo15?: boolean }>({ tipo: 'full' });
   const boxes = useMemo(() => buildBoxes({
     puerta: cfg.id === 'puertas' ? puerta : undefined, wallThickness: cfg.id === 'puertas' ? puerta.espesor : undefined, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
     modules: labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, closet: closetInput, fit: fitInput, lArm, hasLeftClosure, hasRightClosure,
-    hasDilatation, dilatationGap, dilatationDepth,
-  }), [cfg.id, puerta, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, closetInput, fitInput, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
+    hasDilatation, dilatationGap, dilatationDepth, costadosCortos, corredera,
+  }), [costadosCortos, corredera, cfg.id, puerta, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, closetInput, fitInput, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
 
   // Fase 0: lista de piezas única, sacada de las mismas cajas que se dibujan
-  const lista = useMemo(() => listaDePiezas(boxes, { lineType, faceColor, puerta: cfg.id === 'puertas' ? puerta : undefined }), [boxes, lineType, faceColor, cfg.id, puerta]);
+  const lista = useMemo(() => listaDePiezas(boxes, { lineType, faceColor, puerta: cfg.id === 'puertas' ? puerta : undefined, abiertos: modules.filter(m => m.frontsLayout === 'open').map(m => m.uniqueId) }), [boxes, lineType, faceColor, cfg.id, puerta, modules]);
   // Regla: ningún módulo puede ocupar el mismo espacio que un electrodoméstico (ni otro módulo)
   const collisions = useMemo(() => findCollisions(boxes), [boxes]);
   const collidingBoxes = useMemo(() => {
@@ -3853,15 +3858,16 @@ export default function App() {
     <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
       {isSuggesting && <LoadingOverlay message={suggestMessage} />}
       <header className="px-6 py-4 flex items-center justify-between bg-white/70 backdrop-blur-lg border-b border-slate-200 z-[60]">
-        <div className="flex items-center gap-3"><div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg"><Box size={20} /></div><div><h1 className="text-base font-black text-slate-800 tracking-tighter uppercase">MODULLY</h1><span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none block">Cierre Exacto</span></div></div>
-        <div className="relative">
+        <div className="flex items-center gap-3 cursor-pointer" title="Ir a Inicio" onClick={() => setActiveTab('inicio')}><div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg"><Box size={20} /></div><div><h1 className="text-base font-black text-slate-800 tracking-tighter uppercase">MODULLY</h1><span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none block">Cierre Exacto</span></div></div>
+        <div className="relative flex items-center gap-2">
+          {activeTab !== 'inicio' && <button onClick={() => setActiveTab('inicio')} title="Ir a Inicio" className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-600 text-[11px] font-black uppercase tracking-wide hover:border-indigo-300 hover:text-indigo-700 transition-colors"><Home size={14} />Inicio</button>}
           <button onClick={() => setIsSectionMenuOpen(!isSectionMenuOpen)} className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-700 text-[11px] font-black uppercase tracking-wide hover:bg-indigo-100 transition-colors">
             {SECTION_ICONS[section]}
             <span>{cfg.name}</span>
             <ChevronDown size={14} className={`transition-transform ${isSectionMenuOpen ? 'rotate-180' : ''}`} />
           </button>
           {isSectionMenuOpen && (
-            <div className="absolute right-0 mt-2 w-64 bg-white rounded-3xl shadow-2xl border border-slate-100 p-2 z-[90] flex flex-col gap-1">
+            <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-3xl shadow-2xl border border-slate-100 p-2 z-[90] flex flex-col gap-1">
               {SECTION_ORDER.map(id => (
                 <button key={id} onClick={() => switchSection(id)} className={`flex items-center gap-3 p-3 rounded-2xl text-left transition-all ${id === section ? 'bg-indigo-600 text-white' : 'hover:bg-indigo-50 text-slate-700'}`}>
                   <span className={id === section ? 'text-white' : 'text-indigo-600'}>{SECTION_ICONS[id]}</span>
@@ -5204,10 +5210,10 @@ export default function App() {
             </div>
           </div>
         )}
-        {activeTab === 'catalog' && (<div className="flex-1 overflow-y-auto p-6 space-y-6 pb-24"><h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Catálogo</h2><div className="grid grid-cols-1 gap-3">{MODULE_TEMPLATES.map(m => (<button key={m.id} onClick={() => { addModule(m.id); setActiveTab('design'); }} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-3xl shadow-sm hover:border-indigo-500 transition-all"><div className="flex items-center gap-4"><div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-xs" style={{ background: COLORS[m.type] }}>{m.width}</div><p className="text-sm font-black text-slate-800 uppercase">{m.name}</p></div><Plus size={20} className="text-indigo-600" /></button>))}</div></div>)}
-        {activeTab === 'quote' && (<div className="flex-1 overflow-y-auto p-6 pb-24"><h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-4">Presupuesto</h2><div className="bg-indigo-600 p-8 rounded-[2.5rem] text-white shadow-2xl flex flex-col gap-2"><p className="text-xs font-black uppercase tracking-widest opacity-80">Total Proyecto Estimado</p><p className="text-5xl font-black">${quoteSummary.total.toLocaleString()}</p></div></div>)}
+        {activeTab === 'catalog' && (<div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button><h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Catálogo</h2><div className="grid grid-cols-1 gap-3">{MODULE_TEMPLATES.map(m => (<button key={m.id} onClick={() => { addModule(m.id); setActiveTab('design'); }} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-3xl shadow-sm hover:border-indigo-500 transition-all"><div className="flex items-center gap-4"><div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-xs" style={{ background: COLORS[m.type] }}>{m.width}</div><p className="text-sm font-black text-slate-800 uppercase">{m.name}</p></div><Plus size={20} className="text-indigo-600" /></button>))}</div></div>)}
+        {activeTab === 'quote' && (<div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button><h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-4">Presupuesto</h2><div className="bg-indigo-600 p-8 rounded-[2.5rem] text-white shadow-2xl flex flex-col gap-2"><p className="text-xs font-black uppercase tracking-widest opacity-80">Total Proyecto Estimado</p><p className="text-5xl font-black">${quoteSummary.total.toLocaleString()}</p></div></div>)}
         {activeTab === 'listado' && (
-          <div className="flex-1 overflow-y-auto p-6 pb-24">
+          <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Listado de Partes</h2>
               <div className="flex items-center gap-2">
@@ -5320,14 +5326,14 @@ export default function App() {
           </div>
         )}
         {activeTab === 'inicio' && (
-          <div className="flex-1 overflow-y-auto p-6 pb-24">
+          <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24">
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-1">Inicio</h2>
             <p className="text-xs font-bold text-slate-400 mb-6">Elige el producto y la fase en la que quieres trabajar.</p>
             <Inicio section={section} icons={SECTION_ICONS} piezas={lista.piezas.length} onProducto={id => switchSection(id)} onFase={f => setActiveTab(f)} />
           </div>
         )}
         {activeTab === 'bosquejo' && (
-          <div className="flex-1 overflow-y-auto p-6 pb-24">
+          <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-1">Bosquejo</h2>
             <p className="text-xs font-bold text-slate-400 mb-6">De un boceto a mano alzada al producto del cliente: adjunta la foto o escribe las medidas.</p>
             <Bosquejo actual={section} onCrear={crearDesdeBosquejo} />
@@ -5335,24 +5341,24 @@ export default function App() {
         )}
         {/* cada fase en su sección: láminas (optimización), planos de ensamble y render */}
         {activeTab === 'laminas' && (
-          <div className="flex-1 overflow-y-auto p-6 pb-24">
+          <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-6">Láminas</h2>
             {lista.piezas.length > 0 ? <Optimizador piezas={lista.piezas} /> : <div className="text-sm font-bold text-slate-400">Todavía no hay piezas para acomodar. En cocinas, convierte los cubos a módulos en Diseño.</div>}
           </div>
         )}
         {activeTab === 'planos' && (
-          <div className="flex-1 overflow-y-auto p-6 pb-24">
+          <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-6">Planos de ensamble</h2>
             {lista.piezas.length > 0 ? <PlanosEnsamble boxes={boxes} ctx={{ lineType, faceColor }} proyecto={cfg.name} /> : <div className="text-sm font-bold text-slate-400">Todavía no hay piezas para dibujar. En cocinas, convierte los cubos a módulos en Diseño.</div>}
           </div>
         )}
         {activeTab === 'render' && (
-          <div className="flex-1 overflow-y-auto p-6 pb-24">
+          <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-6">Render</h2>
             <RenderVista boxes={boxes} faceColor={faceColor} lineType={lineType} nombre={cfg.name} />
           </div>
         )}
-        {activeTab === 'config' && (<div className="flex-1 overflow-y-auto p-6 pb-24"><h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-4">Ajustes</h2><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Largo Muro A (mm)</span><input type="number" value={wallA} onChange={e => setWallA(parseInt(e.target.value))} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Línea de Producto</span><select value={lineType} onChange={e => setLineType(e.target.value as any)} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800"><option>Básica</option><option>Media</option><option>Alta</option></select></label><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Color de Fachada</span><input type="text" value={faceColor} onChange={e => setFaceColor(e.target.value)} placeholder="Ej: Blanco, Ámbar, Gris" className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label></div>)}
+        {activeTab === 'config' && (<div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button><h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-4">Ajustes</h2><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Largo Muro A (mm)</span><input type="number" value={wallA} onChange={e => setWallA(parseInt(e.target.value))} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Línea de Producto</span><select value={lineType} onChange={e => setLineType(e.target.value as any)} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800"><option>Básica</option><option>Media</option><option>Alta</option></select></label><div className="mb-4 bg-white border rounded-2xl p-4 space-y-2"><div className="text-sm font-black text-slate-800">Corredera de los cajones</div><div className="flex flex-wrap gap-2"><button onClick={() => setCorredera({ tipo: 'full' })} className={`rounded-xl px-3 py-2 text-xs font-black border ${corredera.tipo === 'full' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Full extensión</button><button onClick={() => setCorredera(c => ({ ...c, tipo: 'oculta' }))} className={`rounded-xl px-3 py-2 text-xs font-black border ${corredera.tipo === 'oculta' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Oculta</button>{corredera.tipo === 'oculta' && <><button onClick={() => setCorredera(c => ({ ...c, menos10: !c.menos10 }))} className={`rounded-xl px-3 py-2 text-xs font-black border ${!!corredera.menos10 ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Descontar 10 mm al largo</button><button onClick={() => setCorredera(c => ({ ...c, fondo15: !c.fondo15 }))} className={`rounded-xl px-3 py-2 text-xs font-black border ${!!corredera.fondo15 ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Fondo de 15</button></>}</div><div className="text-[11px] font-bold text-slate-400">Full extensión: 13 mm de luz por lado. Oculta: 6 mm por lado y lateral en medidas de 50 en 50; algunas marcas piden 10 mm menos de largo.</div></div><div className="mb-4 flex items-center justify-between gap-4 bg-white border rounded-2xl p-4"><div><div className="text-sm font-black text-slate-800">Costados internos más cortos</div><div className="text-[11px] font-bold text-slate-400">Con puente en L de melamina corrido entre varios bajos: los costados internos van 80 mm más cortos y no se les hace la caja.</div></div><button onClick={() => setCostadosCortos(v => !v)} className={`w-12 h-6 rounded-full relative shrink-0 transition-all ${costadosCortos ? 'bg-indigo-600' : 'bg-slate-200'}`}><div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${costadosCortos ? 'left-6' : 'left-0.5'}`} /></button></div><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Color de Fachada</span><input type="text" value={faceColor} onChange={e => setFaceColor(e.target.value)} placeholder="Ej: Blanco, Ámbar, Gris" className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label></div>)}
       </main>
       <nav className="h-20 bg-white border-t border-slate-200 flex items-center px-4 pb-2 shadow-2xl z-[70]"><BottomNavItem active={activeTab === 'inicio'} onClick={() => setActiveTab('inicio')} icon={<Home />} label="INICIO" /><BottomNavItem active={activeTab === 'bosquejo'} onClick={() => setActiveTab('bosquejo')} icon={<Pencil />} label="BOSQUEJO" /><BottomNavItem active={activeTab === 'design'} onClick={() => setActiveTab('design')} icon={<Layout />} label="DISEÑO" /><BottomNavItem active={activeTab === 'catalog'} onClick={() => setActiveTab('catalog')} icon={<Component />} label="MÓDULOS" /><BottomNavItem active={activeTab === 'quote'} onClick={() => setActiveTab('quote')} icon={<ShoppingCart />} label="PRECIOS" /><BottomNavItem active={activeTab === 'listado'} onClick={() => setActiveTab('listado')} icon={<Table />} label="LISTADO" badge={lista.piezas.length > 0 ? lista.piezas.reduce((a, p) => a + p.quantity, 0).toString() : bom ? bom.pieces.length.toString() : undefined} /><BottomNavItem active={activeTab === 'laminas'} onClick={() => setActiveTab('laminas')} icon={<LayoutGrid />} label="LÁMINAS" /><BottomNavItem active={activeTab === 'planos'} onClick={() => setActiveTab('planos')} icon={<FileText />} label="PLANOS" /><BottomNavItem active={activeTab === 'render'} onClick={() => setActiveTab('render')} icon={<ImageIcon />} label="RENDER" /><BottomNavItem active={activeTab === 'config'} onClick={() => setActiveTab('config')} icon={<Settings />} label="AJUSTES" /></nav>
     </div>

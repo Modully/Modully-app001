@@ -162,6 +162,8 @@ export interface BuildBoxesInput {
   zocaloDepth: number;
   modules: KitchenModule[];
   appliances: Appliance[];
+  corredera?: { tipo: 'full' | 'oculta'; menos10?: boolean; fondo15?: boolean }; // corredera de los cajones (por defecto full extensión)
+  costadosCortos?: boolean; // opción del carpintero: puente L corrido entre varios bajos y costados internos 80 mm más cortos (no se les hace la caja)
   hasLeftClosure?: boolean;
   hasRightClosure?: boolean;
   hasDilatation?: boolean;
@@ -312,6 +314,26 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     return { x: along, y: across, sx: width, sy: depth, facing: '+Y' as BoxFacing };
   };
 
+  // --- Puente L corrido (opción "costados cortos"): un solo puente en L por cada tramo de bajos pegados, de lateral extremo a lateral extremo ---
+  if (input.costadosCortos) {
+    (['A', 'B', 'C'] as WallName[]).forEach(w => {
+      const bajos = modules.filter(m => m.wall === w && m.type === 'LOWER' && m.detailed && !!m.frontsLayout && !m.cornerArm && m.depth >= 60).sort((a, b) => a.positionX - b.positionX);
+      const tramos: KitchenModule[][] = [];
+      bajos.forEach(m => { const t = tramos[tramos.length - 1]; const u = t?.[t.length - 1]; if (u && Math.abs(u.positionX + u.width - m.positionX) < 2) t.push(m); else tramos.push([m]); });
+      tramos.filter(t => t.length >= 2).forEach((t, ti) => {
+        const E = PANEL_THICKNESS, ini = t[0].positionX + E, fin = t[t.length - 1].positionX + t[t.length - 1].width - E, H = t[0].height, D = t[0].depth;
+        const partes = Math.ceil((fin - ini) / 2400), largo = (fin - ini) / partes; // un puente más largo que la lámina se parte en tramos iguales
+        for (let k = 0; k < partes; k++) {
+          const pp = placeOnWall(w, ini + k * largo, largo, D, armOrigin(w, false), 0);
+          ([['Puente L corrido horizontal', GOLA_WIDTH, E, 0, H - GOLA_WIDTH - E], ['Puente L corrido vertical', E, GOLA_WIDTH, E, H - GOLA_WIDTH]] as const).forEach(([name, dv, dw, ov, ow], q) => {
+            const c = w === 'A' ? { x: pp.x, y: pp.y + pp.sy - ov - dv, sx: largo, sy: dv } : w === 'B' ? { x: pp.x + pp.sx - ov - dv, y: pp.y, sx: dv, sy: largo } : { x: pp.x + ov, y: pp.y, sx: dv, sy: largo };
+            boxes.push({ id: `panel-lower-corrido-${w}-${ti}-${k}-${q}`, name, kind: 'panel', wall: w, ...c, z: zh + ow, sz: dw, facing: null });
+          });
+        }
+      });
+    });
+  }
+
   // --- Módulos ---
   modules.forEach(mod => {
     const isl = mod.wall === 'Island' ? (input.islands ?? []).find(i => i.id === mod.islandId) : undefined;
@@ -366,9 +388,24 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       facing: p.facing,
       moduleId: mod.uniqueId,
     });
-    // Módulo convertido: sus piezas (laterales, base, techo, puentes, amarres, espaldar y entrepaños), con las reglas del generador de Fusion.
-    // Local al módulo: u a lo largo del ancho (izquierda a derecha), v hacia atrás desde el frente, w hacia arriba desde su base
-    if (mod.detailed && mod.frontsLayout && !mod.cornerArm && mod.depth >= 60) {
+    // Módulo convertido: sus piezas (laterales, base, techo, puentes, amarres, espaldar y entrepaños), con las reglas del carpintero.
+    // Local al módulo: u a lo largo del ancho (desde el inicio del muro), v hacia atrás desde el frente, w hacia arriba desde su base
+    const convertido = !!mod.detailed && !!mod.frontsLayout && !mod.cornerArm && mod.depth >= 60;
+    // Torre de hornos (módulo especial alto): tiene su propio despiece si le alcanza la altura
+    const esTorreHornos = convertido && mod.type === 'TALL' && /tall-oven/.test(mod.uniqueId) && mod.height >= 1900;
+    // Vecinos del mismo nivel pegados a cada lado (para los costados internos cortos y el puente L corrido)
+    const vecino = (lado: 'inicio' | 'fin') => !isl && mod.type === 'LOWER' && modules.some(o => o !== mod && o.wall === mod.wall && o.type === 'LOWER' && o.detailed && !!o.frontsLayout && !o.cornerArm
+      && Math.abs(lado === 'inicio' ? o.positionX + o.width - mod.positionX : o.positionX - (mod.positionX + mod.width)) < 2);
+    const corrido = !!input.costadosCortos && convertido && mod.type === 'LOWER' && (vecino('inicio') || vecino('fin'));
+    // Esquinero recto: el bajo del muro A que llega al rincón queda tapado en parte por el tramo del otro muro. Lleva puerta falsa
+    // (lo que tapa el otro tramo), dilatadas en la esquina y una puerta que abre en lo que queda libre; su lateral del rincón es 80 mm más corto
+    const armDepth = LOWER_DEPTH;
+    const tramo = (w: 'B' | 'C') => modules.some(o => o.wall === w && o.type === 'LOWER');
+    const ciegoInicio = convertido && !isl && mod.wall === 'A' && mod.type === 'LOWER' && hasB && tramo('B') && mod.positionX < 250 && (mod.frontsLayout === 'door1' || mod.frontsLayout === 'door2');
+    const ciegoFin = convertido && !isl && mod.wall === 'A' && mod.type === 'LOWER' && hasC && tramo('C') && mod.positionX + mod.width > wallA - 250 && (mod.frontsLayout === 'door1' || mod.frontsLayout === 'door2');
+    const ciego = ciegoInicio ? armDepth - mod.positionX : ciegoFin ? armDepth - (wallA - mod.positionX - mod.width) : 0; // largo del frente que queda tapado
+    const esquinero = ciego > 0 && mod.width >= ciego + 10 + 300 ? (ciegoInicio ? 'inicio' : 'fin') : null;
+    if (convertido) {
       const E = PANEL_THICKNESS, W = mod.width, D = mod.depth, H = mod.height;
       let n = 0;
       const tier = mod.type === 'UPPER' ? 'upper' : 'lower';
@@ -384,43 +421,102 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         });
       };
       const inner = W - 2 * E;
-      piece('Lateral izquierdo', E, D, H, 0, 0, 0);
-      piece('Lateral derecho', E, D, H, W - E, 0, 0);
+      // Cajón según la corredera (reglas del carpintero):
+      // · full extensión: 13 mm de luz por lado (testero = ancho del módulo − 86); fondo de 5,5 de (testero + 10) × (lateral − 20)
+      // · oculta: 6 mm de luz por lado (testero = ancho − 72); lateral en pasos de 50 (menos 10 si la marca lo pide); con fondo de 15 el testero
+      //   es 30 mm más bajo que el lateral y el fondo mide lo mismo que el testero; con fondo de 5,5 va ranurado: 10 mm más ancho y del largo del lateral
+      const cor = input.corredera ?? { tipo: 'full' as const };
+      const cajon = (nm: string, zb: number, hh: number, ov: number) => {
+        const pre = nm ? `Cajón ${nm}` : 'Cajón';
+        if (cor.tipo === 'oculta') {
+          const luz = 6, ext = inner - 2 * luz, xl = E + luz;
+          const prof = Math.min(500, Math.floor((D - 20) / 50) * 50) - (cor.menos10 ? 10 : 0);
+          const hT = cor.fondo15 ? Math.max(30, hh - 30) : hh;
+          piece(`${pre} lateral izquierdo`, E, prof, hh, xl, ov, zb);
+          piece(`${pre} lateral derecho`, E, prof, hh, xl + ext - E, ov, zb);
+          piece(`${pre} testero frontal`, ext - 2 * E, E, hT, xl + E, ov, zb + hh - hT);
+          piece(`${pre} testero trasero`, ext - 2 * E, E, hT, xl + E, ov + prof - E, zb + hh - hT);
+          if (cor.fondo15) piece(`${pre} fondo`, ext - 2 * E, prof, E, xl + E, ov, zb + hh - hT - E);
+          else piece(`${pre} fondo`, ext - 2 * E + 10, prof, PANEL_BACK, xl + E - 5, ov, zb + 15);
+          return;
+        }
+        const luz = 13, prof = Math.min(500, D - 20), ext = inner - 2 * luz, xl = E + luz;
+        piece(`${pre} lateral izquierdo`, E, prof, hh, xl, ov, zb);
+        piece(`${pre} lateral derecho`, E, prof, hh, xl + ext - E, ov, zb);
+        piece(`${pre} testero frontal`, ext - 2 * E, E, hh, xl + E, ov, zb);
+        piece(`${pre} testero trasero`, ext - 2 * E, E, hh, xl + E, ov + prof - E, zb);
+        piece(`${pre} fondo`, ext - 20, prof - 20, PANEL_BACK, xl + E - 5, ov + 10, zb + 15);
+      };
+      if (esTorreHornos) {
+        // Torre de hornos (planos de Dr Carlos y Helin): cajón abajo, hueco del horno (590 libres), hueco del segundo equipo (370) y mueble de puertas arriba.
+        // Los pisos de los equipos (tapas base) miden 100 mm menos de fondo, para ventilación y cables; el espaldar (de 15) va solo detrás del mueble de arriba
+        const CAJ = 356, HORNO = 590, MICRO = 370;
+        const zHorno = E + CAJ + 14;                 // cara de arriba de la base del horno
+        const zMicro = zHorno + HORNO + E;           // cara de arriba del piso del segundo equipo
+        const zArriba = zMicro + MICRO + E;          // cara de arriba del piso del mueble superior
+        piece('Lateral izquierdo', E, D, H, 0, 0, 0);
+        piece('Lateral derecho', E, D, H, W - E, 0, 0);
+        piece('Base', inner, D, E, E, 0, 0);                         // base del cajón
+        piece('Base', inner, D, E, E, 0, zHorno - E);                // base del horno
+        piece('Tapa base', inner, D - 100, E, E, 0, zMicro - E);     // piso del segundo equipo
+        piece('Tapa base', inner, D - 100, E, E, 0, zArriba - E);    // piso del mueble superior
+        piece('Tapa base', inner, D - 100, E, E, 0, H - E);          // techo del mueble superior
+        // puentes de 70 atrás: amarran los laterales donde no hay espaldar (detrás del cajón y de cada equipo)
+        ([E, zHorno, zMicro, zArriba - E - 70] as number[]).forEach(w0 => piece('Puente', inner, E, 70, E, D - E, w0));
+        piece('Espaldar', inner, E, H - E - zArriba, E, D - 100 - E, zArriba);
+        piece('Entrepaño', inner, D - 120, E, E, 0, zArriba + Math.round((H - E - zArriba) / 2));
+        cajon('', E + 20, 180, 0); // cajón de abajo
+      } else {
+      // costados internos 80 mm más cortos (opción): el puente L corrido pasa por encima sin hacerles la caja; en el esquinero, el lateral del rincón
+      const corto = (lado: 'inicio' | 'fin') => (corrido && vecino(lado)) || esquinero === lado;
+      piece(esquinero === 'inicio' ? 'Lateral rincón' : 'Lateral izquierdo', E, D, corto('inicio') ? H - 80 : H, 0, 0, 0);
+      piece(esquinero === 'fin' ? 'Lateral rincón' : 'Lateral derecho', E, D, corto('fin') ? H - 80 : H, W - E, 0, 0);
       if (mod.type === 'LOWER') {
-        // Bajo: sin techo ni espaldar (el mesón hace de tapa); base, 2 amarres traseros y gola arriba (puente en L)
+        // Bajo: sin techo ni espaldar (el mesón hace de tapa); base, 2 puentes traseros y puente en L arriba (propio, o corrido entre varios módulos)
         piece('Base', inner, D, E, E, 0, 0);
         piece('Amarre superior trasero', inner, E, TIE_LOWER, E, D - E, H - TIE_LOWER);
         piece('Amarre inferior trasero', inner, E, TIE_LOWER, E, D - E, E);
-        piece('Gola superior horizontal', inner, GOLA_WIDTH, E, E, 0, H - GOLA_WIDTH - E);
-        piece('Gola superior vertical', inner, E, GOLA_WIDTH, E, E, H - GOLA_WIDTH);
+        if (!corrido) {
+          piece('Gola superior horizontal', inner, GOLA_WIDTH, E, E, 0, H - GOLA_WIDTH - E);
+          piece('Gola superior vertical', inner, E, GOLA_WIDTH, E, E, H - GOLA_WIDTH);
+        }
         if (mod.frontsLayout === 'drawers') {
           // Cajonero: gola media y tres cajones reales (inferior, medio y cubiertero oculto)
           piece('Gola media horizontal', inner, GOLA_WIDTH, E, E, 0, 330);
           piece('Gola media vertical', inner, E, GOLA_WIDTH, E, E, 330 + E);
-          const luz = 13, prof = Math.min(500, D - 20), ext = inner - 2 * luz, xl = E + luz;
-          ([['Inferior', 35, 180, 0], ['Medio', 445, 100, 0], ['Cubiertero', 605, 70, 18]] as const).forEach(([nm, zb, hh, ov]) => {
-            piece(`Cajón ${nm} lateral izquierdo`, E, prof, hh, xl, ov, zb);
-            piece(`Cajón ${nm} lateral derecho`, E, prof, hh, xl + ext - E, ov, zb);
-            piece(`Cajón ${nm} testero frontal`, ext - 2 * E, E, hh, xl + E, ov, zb);
-            piece(`Cajón ${nm} testero trasero`, ext - 2 * E, E, hh, xl + E, ov + prof - E, zb);
-            piece(`Cajón ${nm} fondo`, ext - 20, prof - 20, PANEL_BACK, xl + E - 5, ov + 10, zb + 15);
-          });
+          ([['Inferior', 35, 180, 0], ['Medio', 445, 100, 0], ['Cubiertero', 605, 70, 18]] as const).forEach(([nm, zb, hh, ov]) => cajon(nm, zb, hh, ov));
         } else if (W >= 450) {
           // regla del carpintero: en el bajo el entrepaño mide el fondo del lateral − 90 y va atrás, contra los amarres
           piece('Entrepaño', inner, D - 90, E, E, 90 - E, SHELF_Z);
         }
+        if (esquinero) {
+          // dilatada de la esquina (70 de canto, al ras de las puertas); su pareja va en el otro tramo: en la lista sale una de 140 para cortar por la mitad
+          const u0 = esquinero === 'inicio' ? ciego - 60 : W - ciego - 10;
+          piece('Dilatada esquinero', 70, E, H - 80, u0, -E, 0);
+        }
+      } else if (mod.type === 'UPPER') {
+        // Aéreo: base y tapa al ras del lateral (20 mm atrás si lleva platero, para que circule el aire), espaldar de (alto − 20) × (ancho − 20)
+        // metido 5 mm en cada lateral, y dos soportes arriba (cuchillas)
+        const dPiso = mod.hasPlateRack ? D - 20 : D;
+        piece('Piso', inner, dPiso, E, E, 0, 0);
+        piece('Techo', inner, dPiso, E, E, 0, H - E);
+        piece('Espaldar', W - 20, PANEL_BACK, H - 20, 10, D - E - PANEL_BACK, 10);
+        piece('Amarre superior 1', inner, E, TIE_UPPER, E, D - E, H - E - TIE_UPPER);
+        piece('Amarre superior 2', inner, E, TIE_UPPER, E, D - E, H - E - 2 * TIE_UPPER);
+        // regla del carpintero: en el aéreo el entrepaño mide el fondo del lateral − 60 y va atrás, contra el espaldar
+        if (W >= 450) piece('Entrepaño', inner, D - 60, E, E, 60 - E - PANEL_BACK, SHELF_Z);
       } else {
-        // Aéreo (y torres): piso, techo, espaldar retranqueado y dos amarres arriba (cuchillas)
+        // Torres y alacenas: piso, techo, espaldar y dos amarres arriba
         piece('Piso', inner, D, E, E, 0, 0);
         piece('Techo', inner, D, E, E, 0, H - E);
         piece('Espaldar', inner, PANEL_BACK, H - 2 * E + 5, E, D - E - PANEL_BACK, E);
         piece('Amarre superior 1', inner, E, TIE_UPPER, E, D - E, H - E - TIE_UPPER);
         piece('Amarre superior 2', inner, E, TIE_UPPER, E, D - E, H - E - 2 * TIE_UPPER);
-        // regla del carpintero: en el aéreo el entrepaño mide el fondo del lateral − 60 y va atrás, contra el espaldar (las torres siguen con − 20)
-        if (W >= 450) { if (mod.type === 'UPPER') piece('Entrepaño', inner, D - 60, E, E, 60 - E - PANEL_BACK, SHELF_Z); else piece('Entrepaño', inner, D - 20, E, E, 0, SHELF_Z); }
+        if (W >= 450) piece('Entrepaño', inner, D - 20, E, E, 0, SHELF_Z);
+      }
       }
     }
-    // Módulo convertido: sus puertas o frentes de cajón (afuera de la cara frontal, con las luces del generador de Fusion)
+    // Módulo convertido: sus puertas o frentes de cajón (afuera de la cara frontal)
     if (mod.detailed && mod.frontsLayout) {
       const T = FRONT_THICKNESS, G = FRONT_SIDE_GAP;
       type Fr = { name: string; a0: number; a1: number; z0: number; h: number };
@@ -430,7 +526,18 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       const full = mod.type === 'UPPER' ? H : H - (conNariz ? FRONT_LOWER_BOTTOM_CUT : 30);
       // ancho: una sola puerta o frente = ancho del módulo − 2; dos puertas = cada una la mitad − 1
       const G1 = 1, G2 = 0.5;
-      if (mod.frontsLayout === 'door1') {
+      if (mod.frontsLayout === 'open') {
+        // módulo abierto: no lleva puertas (va todo en el material de la fachada)
+      } else if (esTorreHornos) {
+        // frente del cajón de abajo y dos puertas en el mueble de arriba; los huecos de los equipos quedan abiertos
+        const zArriba = PANEL_THICKNESS + 356 + 14 + 590 + PANEL_THICKNESS + 370 + PANEL_THICKNESS, w = W / 2 - 1, hP = H - zArriba + PANEL_THICKNESS - 2;
+        fronts.push({ name: 'Frente cajón', a0: G1, a1: W - G1, z0: 0, h: 356 + PANEL_THICKNESS - 2 },
+          { name: 'Puerta izquierda', a0: G2, a1: G2 + w, z0: zArriba - PANEL_THICKNESS, h: hP }, { name: 'Puerta derecha', a0: W / 2 + G2, a1: W / 2 + G2 + w, z0: zArriba - PANEL_THICKNESS, h: hP });
+      } else if (esquinero) {
+        // esquinero recto: puerta falsa en lo que tapa el otro tramo, y una puerta que abre en lo libre (la dilatada de la esquina va entre las dos)
+        if (esquinero === 'inicio') fronts.push({ name: 'Puerta falsa', a0: G1, a1: ciego - 60, z0: 0, h: full }, { name: 'Puerta', a0: ciego + 12, a1: W - G1, z0: 0, h: full });
+        else fronts.push({ name: 'Puerta', a0: G1, a1: W - ciego - 12, z0: 0, h: full }, { name: 'Puerta falsa', a0: W - ciego + 60, a1: W - G1, z0: 0, h: full });
+      } else if (mod.frontsLayout === 'door1') {
         fronts.push({ name: 'Puerta', a0: G1, a1: W - G1, z0: 0, h: mod.type === 'TALL' ? H - 20 : full });
       } else if (mod.frontsLayout === 'door2') {
         const w = W / 2 - 1, h = mod.type === 'TALL' ? H - 20 : full;

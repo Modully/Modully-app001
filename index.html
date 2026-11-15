@@ -24,8 +24,9 @@
         }
         #root { 
             width: 100vw; 
-            height: 100vh; 
-            height: -webkit-fill-available;
+            /* alto fijo de la ventana: así cada sección hace scroll por dentro (fill-available dejaba crecer la página con su contenido) */
+            height: 100vh;
+            height: 100dvh;
         }
         /* Enable selection for inputs and interactive elements */
         input, select, textarea, [contenteditable="true"] {

@@ -36,7 +36,7 @@ export interface KitchenModule extends ModuleTemplate {
   depthOffset?: number; // distancia (mm) del muro a la cara trasera del módulo: módulos partidos en frente y fondo
   // Convertir a módulos: el cubo pasa a ser un módulo con sus puertas o frentes de cajón (reglas del generador de Fusion)
   detailed?: boolean;
-  frontsLayout?: 'door1' | 'door2' | 'drawers' | 'upper-door1' | 'upper-door2-v' | 'upper-door2-h' | 'hood' | 'hood-h';
+  frontsLayout?: 'open' | 'door1' | 'door2' | 'drawers' | 'upper-door1' | 'upper-door2-v' | 'upper-door2-h' | 'hood' | 'hood-h';
   // Esquinero en L: dos módulos unidos en uno. El módulo conserva su tramo a lo largo del muro A y `cornerArm` es el brazo que sigue
   // por el muro B o C (empieza tras la esquina ciega, CORNER_BLIND_OFFSET)
   cornerArm?: { wall: 'B' | 'C'; width: number; depth: number; positionX: number };
