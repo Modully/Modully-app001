@@ -12,7 +12,7 @@ export const nubeConfigurada = !!url && !!key;
 export const nube = nubeConfigurada ? createClient(url!, key!) : null;
 
 export interface Proyecto { id: string; cliente: string; nombre: string; notas: string; updated_at: string }
-export interface DisenoGuardado { id: string; proyecto_id: string; seccion: string; nombre: string; datos: unknown; updated_at: string }
+export interface DisenoGuardado { id: string; proyecto_id: string; seccion: string; nombre: string; ubicacion: string; cantidad: number; datos: unknown; updated_at: string }
 
 const sinNube = () => new Error('Falta configurar Supabase (VITE_SUPABASE_URL y VITE_SUPABASE_KEY en .env.local).');
 const traducir = (m: string) =>
@@ -59,14 +59,19 @@ export async function borrarProyecto(id: string) {
 }
 export async function listarDisenos(proyectoId: string): Promise<DisenoGuardado[]> {
   if (!nube) throw sinNube();
-  return ok(await nube.from('disenos').select('id, proyecto_id, seccion, nombre, datos, updated_at').eq('proyecto_id', proyectoId).order('updated_at', { ascending: false })) as DisenoGuardado[];
+  return ok(await nube.from('disenos').select('id, proyecto_id, seccion, nombre, ubicacion, cantidad, datos, updated_at').eq('proyecto_id', proyectoId).order('updated_at', { ascending: false })) as DisenoGuardado[];
 }
-/** Guarda un diseño nuevo, o reemplaza uno existente si se da su id */
-export async function guardarDiseno(proyectoId: string, seccion: string, nombre: string, datos: unknown, id?: string): Promise<DisenoGuardado> {
+/** Guarda un producto nuevo del proyecto, o reemplaza su diseño si se da su id (la cantidad y la ubicación se conservan si no se dan) */
+export async function guardarDiseno(proyectoId: string, seccion: string, nombre: string, datos: unknown, id?: string, extra?: { cantidad?: number; ubicacion?: string }): Promise<DisenoGuardado> {
   if (!nube) throw sinNube();
-  const fila = { proyecto_id: proyectoId, seccion, nombre, datos };
+  const fila = { proyecto_id: proyectoId, seccion, nombre, datos, ...(extra?.cantidad ? { cantidad: extra.cantidad } : {}), ...(extra?.ubicacion !== undefined ? { ubicacion: extra.ubicacion } : {}) };
   const q = id ? nube.from('disenos').update(fila).eq('id', id) : nube.from('disenos').insert(fila);
-  return ok(await q.select('id, proyecto_id, seccion, nombre, datos, updated_at').single()) as DisenoGuardado;
+  return ok(await q.select('id, proyecto_id, seccion, nombre, ubicacion, cantidad, datos, updated_at').single()) as DisenoGuardado;
+}
+/** Cambia la cantidad, el nombre o la ubicación de un producto sin tocar su diseño */
+export async function ajustarDiseno(id: string, cambios: { cantidad?: number; nombre?: string; ubicacion?: string }) {
+  if (!nube) throw sinNube();
+  ok(await nube.from('disenos').update(cambios).eq('id', id));
 }
 export async function borrarDiseno(id: string) {
   if (!nube) throw sinNube();
@@ -105,3 +110,54 @@ export async function generarIA(p: { model: string; contents: unknown; config?: 
 }
 /** Objeto con la misma forma que el cliente del SDK de Google, para cambiar lo mínimo donde ya se usaba */
 export const ia = { models: { generateContent: generarIA } };
+
+/* ---------- Documentos de cada producto (almacenamiento privado "documentos": <usuario>/<producto>/<archivo>) ---------- */
+export interface Documento { id: string; diseno_id: string; tipo: string; nombre: string; ruta: string; bytes: number; created_at: string }
+export interface DocumentoNuevo { tipo: string; nombre: string; archivo: Blob }
+
+const limpio = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.-]+/g, '_').slice(0, 80);
+
+export async function listarDocumentos(disenoId: string): Promise<Documento[]> {
+  if (!nube) throw sinNube();
+  return ok(await nube.from('documentos').select('id, diseno_id, tipo, nombre, ruta, bytes, created_at').eq('diseno_id', disenoId).order('created_at', { ascending: false })) as Documento[];
+}
+/** Sube los documentos de un producto. Con `reemplazar`, los de ese mismo tipo que ya tenía se borran (quedan solo los últimos) */
+export async function subirDocumentos(disenoId: string, docs: DocumentoNuevo[], reemplazar = true): Promise<number> {
+  if (!nube) throw sinNube();
+  const uid = (await nube.auth.getUser()).data.user?.id;
+  if (!uid) throw new Error('Entra con tu cuenta para guardar documentos.');
+  if (reemplazar && docs.length) {
+    const viejos = (await listarDocumentos(disenoId)).filter(d => docs.some(n => n.tipo === d.tipo));
+    if (viejos.length) {
+      await nube.storage.from('documentos').remove(viejos.map(d => d.ruta));
+      ok(await nube.from('documentos').delete().in('id', viejos.map(d => d.id)));
+    }
+  }
+  for (const d of docs) {
+    const ruta = `${uid}/${disenoId}/${Date.now()}-${limpio(d.nombre)}`;
+    const up = await nube.storage.from('documentos').upload(ruta, d.archivo, { contentType: d.archivo.type || 'application/octet-stream', upsert: false });
+    if (up.error) throw new Error(`No se pudo subir ${d.nombre}: ${up.error.message}`);
+    ok(await nube.from('documentos').insert({ diseno_id: disenoId, tipo: d.tipo, nombre: d.nombre, ruta, bytes: d.archivo.size }));
+  }
+  return docs.length;
+}
+/** Enlace temporal (10 minutos) para abrir o descargar un documento */
+export async function enlaceDocumento(d: Documento, descargar = false): Promise<string> {
+  if (!nube) throw sinNube();
+  const r = await nube.storage.from('documentos').createSignedUrl(d.ruta, 600, descargar ? { download: d.nombre } : undefined);
+  if (r.error || !r.data) throw new Error('No se pudo abrir el documento.');
+  return r.data.signedUrl;
+}
+export async function borrarDocumento(d: Documento) {
+  if (!nube) throw sinNube();
+  await nube.storage.from('documentos').remove([d.ruta]);
+  ok(await nube.from('documentos').delete().eq('id', d.id));
+}
+/** Pasa una imagen en data URL (render, foto, boceto) a archivo */
+export function archivoDeDataURL(url: string): Blob {
+  const [cab, datos] = url.split(',');
+  const tipo = /data:([^;]+)/.exec(cab)?.[1] ?? 'image/png';
+  const bin = atob(datos); const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: tipo });
+}

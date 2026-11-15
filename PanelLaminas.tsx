@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import type { Pieza } from './piezas';
 import { OPCIONES_LAMINA, OpcionesLamina, ResultadoMaterial, materialDe, optimizarMaterial } from './optimizador';
 
@@ -143,3 +144,23 @@ export const Optimizador: React.FC<{ piezas: Pieza[] }> = ({ piezas }) => {
     </div>
   );
 };
+
+/** Página HTML lista para abrir y guardar como PDF (Ctrl+P) */
+const paginaHTML = (titulo: string, cuerpo: string, horizontal = false) => `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${titulo}</title>
+<style>@page{size:${horizontal ? 'A4 landscape' : 'A4'};margin:10mm}body{font-family:Arial,Helvetica,sans-serif;color:#0f172a;margin:16px}h1{font-size:18px}h2{font-size:14px;margin:18px 0 6px}
+.lam{page-break-inside:avoid;margin-bottom:14px}.nota{font-size:11px;color:#475569}svg{max-width:100%;height:auto}.hoja{page-break-after:always}</style></head><body>${cuerpo}</body></html>`;
+
+/** Láminas del producto (con los valores normales de lámina, sierra y refilado) como página para guardar en el proyecto */
+export function htmlLaminas(piezas: Pieza[], titulo: string): string {
+  const grupos = new Map<string, Pieza[]>();
+  piezas.filter(p => p.papel !== 'meson').forEach(p => { const m = materialDe(p); grupos.set(m, [...(grupos.get(m) ?? []), p]); });
+  const o = OPCIONES_LAMINA;
+  const pct = (n: number) => `${Math.round(n * 100)}%`;
+  const cuerpo = [...grupos.entries()].map(([m, ps]) => {
+    const r = optimizarMaterial(m, ps, o);
+    const laminas = r.laminas.map((l, i) => `<div class="lam"><div class="nota">Lámina ${i + 1} de ${r.laminas.length} · ${l.piezas.length} piezas · usa ${pct(l.uso)}${l.retazos.length ? ` · retazos: ${l.retazos.map(z => `${Math.round(z.w)} × ${Math.round(z.h)}`).join(', ')}` : ''}</div>${renderToStaticMarkup(<Diagrama o={o} lam={l} />)}</div>`).join('');
+    const fuera = r.noCaben.map(n => `<div class="nota">No cabe en la lámina: ${n.cant} × ${n.nombre} (${n.lar} × ${n.an})</div>`).join('');
+    return `<h2>${m} · ${r.laminas.length} ${r.laminas.length === 1 ? 'lámina' : 'láminas'} de ${o.largo} × ${o.ancho} · aprovechamiento ${pct(r.uso)}</h2>${fuera}${laminas}`;
+  }).join('');
+  return paginaHTML(`Láminas · ${titulo}`, `<h1>Láminas · ${titulo}</h1><div class="nota">Sierra ${o.sierra} mm · refilado ${o.refilado} mm por borde · respeta la veta</div>${cuerpo}`);
+}

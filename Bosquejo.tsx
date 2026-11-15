@@ -225,7 +225,7 @@ const Corregir: React.FC<{ d: DatosBosquejo; set: (f: (d: DatosBosquejo) => Dato
   );
 };
 
-export const Bosquejo: React.FC<{ actual: SectionId; onCrear: (d: DatosBosquejo) => void }> = ({ actual, onCrear }) => {
+export const Bosquejo: React.FC<{ actual: SectionId; onCrear: (d: DatosBosquejo, foto?: string) => void }> = ({ actual, onCrear }) => {
   const [foto, setFoto] = useState<string | null>(null);
   const [lectura, setLectura] = useState<{ estado: 'nada' | 'leyendo' | 'lista' | 'error'; r?: LecturaBoceto; error?: string }>({ estado: 'nada' });
   const [datos, setDatos] = useState<DatosBosquejo[]>([]);
@@ -319,7 +319,7 @@ export const Bosquejo: React.FC<{ actual: SectionId; onCrear: (d: DatosBosquejo)
               ? <Corregir d={d} set={f => setDatos(ds => ds.map((x, i) => (i === k ? f(x) : x)))} onListo={() => setCorrigiendo(null)} />
               : (
                 <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <button disabled={bloquea} onClick={() => onCrear(d)} className="rounded-xl px-5 py-2.5 text-sm font-black bg-indigo-600 text-white disabled:opacity-40">Aceptar</button>
+                  <button disabled={bloquea} onClick={() => onCrear(d, foto ?? undefined)} className="rounded-xl px-5 py-2.5 text-sm font-black bg-indigo-600 text-white disabled:opacity-40">Aceptar</button>
                   <button onClick={() => setCorrigiendo(k)} className="rounded-xl px-5 py-2.5 text-sm font-black border border-slate-200 text-slate-700">Corregir</button>
                   <span className="text-[11px] font-bold text-slate-400">Aceptar arma el diseño de {SECTIONS[d.producto].name} (reemplaza el que haya).</span>
                 </div>

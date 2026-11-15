@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import type { Box } from './boxes';
 import { ContextoPiezas, listaDePiezas } from './piezas';
 
@@ -228,3 +229,17 @@ export const PlanosEnsamble: React.FC<{ boxes: Box[]; ctx: ContextoPiezas; proye
     </div>
   );
 };
+
+/** Página HTML lista para abrir y guardar como PDF (Ctrl+P) */
+const paginaHTML = (titulo: string, cuerpo: string, horizontal = false) => `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${titulo}</title>
+<style>@page{size:${horizontal ? 'A4 landscape' : 'A4'};margin:10mm}body{font-family:Arial,Helvetica,sans-serif;color:#0f172a;margin:16px}h1{font-size:18px}h2{font-size:14px;margin:18px 0 6px}
+.lam{page-break-inside:avoid;margin-bottom:14px}.nota{font-size:11px;color:#475569}svg{max-width:100%;height:auto}.hoja{page-break-after:always}</style></head><body>${cuerpo}</body></html>`;
+
+/** Planos de ensamble del producto (una hoja por módulo) como página para guardar en el proyecto */
+export function htmlPlanos(boxes: Box[], ctx: ContextoPiezas, proyecto: string, cliente: string): string {
+  const gs = grupos(boxes);
+  let empresa = '', logo: string | null = null;
+  try { empresa = localStorage.getItem('modully-empresa') ?? ''; logo = localStorage.getItem('modully-logo'); } catch { /* sin almacenamiento */ }
+  const hojas = gs.map((g, i) => `<div class="hoja">${renderToStaticMarkup(<Hoja g={g} n={i + 1} total={gs.length} ctx={ctx} proyecto={proyecto} cliente={cliente} empresa={empresa} logo={logo} />)}</div>`).join('');
+  return paginaHTML(`Planos · ${proyecto}`, hojas || '<p>Sin módulos convertidos.</p>', true);
+}

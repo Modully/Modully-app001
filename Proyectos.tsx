@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { SECTIONS, SectionId } from './sections';
 import {
-  DisenoGuardado, Proyecto, alCambiarSesion, borrarDiseno, borrarProyecto, crearProyecto, entrar, guardarDiseno,
+  Documento, DocumentoNuevo, borrarDocumento, enlaceDocumento, listarDocumentos, subirDocumentos,
+  DisenoGuardado, Proyecto, ajustarDiseno, alCambiarSesion, borrarDiseno, borrarProyecto, crearProyecto, entrar, guardarDiseno,
   listarDisenos, listarProyectos, nubeConfigurada, registrarse, salir, sesionActual,
 } from './nube';
 
@@ -51,15 +52,21 @@ const Acceso: React.FC = () => {
 export const Proyectos: React.FC<{
   seccion: SectionId;                       // producto abierto en la app
   diseñoActual: () => unknown;              // el diseño que está abierto (para guardarlo)
-  onAbrir: (seccion: SectionId, datos: unknown) => void;
-}> = ({ seccion, diseñoActual, onAbrir }) => {
+  documentos: (nombre: string, cliente: string, nuevo: boolean) => DocumentoNuevo[]; // documentos que genera el diseño abierto
+  onProductoActivo: (p: { id: string; nombre: string } | null) => void;
+  onAbrir: (seccion: SectionId, datos: unknown, producto: { id: string; nombre: string }) => void;
+}> = ({ seccion, diseñoActual, documentos, onProductoActivo, onAbrir }) => {
+  const [docs, setDocs] = useState<Record<string, Documento[] | undefined>>({}); // documentos de cada producto (al desplegarlos)
+  const [verDocs, setVerDocs] = useState<string | null>(null);
+  const cargarDocs = async (id: string) => { const l = await listarDocumentos(id); setDocs(x => ({ ...x, [id]: l })); };
+  const TIPO_DOC: Record<string, string> = { listado: 'Listado de corte (Excel)', laminas: 'Láminas', planos: 'Planos de ensamble', render: 'Render', foto_ia: 'Foto con IA', boceto: 'Boceto' };
   const [sesion, setSesion] = useState<Session | null>(null);
   const [listo, setListo] = useState(false);
   const [proyectos, setProyectos] = useState<Proyecto[]>([]);
   const [abierto, setAbierto] = useState<string | null>(null);
   const [disenos, setDisenos] = useState<DisenoGuardado[]>([]);
   const [nuevo, setNuevo] = useState({ cliente: '', nombre: '' });
-  const [nombreDiseno, setNombreDiseno] = useState('');
+  const [nuevoProd, setNuevoProd] = useState({ nombre: '', ubicacion: '', cantidad: 1 }); // producto que se agrega con el diseño abierto
   const [msg, setMsg] = useState<{ error?: string; ok?: string }>({});
 
   useEffect(() => { sesionActual().then(s => { setSesion(s); setListo(true); }); return alCambiarSesion(setSesion); }, []);
@@ -108,37 +115,97 @@ export const Proyectos: React.FC<{
         </div>
 
         {/* diseños del proyecto */}
-        {proyecto ? (
-          <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+        {proyecto ? (() => {
+          // el proyecto se organiza por producto: cada producto guardado lleva su diseño, dónde va y cuántas unidades
+          const porTipo = (Object.keys(SECTIONS) as SectionId[]).map(t => ({ t, items: disenos.filter(d => d.seccion === t) })).filter(g => g.items.length);
+          const unidades = disenos.reduce((a, d) => a + (d.cantidad ?? 1), 0);
+          const cambiarCant = (d: DisenoGuardado, n: number) => {
+            const c = Math.max(1, Math.min(999, Math.round(n) || 1));
+            setDisenos(ds => ds.map(x => (x.id === d.id ? { ...x, cantidad: c } : x)));
+            intentar(() => ajustarDiseno(d.id, { cantidad: c }));
+          };
+          return (
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4">
             <div className="flex flex-wrap items-baseline gap-2">
-              <div className="text-sm font-black text-slate-800 uppercase tracking-tight mr-auto">{proyecto.cliente}{proyecto.nombre ? ` · ${proyecto.nombre}` : ''}</div>
-              <button onClick={() => { if (window.confirm(`¿Borrar el proyecto de ${proyecto.cliente} con todos sus diseños? No se puede deshacer.`)) intentar(async () => { await borrarProyecto(proyecto.id); setAbierto(null); await cargar(); }); }} className="text-[11px] font-black text-rose-600">Borrar proyecto</button>
+              <div className="mr-auto">
+                <div className="text-sm font-black text-slate-800 uppercase tracking-tight">{proyecto.cliente}{proyecto.nombre ? ` · ${proyecto.nombre}` : ''}</div>
+                <div className="text-[11px] font-bold text-slate-400">{disenos.length} {disenos.length === 1 ? 'producto' : 'productos'} · {unidades} {unidades === 1 ? 'unidad' : 'unidades'}</div>
+              </div>
+              <button onClick={() => { if (window.confirm(`¿Borrar el proyecto de ${proyecto.cliente} con todos sus productos? No se puede deshacer.`)) intentar(async () => { await borrarProyecto(proyecto.id); setAbierto(null); await cargar(); }); }} className="text-[11px] font-black text-rose-600">Borrar proyecto</button>
             </div>
-            <form className="flex flex-wrap items-end gap-2 bg-indigo-50 border border-indigo-100 rounded-xl p-3"
+
+            {/* resumen por tipo de producto */}
+            {porTipo.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {porTipo.map(g => <span key={g.t} className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-black text-slate-700">{SECTIONS[g.t].name} × {g.items.reduce((a, d) => a + (d.cantidad ?? 1), 0)}</span>)}
+              </div>
+            )}
+
+            {/* agregar el diseño abierto como producto del proyecto */}
+            <form className="grid grid-cols-2 md:grid-cols-[1.2fr_1.2fr_90px_auto] gap-2 items-end bg-indigo-50 border border-indigo-100 rounded-xl p-3"
               onSubmit={e => { e.preventDefault(); intentar(async () => {
-                await guardarDiseno(proyecto.id, seccion, nombreDiseno.trim() || SECTIONS[seccion].name, diseñoActual());
-                setNombreDiseno(''); setDisenos(await listarDisenos(proyecto.id)); await cargar(); setMsg({ ok: `Se guardó el diseño de ${SECTIONS[seccion].name}.` });
+                const nombre = nuevoProd.nombre.trim() || SECTIONS[seccion].name;
+                const d = await guardarDiseno(proyecto.id, seccion, nombre, diseñoActual(), undefined, { cantidad: nuevoProd.cantidad, ubicacion: nuevoProd.ubicacion.trim() });
+                setMsg({ ok: 'Guardando los documentos…' });
+                const n = await subirDocumentos(d.id, documentos(nombre, proyecto.cliente, true));
+                onProductoActivo({ id: d.id, nombre });
+                setNuevoProd({ nombre: '', ubicacion: '', cantidad: 1 }); setDisenos(await listarDisenos(proyecto.id)); await cargar();
+                setMsg({ ok: `Se agregó ${nombre} (${SECTIONS[seccion].name}) × ${nuevoProd.cantidad} con ${n} ${n === 1 ? 'documento' : 'documentos'}.${n ? '' : ' Convierte los cubos a módulos para que salgan el listado, las láminas y los planos.'}` });
               }); }}>
-              <label className="block flex-1 min-w-[180px]"><span className="text-[9px] font-black text-slate-400 uppercase block mb-1">Guardar el diseño abierto ({SECTIONS[seccion].name})</span>
-                <input value={nombreDiseno} onChange={e => setNombreDiseno(e.target.value)} placeholder={SECTIONS[seccion].name} className={campo} /></label>
-              <button className="rounded-xl px-4 py-2.5 text-sm font-black bg-indigo-600 text-white">Guardar</button>
+              <div className="col-span-2 md:col-span-4 text-[10px] font-black text-indigo-700 uppercase">Agregar el diseño abierto: {SECTIONS[seccion].name}</div>
+              <label className="block"><span className="text-[9px] font-black text-slate-400 uppercase block mb-1">Nombre</span>
+                <input value={nuevoProd.nombre} onChange={e => setNuevoProd(x => ({ ...x, nombre: e.target.value }))} placeholder={SECTIONS[seccion].name} className={campo} /></label>
+              <label className="block"><span className="text-[9px] font-black text-slate-400 uppercase block mb-1">Dónde va</span>
+                <input value={nuevoProd.ubicacion} onChange={e => setNuevoProd(x => ({ ...x, ubicacion: e.target.value }))} placeholder="Alcoba principal, apto 301…" className={campo} /></label>
+              <label className="block"><span className="text-[9px] font-black text-slate-400 uppercase block mb-1">Cantidad</span>
+                <input type="number" min={1} max={999} value={nuevoProd.cantidad} onChange={e => setNuevoProd(x => ({ ...x, cantidad: Math.max(1, Math.min(999, parseInt(e.target.value, 10) || 1)) }))} className={campo} /></label>
+              <button className="rounded-xl px-4 py-2.5 text-sm font-black bg-indigo-600 text-white">Agregar</button>
             </form>
-            {disenos.length === 0 && <div className="text-xs font-bold text-slate-400">Este proyecto aún no tiene diseños.</div>}
-            <div className="divide-y divide-slate-100">
-              {disenos.map(d => (
-                <div key={d.id} className="flex flex-wrap items-center gap-2 py-2">
-                  <div className="mr-auto min-w-0">
-                    <div className="text-sm font-black text-slate-800 truncate">{d.nombre}</div>
-                    <div className="text-[11px] font-bold text-slate-400">{SECTIONS[d.seccion as SectionId]?.name ?? d.seccion} · {fecha(d.updated_at)}</div>
-                  </div>
-                  <button onClick={() => onAbrir(d.seccion as SectionId, d.datos)} className="rounded-xl px-3 py-1.5 text-xs font-black bg-slate-800 text-white">Abrir</button>
-                  <button onClick={() => { if (window.confirm(`¿Reemplazar "${d.nombre}" con el diseño abierto (${SECTIONS[seccion].name})?`)) intentar(async () => { await guardarDiseno(proyecto.id, seccion, d.nombre, diseñoActual(), d.id); setDisenos(await listarDisenos(proyecto.id)); setMsg({ ok: `Se actualizó "${d.nombre}".` }); }); }} className="rounded-xl px-3 py-1.5 text-xs font-black border border-slate-200 text-slate-700">Reemplazar</button>
-                  <button onClick={() => { if (window.confirm(`¿Borrar el diseño "${d.nombre}"? No se puede deshacer.`)) intentar(async () => { await borrarDiseno(d.id); setDisenos(await listarDisenos(proyecto.id)); }); }} className="text-[11px] font-black text-rose-600 px-1">Borrar</button>
+
+            {disenos.length === 0 && <div className="text-xs font-bold text-slate-400">Este proyecto aún no tiene productos. Arma uno en Diseño (o en Bosquejo) y agrégalo aquí.</div>}
+
+            {/* productos agrupados por tipo */}
+            {porTipo.map(g => (
+              <div key={g.t} className="space-y-1">
+                <div className="text-[10px] font-black text-slate-400 uppercase">{SECTIONS[g.t].name}</div>
+                <div className="rounded-xl border border-slate-200 divide-y divide-slate-100">
+                  {g.items.map(d => (
+                    <div key={d.id} className="flex flex-wrap items-center gap-2 px-3 py-2">
+                      <div className="mr-auto min-w-0">
+                        <div className="text-sm font-black text-slate-800 truncate">{d.nombre}</div>
+                        <div className="text-[11px] font-bold text-slate-400">{d.ubicacion ? `${d.ubicacion} · ` : ''}actualizado {fecha(d.updated_at)}</div>
+                      </div>
+                      <div className="flex items-center rounded-xl border border-slate-200 overflow-hidden" title="Cantidad de unidades de este producto">
+                        <button onClick={() => cambiarCant(d, (d.cantidad ?? 1) - 1)} className="px-2.5 py-1.5 text-sm font-black text-slate-600 hover:bg-slate-100">−</button>
+                        <span className="w-10 text-center text-sm font-black text-slate-800">{d.cantidad ?? 1}</span>
+                        <button onClick={() => cambiarCant(d, (d.cantidad ?? 1) + 1)} className="px-2.5 py-1.5 text-sm font-black text-slate-600 hover:bg-slate-100">+</button>
+                      </div>
+                      <button onClick={() => { setVerDocs(v => (v === d.id ? null : d.id)); if (verDocs !== d.id) intentar(() => cargarDocs(d.id)); }} className={`rounded-xl px-3 py-1.5 text-xs font-black border ${verDocs === d.id ? 'border-indigo-500 text-indigo-700 bg-indigo-50' : 'border-slate-200 text-slate-700'}`}>Documentos</button>
+                      <button onClick={() => onAbrir(d.seccion as SectionId, d.datos, { id: d.id, nombre: d.nombre })} className="rounded-xl px-3 py-1.5 text-xs font-black bg-slate-800 text-white">Abrir</button>
+                      <button onClick={() => { if (window.confirm(`¿Reemplazar el diseño de "${d.nombre}" con el que está abierto (${SECTIONS[seccion].name})? La cantidad y la ubicación se conservan.`)) intentar(async () => { await guardarDiseno(proyecto.id, seccion, d.nombre, diseñoActual(), d.id); const n = await subirDocumentos(d.id, documentos(d.nombre, proyecto.cliente, false)); onProductoActivo({ id: d.id, nombre: d.nombre }); setDisenos(await listarDisenos(proyecto.id)); if (verDocs === d.id) await cargarDocs(d.id); setMsg({ ok: `Se actualizó "${d.nombre}" y ${n} ${n === 1 ? 'documento' : 'documentos'}.` }); }); }} className="rounded-xl px-3 py-1.5 text-xs font-black border border-slate-200 text-slate-700">Reemplazar</button>
+                      <button onClick={() => { if (window.confirm(`¿Quitar "${d.nombre}" del proyecto con sus documentos? No se puede deshacer.`)) intentar(async () => { for (const doc of await listarDocumentos(d.id)) await borrarDocumento(doc); await borrarDiseno(d.id); setDisenos(await listarDisenos(proyecto.id)); }); }} className="text-[11px] font-black text-rose-600 px-1">Quitar</button>
+                      {verDocs === d.id && (
+                        <div className="w-full bg-slate-50 rounded-xl p-2 space-y-1">
+                          {!docs[d.id] && <div className="text-[11px] font-bold text-slate-400">Cargando…</div>}
+                          {docs[d.id]?.length === 0 && <div className="text-[11px] font-bold text-slate-400">Sin documentos. Pulsa Reemplazar con el diseño convertido a módulos para generarlos, o guarda el render desde la pestaña Render.</div>}
+                          {docs[d.id]?.map(doc => (
+                            <div key={doc.id} className="flex flex-wrap items-center gap-2 text-xs">
+                              <span className="font-black text-slate-700 mr-auto">{TIPO_DOC[doc.tipo] ?? doc.tipo} <span className="font-bold text-slate-400">· {doc.nombre} · {Math.max(1, Math.round(doc.bytes / 1024))} KB · {fecha(doc.created_at)}</span></span>
+                              <button onClick={() => intentar(async () => { window.open(await enlaceDocumento(doc), '_blank', 'noopener'); })} className="font-black text-indigo-700">Abrir</button>
+                              <button onClick={() => intentar(async () => { const a = document.createElement('a'); a.href = await enlaceDocumento(doc, true); a.click(); })} className="font-black text-indigo-700">Descargar</button>
+                              <button onClick={() => { if (window.confirm(`¿Borrar ${doc.nombre}?`)) intentar(async () => { await borrarDocumento(doc); await cargarDocs(d.id); }); }} className="font-black text-rose-600">Borrar</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
-        ) : (
+          );
+        })() : (
           <div className="text-sm font-bold text-slate-400 p-4">Elige un proyecto o crea uno nuevo.</div>
         )}
       </div>

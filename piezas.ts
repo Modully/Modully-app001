@@ -259,7 +259,7 @@ export function bordesDeCanto(canto: string, color: string): { l1: string; l2: s
  * - "CORTECLOUD": el formato del optimizador (C/D, LAR, AN, CANTO, L1, L2, a1, a2, COLOR, PARTE, Veta), con el canto de cada borde.
  * El mesón no va en la hoja del optimizador (no se corta en tablero).
  */
-export function exportarListadoDeCorte(lista: ListaPiezas, nombre: string): void {
+function libroDeCorte(lista: ListaPiezas): XLSX.WorkBook {
   const partes = [
     ['ITEM', 'PARTE', 'C/D', 'LAR', 'AN', 'CAL', 'COLOR', 'CANTO'],
     ...lista.piezas.map(p => [p.item, p.name, p.quantity, p.length, p.width, p.thickness, p.color, p.edgeType || '']),
@@ -283,5 +283,13 @@ export function exportarListadoDeCorte(lista: ListaPiezas, nombre: string): void
   if (lista.herrajes.length > 0) {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['HERRAJE', 'CANT', 'MEDIDA'], ...lista.herrajes.map(h => [h.nombre, h.cant, h.medida ?? ''])]), 'HERRAJES');
   }
-  XLSX.writeFile(wb, `${nombre}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  return wb;
+}
+export function exportarListadoDeCorte(lista: ListaPiezas, nombre: string): void {
+  XLSX.writeFile(libroDeCorte(lista), `${nombre}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+/** El mismo Excel (LISTA DE PARTES, CORTECLOUD y HERRAJES) como archivo, para guardarlo en el proyecto */
+export function archivoListadoDeCorte(lista: ListaPiezas): Blob {
+  const datos = XLSX.write(libroDeCorte(lista), { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+  return new Blob([datos], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }

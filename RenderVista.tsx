@@ -38,7 +38,9 @@ const Campo: React.FC<{ label: string; value: string; onChange: (v: string) => v
   </label>
 );
 
-export const RenderVista: React.FC<{ boxes: Box[]; faceColor: string; lineType: string; nombre: string }> = ({ boxes, faceColor, lineType, nombre }) => {
+export const RenderVista: React.FC<{ boxes: Box[]; faceColor: string; lineType: string; nombre: string; producto?: string | null; onGuardar?: (dataUrl: string, tipo: 'render' | 'foto_ia') => Promise<void> }> = ({ boxes, faceColor, lineType, nombre, producto, onGuardar }) => {
+  const [guardado, setGuardado] = useState<string | null>(null);
+  const guardarEn = async (url: string, tipo: 'render' | 'foto_ia') => { if (!onGuardar) return; setGuardado('Guardando…'); try { await onGuardar(url, tipo); setGuardado(`Guardada en ${producto}.`); } catch (e) { setGuardado(e instanceof Error ? e.message : String(e)); } };
   const fachadaIni = colorDe(faceColor, '#c9a26b');
   const [col, setCol] = useState<Record<Papel | 'piso', string>>({
     fachada: fachadaIni, estructura: lineType === 'Básica' ? '#f4f4f1' : fachadaIni, meson: '#e7e5e0', muro: '#ecebe7', electro: '#b9bcc0', zocalo: '#2b2c2e', piso: '#bfae97',
@@ -100,6 +102,8 @@ export const RenderVista: React.FC<{ boxes: Box[]; faceColor: string; lineType: 
       <div className="flex flex-wrap items-center gap-2">
         {camaras.map(([t], i) => <button key={t} onClick={() => setVista(i)} className={`rounded-xl px-3 py-2 text-xs font-black border ${vista === i ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>)}
         <button onClick={descargar} className="ml-auto rounded-xl px-4 py-2 text-xs font-black bg-slate-800 text-white">Descargar imagen</button>
+        {producto && onGuardar && <button onClick={() => { const c = lienzo.current?.querySelector('canvas'); if (c) guardarEn(c.toDataURL('image/png'), 'render'); }} className="rounded-xl px-4 py-2 text-xs font-black bg-indigo-600 text-white">Guardar en {producto}</button>}
+        {guardado && <span className="w-full text-[11px] font-bold text-slate-500">{guardado}</span>}
       </div>
       <div ref={lienzo} className="w-full rounded-2xl overflow-hidden border border-slate-200 bg-slate-100" style={{ aspectRatio: '16 / 9' }}>
         <Canvas key={vista} shadows dpr={[1, 2]} gl={{ preserveDrawingBuffer: true, antialias: true }} camera={{ position: camaras[vista][1], fov: 38, near: 0.05, far: 100 }}>
@@ -143,6 +147,7 @@ export const RenderVista: React.FC<{ boxes: Box[]; faceColor: string; lineType: 
           </div>
           <button onClick={generar} disabled={ia.estado === 'generando'} className="rounded-xl px-4 py-2 text-xs font-black bg-indigo-600 text-white disabled:opacity-50">{ia.estado === 'generando' ? 'Generando…' : ia.foto ? 'Generar otra' : 'Generar foto'}</button>
           {ia.foto && <button onClick={descargarFoto} className="rounded-xl px-4 py-2 text-xs font-black bg-slate-800 text-white">Descargar foto</button>}
+          {ia.foto && producto && onGuardar && <button onClick={() => guardarEn(ia.foto!, 'foto_ia')} className="rounded-xl px-4 py-2 text-xs font-black bg-indigo-600 text-white">Guardar en {producto}</button>}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <label className="block"><span className="text-[9px] font-black text-slate-400 uppercase block mb-1">Ambiente</span>
