@@ -72,3 +72,36 @@ export async function borrarDiseno(id: string) {
   if (!nube) throw sinNube();
   ok(await nube.from('disenos').delete().eq('id', id));
 }
+
+/**
+ * IA por el servidor: la clave de Gemini vive en Supabase (función "gemini") y no dentro de la app.
+ * Se usa igual que `ai.models.generateContent` del SDK de Google: { model, contents, config } y devuelve { text, candidates }.
+ * Hace falta tener sesión (la función rechaza a quien no haya entrado).
+ */
+export class ErrorIA extends Error { constructor(msg: string, public codigo: string) { super(msg); } }
+
+export const iaDisponible = (): boolean => nubeConfigurada;
+
+export async function generarIA(p: { model: string; contents: unknown; config?: { responseMimeType?: string; responseSchema?: unknown; temperature?: number } }) {
+  if (!nube) throw new ErrorIA('Falta configurar Supabase en .env.local.', 'sin_nube');
+  const contents = typeof p.contents === 'string' ? [{ role: 'user', parts: [{ text: p.contents }] }] : p.contents;
+  const { data, error } = await nube.functions.invoke('gemini', { body: { model: p.model, contents, generationConfig: p.config } });
+  if (error) {
+    // el cuerpo del error trae { error, codigo }
+    let cuerpo: { error?: string; codigo?: string } = {};
+    try { cuerpo = await (error as { context?: Response }).context?.json() ?? {}; } catch { /* sin cuerpo */ }
+    const codigo = cuerpo.codigo ?? 'red';
+    const msg = codigo === 'sin_sesion' ? 'Entra con tu cuenta (pestaña Proyectos) para usar la IA.'
+      : codigo === 'sin_clave' ? 'La clave de Gemini no está puesta en el servidor (Supabase → Edge Functions → Secrets → GEMINI_API_KEY).'
+      : codigo === 'cuota' ? '429 quota: la cuenta de Gemini llegó a su límite de uso.'
+      : codigo === 'clave' ? 'API key not valid: Gemini rechazó la clave del servidor.'
+      : codigo === 'modelo_no_disponible' ? `404: el modelo ${p.model} no está disponible.`
+      : cuerpo.error ?? error.message;
+    throw new ErrorIA(msg, codigo);
+  }
+  const candidates = (data as { candidates?: { content?: { parts?: { text?: string; inlineData?: { mimeType?: string; data?: string } }[] } }[] })?.candidates ?? [];
+  const text = candidates[0]?.content?.parts?.map(x => x.text ?? '').join('') ?? '';
+  return { text, candidates };
+}
+/** Objeto con la misma forma que el cliente del SDK de Google, para cambiar lo mínimo donde ya se usaba */
+export const ia = { models: { generateContent: generarIA } };

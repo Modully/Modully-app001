@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { ia, iaDisponible } from './nube';
 
 /**
  * Fase 4 · Foto con IA: convierte la vista del render en una foto realista.
@@ -8,7 +8,7 @@ import { GoogleGenAI } from '@google/genai';
 // se prueban en orden: si la cuenta no tiene acceso al primero, se intenta con el siguiente
 const MODELOS = ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview'];
 
-export const claveIAConfigurada = (): boolean => { const k = process.env.API_KEY; return !!k && k.length >= 30 && !/placeholder/i.test(k); };
+export const claveIAConfigurada = (): boolean => iaDisponible(); // la clave ahora vive en el servidor (Supabase)
 
 export interface PedidoFoto { imagenPng: string; producto: string; fachada: string; meson: string; ambiente: string; extra?: string }
 
@@ -27,8 +27,8 @@ export function instruccionFoto(p: Omit<PedidoFoto, 'imagenPng'>): string {
 
 /** Devuelve la foto como data URL (PNG o JPG) */
 export async function fotoConIA(p: PedidoFoto): Promise<string> {
-  if (!claveIAConfigurada()) throw new Error('Falta la clave de Gemini. Ponla en el archivo .env.local como GEMINI_API_KEY y reinicia la app.');
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  if (!claveIAConfigurada()) throw new Error('Falta configurar Supabase en .env.local.');
+  const ai = ia; // Gemini por el servidor: la clave no viaja en la app
   const data = p.imagenPng.replace(/^data:image\/\w+;base64,/, '');
   let ultimo: unknown = null;
   for (const model of MODELOS) {
@@ -45,6 +45,7 @@ export async function fotoConIA(p: PedidoFoto): Promise<string> {
   const msg = ultimo instanceof Error ? ultimo.message : String(ultimo);
   // la cuenta gratuita de Gemini no incluye generación de imágenes (cuota 0): hay que activar la facturación
   if (/429|quota|RESOURCE_EXHAUSTED/i.test(msg)) throw new Error('Tu clave funciona, pero la cuenta gratuita de Gemini no incluye generar imágenes (cuota en 0). Activa la facturación del proyecto en Google AI Studio y vuelve a intentar.');
-  if (/API key not valid|401|403|PERMISSION_DENIED/i.test(msg)) throw new Error('Gemini rechazó la clave. Revisa que esté bien copiada en .env.local y reinicia la app.');
+  if (/API key not valid|PERMISSION_DENIED/i.test(msg)) throw new Error('Gemini rechazó la clave del servidor. Revísala en Supabase → Edge Functions → Secrets.');
+  if (/Entra con tu cuenta|no está puesta en el servidor|Supabase/i.test(msg)) throw new Error(msg);
   throw new Error(`No se pudo generar la foto: ${msg.slice(0, 300)}`);
 }

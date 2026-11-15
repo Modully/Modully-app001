@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { ia, iaDisponible } from './nube';
 import { Appliance, KitchenModule, LayoutType } from './types';
 
 export interface KitchenAgentContext {
@@ -24,14 +24,12 @@ const buildLocalAdvice = (context: KitchenAgentContext, prompt: string): string 
 };
 
 export const getAgentAdvice = async (context: KitchenAgentContext, prompt: string): Promise<string> => {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
-
-  if (!apiKey) {
+  if (!iaDisponible()) {
     return buildLocalAdvice(context, prompt);
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = ia; // Gemini por el servidor (si no hay sesión, cae al asistente local)
     const response = await ai.models.generateContent({
       model: 'gemini-2.0-flash',
       contents: `

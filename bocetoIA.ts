@@ -1,5 +1,5 @@
-import { GoogleGenAI, Type } from '@google/genai';
-import { claveIAConfigurada } from './fotoIA';
+import { Type } from '@google/genai';
+import { ia, iaDisponible } from './nube';
 
 /**
  * Fase 5 · Bosquejo desde una foto: la IA lee un boceto a mano alzada (o una foto del sitio con medidas escritas)
@@ -95,10 +95,10 @@ const ESQUEMA = {
 };
 
 export async function leerBoceto(imagen: string): Promise<LecturaBoceto> {
-  if (!claveIAConfigurada()) throw new Error('Falta la clave de Gemini. Ponla en el archivo .env.local como GEMINI_API_KEY y reinicia la app.');
+  if (!iaDisponible()) throw new Error('Falta configurar Supabase en .env.local.');
   const m = /^data:(image\/[\w+.-]+);base64,(.*)$/s.exec(imagen);
   if (!m) throw new Error('No se pudo leer la imagen. Usa una foto en JPG o PNG.');
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = ia; // Gemini por el servidor: la clave no viaja en la app
   let ultimo: unknown = null;
   const errores: string[] = []; // el error de cada modelo: se informa el más útil (límite de uso antes que modelo no disponible)
   for (const model of MODELOS) {
@@ -106,7 +106,7 @@ export async function leerBoceto(imagen: string): Promise<LecturaBoceto> {
       const r = await ai.models.generateContent({
         model,
         contents: [{ role: 'user', parts: [{ inlineData: { mimeType: m[1], data: m[2] } }, { text: INSTRUCCION }] }],
-        config: { responseMimeType: 'application/json', responseSchema: ESQUEMA as any, temperature: 0.1 },
+        config: { responseMimeType: 'application/json', responseSchema: ESQUEMA, temperature: 0.1 },
       });
       const j = JSON.parse(r.text ?? '{}');
       const n = (v: unknown) => (typeof v === 'number' && isFinite(v) && v > 0 ? Math.round(v) : null);
@@ -130,6 +130,7 @@ export async function leerBoceto(imagen: string): Promise<LecturaBoceto> {
   const msg = errores.find(t => /429|quota|RESOURCE_EXHAUSTED/i.test(t)) ?? errores.find(t => /API key not valid|401|403|PERMISSION_DENIED/i.test(t)) ?? (ultimo instanceof Error ? ultimo.message : String(ultimo));
   console.warn('Lectura del boceto falló:', errores);
   if (/429|quota|RESOURCE_EXHAUSTED/i.test(msg)) throw new Error('La cuenta de Gemini llegó a su límite de uso. Espera un momento y vuelve a intentar, o activa la facturación en Google AI Studio.');
-  if (/API key not valid|401|403|PERMISSION_DENIED/i.test(msg)) throw new Error('Gemini rechazó la clave. Revisa que esté bien copiada en .env.local y reinicia la app.');
+  if (/API key not valid|PERMISSION_DENIED/i.test(msg)) throw new Error('Gemini rechazó la clave del servidor. Revísala en Supabase → Edge Functions → Secrets.');
+  if (/Entra con tu cuenta|no está puesta en el servidor|Supabase/i.test(msg)) throw new Error(msg);
   throw new Error(`No se pudo leer el boceto: ${msg.slice(0, 300)}`);
 }

@@ -1,5 +1,6 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
+import { ia } from "./nube";
 import { SuggestionResponse, LayoutType } from "./types";
 import { MODULE_TEMPLATES } from "./constants";
 
@@ -13,7 +14,7 @@ export const getAILayoutSuggestion = async (
   hasFridge: boolean,
   spaceHeight: number
 ): Promise<SuggestionResponse> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = ia; // Gemini por el servidor
 
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
