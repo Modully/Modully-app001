@@ -7,7 +7,7 @@ import {
   Flame, Droplets, Refrigerator, Wind, Component, X, List, Layers, Info,
   ZoomIn, ZoomOut, Zap, Maximize, Ruler, ArrowRight, MoveHorizontal, Move,
   TowerControl as Tower, AlertCircle, CheckCircle2, ChevronDown, Puzzle, Shirt, DoorOpen, Bath, Tv, Warehouse, ToggleLeft as Toggle,
-  Construction, Minus, Utensils, Target, ZapIcon, Layers2, Archive, Download, Table, Undo2, Redo2, Home, LayoutGrid, FileText, Image as ImageIcon
+  Construction, Minus, Utensils, Target, ZapIcon, Layers2, Archive, Download, Table, Undo2, Redo2, Home, LayoutGrid, FolderOpen, FileText, Image as ImageIcon
 } from 'lucide-react';
 import {
   KitchenModule, LayoutType, WallName,
@@ -26,6 +26,7 @@ import { RenderVista } from './RenderVista';
 import { Bosquejo, DatosBosquejo, tramoModulos, anchosFila, HOLGURA_MURO } from './Bosquejo';
 import { Inicio } from './Inicio';
 import { PlanoLimpio } from './PlanoLimpio';
+import { Proyectos } from './Proyectos';
 import { resizeSymmetric, snapToNeighbors } from './moduleResize';
 import type { CounterExtras, Box as BoxData } from './boxes';
 import { closetDerived } from './boxes';
@@ -471,7 +472,7 @@ const VerticalDimensionLine: React.FC<{
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'design' | 'catalog' | 'quote' | 'config' | 'listado' | 'laminas' | 'planos' | 'render' | 'bosquejo' | 'inicio'>('inicio');
+  const [activeTab, setActiveTab] = useState<'design' | 'catalog' | 'quote' | 'config' | 'listado' | 'laminas' | 'planos' | 'render' | 'bosquejo' | 'inicio' | 'proyectos'>('inicio');
   const [activeView, setActiveView] = useState<'plan' | 'frontal' | 'isometric' | '3d'>('plan');
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
@@ -5377,6 +5378,14 @@ export default function App() {
             )}
           </div>
         )}
+        {activeTab === 'proyectos' && (
+          <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
+            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-1">Proyectos</h2>
+            <p className="text-xs font-bold text-slate-400 mb-6">Tus clientes y los diseños guardados de cada uno.</p>
+            <Proyectos seccion={section} diseñoActual={() => latestSnapshot.current.snapshot}
+              onAbrir={(sec, datos) => { switchSection(sec); applySnapshot(datos as DesignSnapshot); bumpHistory(); setActiveTab('design'); }} />
+          </div>
+        )}
         {activeTab === 'inicio' && (
           <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24">
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-1">Inicio</h2>
@@ -5421,7 +5430,7 @@ export default function App() {
         )}
         {activeTab === 'config' && (<div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button><h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-4">Ajustes</h2><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Largo Muro A (mm)</span><input type="number" value={wallA} onChange={e => setWallA(parseInt(e.target.value))} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Línea de Producto</span><select value={lineType} onChange={e => setLineType(e.target.value as any)} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800"><option>Básica</option><option>Media</option><option>Alta</option></select></label><div className="mb-4 bg-white border rounded-2xl p-4 space-y-2"><div className="text-sm font-black text-slate-800">Corredera de los cajones</div><div className="flex flex-wrap gap-2"><button onClick={() => setCorredera({ tipo: 'full' })} className={`rounded-xl px-3 py-2 text-xs font-black border ${corredera.tipo === 'full' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Full extensión</button><button onClick={() => setCorredera(c => ({ ...c, tipo: 'oculta' }))} className={`rounded-xl px-3 py-2 text-xs font-black border ${corredera.tipo === 'oculta' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Oculta</button>{corredera.tipo === 'oculta' && <><button onClick={() => setCorredera(c => ({ ...c, menos10: !c.menos10 }))} className={`rounded-xl px-3 py-2 text-xs font-black border ${!!corredera.menos10 ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Descontar 10 mm al largo</button><button onClick={() => setCorredera(c => ({ ...c, fondo15: !c.fondo15 }))} className={`rounded-xl px-3 py-2 text-xs font-black border ${!!corredera.fondo15 ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Fondo de 15</button></>}</div><div className="text-[11px] font-bold text-slate-400">Full extensión: 13 mm de luz por lado. Oculta: 6 mm por lado y lateral en medidas de 50 en 50; algunas marcas piden 10 mm menos de largo.</div></div><div className="mb-4 flex items-center justify-between gap-4 bg-white border rounded-2xl p-4"><div><div className="text-sm font-black text-slate-800">Costados internos más cortos</div><div className="text-[11px] font-bold text-slate-400">Con puente en L de melamina corrido entre varios bajos: los costados internos van 80 mm más cortos y no se les hace la caja.</div></div><button onClick={() => setCostadosCortos(v => !v)} className={`w-12 h-6 rounded-full relative shrink-0 transition-all ${costadosCortos ? 'bg-indigo-600' : 'bg-slate-200'}`}><div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${costadosCortos ? 'left-6' : 'left-0.5'}`} /></button></div><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Color de Fachada</span><input type="text" value={faceColor} onChange={e => setFaceColor(e.target.value)} placeholder="Ej: Blanco, Ámbar, Gris" className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label></div>)}
       </main>
-      <nav className="h-20 bg-white border-t border-slate-200 flex items-center px-4 pb-2 shadow-2xl z-[70]"><BottomNavItem active={activeTab === 'inicio'} onClick={() => setActiveTab('inicio')} icon={<Home />} label="INICIO" /><BottomNavItem active={activeTab === 'bosquejo'} onClick={() => setActiveTab('bosquejo')} icon={<Pencil />} label="BOSQUEJO" /><BottomNavItem active={activeTab === 'design'} onClick={() => setActiveTab('design')} icon={<Layout />} label="DISEÑO" /><BottomNavItem active={activeTab === 'catalog'} onClick={() => setActiveTab('catalog')} icon={<Component />} label="MÓDULOS" /><BottomNavItem active={activeTab === 'quote'} onClick={() => setActiveTab('quote')} icon={<ShoppingCart />} label="PRECIOS" /><BottomNavItem active={activeTab === 'listado'} onClick={() => setActiveTab('listado')} icon={<Table />} label="LISTADO" badge={lista.piezas.length > 0 ? lista.piezas.reduce((a, p) => a + p.quantity, 0).toString() : bom ? bom.pieces.length.toString() : undefined} /><BottomNavItem active={activeTab === 'laminas'} onClick={() => setActiveTab('laminas')} icon={<LayoutGrid />} label="LÁMINAS" /><BottomNavItem active={activeTab === 'planos'} onClick={() => setActiveTab('planos')} icon={<FileText />} label="PLANOS" /><BottomNavItem active={activeTab === 'render'} onClick={() => setActiveTab('render')} icon={<ImageIcon />} label="RENDER" /><BottomNavItem active={activeTab === 'config'} onClick={() => setActiveTab('config')} icon={<Settings />} label="AJUSTES" /></nav>
+      <nav className="h-20 bg-white border-t border-slate-200 flex items-center px-4 pb-2 shadow-2xl z-[70]"><BottomNavItem active={activeTab === 'inicio'} onClick={() => setActiveTab('inicio')} icon={<Home />} label="INICIO" /><BottomNavItem active={activeTab === 'proyectos'} onClick={() => setActiveTab('proyectos')} icon={<FolderOpen />} label="PROYECTOS" /><BottomNavItem active={activeTab === 'bosquejo'} onClick={() => setActiveTab('bosquejo')} icon={<Pencil />} label="BOSQUEJO" /><BottomNavItem active={activeTab === 'design'} onClick={() => setActiveTab('design')} icon={<Layout />} label="DISEÑO" /><BottomNavItem active={activeTab === 'catalog'} onClick={() => setActiveTab('catalog')} icon={<Component />} label="MÓDULOS" /><BottomNavItem active={activeTab === 'quote'} onClick={() => setActiveTab('quote')} icon={<ShoppingCart />} label="PRECIOS" /><BottomNavItem active={activeTab === 'listado'} onClick={() => setActiveTab('listado')} icon={<Table />} label="LISTADO" badge={lista.piezas.length > 0 ? lista.piezas.reduce((a, p) => a + p.quantity, 0).toString() : bom ? bom.pieces.length.toString() : undefined} /><BottomNavItem active={activeTab === 'laminas'} onClick={() => setActiveTab('laminas')} icon={<LayoutGrid />} label="LÁMINAS" /><BottomNavItem active={activeTab === 'planos'} onClick={() => setActiveTab('planos')} icon={<FileText />} label="PLANOS" /><BottomNavItem active={activeTab === 'render'} onClick={() => setActiveTab('render')} icon={<ImageIcon />} label="RENDER" /><BottomNavItem active={activeTab === 'config'} onClick={() => setActiveTab('config')} icon={<Settings />} label="AJUSTES" /></nav>
     </div>
   );
 }
