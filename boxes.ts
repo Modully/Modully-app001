@@ -249,15 +249,23 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     // Recorta de [start, end] (a lo largo del muro) los huecos de las neveras activas de ese muro
     const plinthSegments = (wall: WallName, start: number, end: number): Array<[number, number]> => {
       const armStart = wall === 'A' ? 0 : CORNER_BLIND_OFFSET;
+      // hueco de la nevera: su espacio (si se dio) o su ancho más FRIDGE_CLEARANCE por lado, centrado en ella
       const holes = appliances
         .filter(a => a.active && a.type === 'fridge' && a.wall === wall)
-        .map(a => [armStart + a.distance - FRIDGE_CLEARANCE, armStart + a.distance + a.width + FRIDGE_CLEARANCE] as [number, number])
+        .map(a => { const hueco = Math.max(a.space ?? 0, a.width + 2 * FRIDGE_CLEARANCE), h0 = armStart + a.distance - (hueco - a.width) / 2; return [h0, h0 + hueco] as [number, number]; })
         .sort((x, y) => x[0] - y[0]);
+      // regla del carpintero: el zócalo nunca es más largo que los muebles; en el lado libre (junto a la nevera) queda 5 cm más corto
+      const LIBRE = 50;
       const segments: Array<[number, number]> = [];
       let cursor = start;
+      // el lado libre se mide desde el mueble bajo más cercano al hueco (no desde el hueco: entre los dos puede quedar la holgura)
+      const bajos = modules.filter(m => m.wall === wall && m.type === 'LOWER').map(m => [armStart + m.positionX, armStart + m.positionX + m.width] as [number, number]);
       holes.forEach(([h0, h1]) => {
-        if (h0 > cursor) segments.push([cursor, Math.min(h0, end)]);
-        cursor = Math.max(cursor, h1);
+        // último bajo que empieza antes del hueco y primer bajo que termina después de él
+        const finAntes = Math.max(-Infinity, ...bajos.filter(([b0]) => b0 < h0).map(([, b1]) => b1));
+        if (h0 > cursor) segments.push([cursor, Math.min((isFinite(finAntes) ? finAntes : h0) - LIBRE, end)]);
+        const iniDespues = Math.min(Infinity, ...bajos.filter(([, b1]) => b1 > h1).map(([b0]) => b0));
+        cursor = Math.max(cursor, (isFinite(iniDespues) ? iniDespues : h1) + LIBRE);
       });
       if (cursor < end) segments.push([cursor, end]);
       return segments.filter(([x0, x1]) => x1 - x0 > 1);
@@ -726,9 +734,10 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
 
       runs.forEach((run, index) => {
         // El mesón cubre también las piezas laterales pegadas a sus módulos (dilatadas y vistos): llega hasta su borde exterior
-        const lateral = boxes.filter(f => f.kind === 'filler' && f.wall === wall
-          && (f.id.startsWith('dilatacion-lower-') || f.id.startsWith('visto-lower-'))
-          && run.some(m => f.id.includes(`-lower-${m.moduleId}-`)));
+        const lateral = boxes.filter(f => f.kind === 'filler' && f.wall === wall && (
+          ((f.id.startsWith('dilatacion-lower-') || f.id.startsWith('visto-lower-')) && run.some(m => f.id.includes(`-lower-${m.moduleId}-`)))
+          // dilatada contra el muro al final del tramo: el mesón la cubre y llega hasta el muro
+          || (f.id.startsWith(`dilatacion-${wall}-lower-`) && (Math.abs(range(f).end - range(run[0]).start) < 2 || Math.abs(range(f).start - range(run[run.length - 1]).end) < 2))));
         const start = Math.min(range(run[0]).start, ...lateral.map(f => range(f).start));
         const end = Math.max(range(run[run.length - 1]).end, ...lateral.map(f => range(f).end));
         const depth = Math.max(...run.map(b => (wall === 'A' ? b.y + b.sy : wall === 'B' ? b.x + b.sx : wallA - b.x)));

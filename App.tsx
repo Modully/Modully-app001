@@ -23,8 +23,9 @@ import { listaDePiezas, exportarListadoDeCorte, bordesDeCanto } from './piezas';
 import { Optimizador } from './PanelLaminas';
 import { PlanosEnsamble } from './PlanosEnsamble';
 import { RenderVista } from './RenderVista';
-import { Bosquejo, DatosBosquejo } from './Bosquejo';
+import { Bosquejo, DatosBosquejo, tramoModulos, anchosFila, HOLGURA_MURO } from './Bosquejo';
 import { Inicio } from './Inicio';
+import { PlanoLimpio } from './PlanoLimpio';
 import { resizeSymmetric, snapToNeighbors } from './moduleResize';
 import type { CounterExtras, Box as BoxData } from './boxes';
 import { closetDerived } from './boxes';
@@ -1189,7 +1190,7 @@ export default function App() {
   /**
    * Refactor: Lógica de modulación automática (Matemática) con Estrategias, SOBRENEVERA, MUEBLE ESTUFA, ALACENAS y MUEBLE CAMPANA
    */
-  const runAutoModulation = useCallback((currentAppliances: Appliance[], strategy: OptimizationStrategy = 'efficiency', cortesA?: number[]) => {
+  const runAutoModulation = useCallback((currentAppliances: Appliance[], strategy: OptimizationStrategy = 'efficiency', cortesA?: number[], cortesAltos?: number[], frentes?: { bajos: string[]; altos: string[] }) => {
     const newModules: KitchenModule[] = [];
     
     // Preservar módulos especiales activos (tipo TALL)
@@ -1227,9 +1228,10 @@ export default function App() {
 
       // Sobrenevera: cubre la nevera y sobresale FRIDGE_CLEARANCE por cada lado (ancho de la nevera + 10cm), centrada sobre ella,
       // sin salirse del muro. Si la nevera está en un extremo, se corre hacia adentro.
-      const overFridgeWidth = fridge ? fridge.width + 2 * FRIDGE_CLEARANCE : 0;
+      // con espacio de la nevera dado (boceto), la sobrenevera y el hueco miden ese espacio, centrado en la nevera
+      const overFridgeWidth = fridge ? (fridge.space ?? fridge.width + 2 * FRIDGE_CLEARANCE) : 0;
       const overFridgeX = fridge
-        ? Math.min(Math.max(fridge.distance - FRIDGE_CLEARANCE, startGap), Math.max(startGap, usableEnd - overFridgeWidth))
+        ? Math.min(Math.max(fridge.distance - (overFridgeWidth - fridge.width) / 2, startGap), Math.max(startGap, usableEnd - overFridgeWidth))
         : 0;
       // Módulo Obligatorio: SOBRENEVERA
       if (fridge) {
@@ -1277,13 +1279,13 @@ export default function App() {
       // Módulo Obligatorio: MUEBLE BAJO POCETA (Mínimo 60cm)
       if (sink) {
         const lowerTemplate = MODULE_TEMPLATES.find(t => t.type === 'LOWER' && t.width === 600) || MODULE_TEMPLATES.find(t => t.type === 'LOWER')!;
-        const sinkModuleWidth = Math.max(600, sink.width);
+        const sinkModuleWidth = sink.space ?? Math.max(600, sink.width); // con boceto: el ancho del módulo dibujado
         newModules.push({
           ...lowerTemplate,
           uniqueId: `sink-cabinet-auto-${currentWall}`,
           name: 'Mueble Poceta',
           wall: currentWall,
-          positionX: sink.distance,
+          positionX: sink.space ? sink.distance - (sink.space - sink.width) / 2 : sink.distance,
           width: sinkModuleWidth,
           height: currentBaseModuleHeight,
           isSinkCabinet: true,
@@ -1294,14 +1296,15 @@ export default function App() {
           drawerCount: 0
         });
 
-        // Módulo Obligatorio: MUEBLE SUPERIOR SOBRE POCETA (mismas dimensiones)
+        // Módulo Obligatorio: MUEBLE SUPERIOR SOBRE POCETA (mismas dimensiones); con el boceto, los aéreos salen de lo dibujado
+        if (!(cortesAltos && currentWall === 'A')) {
         const upperTemplate = MODULE_TEMPLATES.find(t => t.type === 'UPPER' && t.width === 600) || MODULE_TEMPLATES.find(t => t.type === 'UPPER')!;
         newModules.push({
           ...upperTemplate,
           uniqueId: `sink-upper-cabinet-auto-${currentWall}`,
           name: 'Mueble Superior Poceta',
           wall: currentWall,
-          positionX: sink.distance,
+          positionX: sink.space ? sink.distance - (sink.space - sink.width) / 2 : sink.distance,
           width: sinkModuleWidth,
           height: currentUpperModuleHeight,
           quantity: 1,
@@ -1310,6 +1313,7 @@ export default function App() {
           hasPlateRack: false,
           drawerCount: 0
         });
+        }
       }
 
       // Módulo Obligatorio: MUEBLE SOBRE CAMPANA (8cm más corto)
@@ -1346,13 +1350,10 @@ export default function App() {
           ? [
               ...currentAppliances.filter(a => a.active && a.wall === currentWall && a.type === 'pantry'),
               // Nevera con FRIDGE_CLEARANCE libres a cada lado (sin salirse del inicio del muro)
-              ...(fridge ? [{
-                distance: Math.max(0, fridge.distance - FRIDGE_CLEARANCE),
-                width: fridge.distance + fridge.width + FRIDGE_CLEARANCE - Math.max(0, fridge.distance - FRIDGE_CLEARANCE),
-              }] : []),
+              ...(fridge ? [{ distance: overFridgeX, width: overFridgeWidth }] : []),
               ...(stove ? [{ distance: stove.distance, width: stove.width }] : []),
               ...columnObstacles,
-              ...(sink ? [{ distance: sink.distance, width: Math.max(600, sink.width) }] : []),
+              ...(sink ? [{ distance: sink.space ? sink.distance - (sink.space - sink.width) / 2 : sink.distance, width: sink.space ?? Math.max(600, sink.width) }] : []),
               ...specialModulesActiveForWall.map(m => ({ distance: m.positionX, width: m.width })),
               // La península pegada a este muro ocupa su espacio: ahí no van módulos del brazo (los pone la península)
               ...activeIslands.filter(i => i.kind === 'peninsula' && currentWall === (lArm === 'right' ? 'C' : 'B')).map(i => ({
@@ -1364,7 +1365,7 @@ export default function App() {
               ...(fridge ? [{ distance: overFridgeX, width: overFridgeWidth }] : []),
               ...(hood ? [{ distance: hood.distance, width: hood.width }] : []),
               ...columnObstacles,
-              ...(sink ? [{ distance: sink.distance, width: Math.max(600, sink.width) }] : []),
+              ...(sink && !(cortesAltos && currentWall === 'A') ? [{ distance: sink.space ? sink.distance - (sink.space - sink.width) / 2 : sink.distance, width: sink.space ?? Math.max(600, sink.width) }] : []),
               ...currentAppliances.filter(a => a.active && a.wall === currentWall && (a.type === 'pantry')),
               ...specialModulesActiveForWall.map(m => ({ distance: m.positionX, width: m.width }))
             ];
@@ -1374,9 +1375,12 @@ export default function App() {
           let x = startX;
           
           // Bosquejo: si el boceto trae los anchos de los módulos del muro A, el espacio se parte en esas divisiones (no con los anchos de la estrategia)
-          if (cortesA && cortesA.length > 0 && currentWall === 'A') {
+          // regla del carpintero: el MA va alineado con el MB, así que los aéreos se parten en las mismas divisiones de los bajos de ese muro
+          const bordesBajos = isUpper ? [...new Set(newModules.filter(m => m.wall === currentWall && m.type === 'LOWER').flatMap(m => [m.positionX, m.positionX + m.width]))].sort((a, b) => a - b) : [];
+          const cortesFila = isUpper ? (cortesAltos ?? (bordesBajos.length ? bordesBajos : undefined)) : (currentWall === 'A' ? cortesA : undefined);
+          if (cortesFila && cortesFila.length > 0 && (currentWall === 'A' || (isUpper && !cortesAltos))) {
             const fin = startX + gapWidth;
-            const bordes = [startX, ...cortesA.filter(c => c > startX + 1 && c < fin - 1), fin];
+            const bordes = [startX, ...cortesFila.filter(c => c > startX + 1 && c < fin - 1), fin];
             for (let k = 0; k < bordes.length - 1; k++) {
               const w = Math.round(bordes[k + 1] - bordes[k]);
               if (w < 120) continue;
@@ -1556,6 +1560,24 @@ export default function App() {
     newModules.length = 0;
     newModules.push(...capped);
 
+    // Bosquejo: cada módulo lleva el frente que se dibujó (puertas, cajones, abierto, platero), de izquierda a derecha en el muro A
+    if (frentes) {
+      const fila = (tipo: 'LOWER' | 'UPPER') => newModules.filter(m => m.wall === 'A' && m.type === tipo && !m.isFridgeCabinet).sort((a, b) => a.positionX - b.positionX);
+      fila('LOWER').forEach((m, i) => {
+        const f = frentes.bajos[i] ?? 'puertas';
+        m.detailed = true;
+        m.frontsLayout = f === 'cajones' || f === 'estufa' ? 'drawers' : f === 'abierto' ? 'open' : m.width <= 450 ? 'door1' : 'door2';
+        m.configType = m.frontsLayout === 'drawers' ? 'drawers' : 'doors'; m.drawerCount = m.frontsLayout === 'drawers' ? 3 : 0;
+      });
+      fila('UPPER').forEach((m, i) => {
+        const f = frentes.altos[i] ?? 'puertas';
+        m.detailed = true;
+        m.frontsLayout = m.isHood ? 'hood' : f === 'abierto' ? 'open' : m.width < 450 ? 'upper-door1' : 'upper-door2-v';
+        m.hasPlateRack = f === 'platero';
+      });
+      newModules.filter(m => m.isFridgeCabinet).forEach(m => { m.detailed = true; m.frontsLayout = m.width < 450 ? 'upper-door1' : 'upper-door2-h'; });
+    }
+
     setModules([...newModules, ...specialModulesActive]);
     setCounterExtras({}); // al optimizar se recalcula todo: los ajustes manuales del mesón (cascadas, salpicaderos laterales) se reinician
   }, [wallA, wallB, wallC, layout, lArm, activeIslands, columns, cfg, currentBaseModuleHeight, currentUpperModuleHeight, spaceHeight, modules, activeWall, hasDilatation, dilatationGap, hasLeftClosure, hasRightClosure]);
@@ -1615,12 +1637,18 @@ export default function App() {
   // Fase 5 · Bosquejo: arma el diseño de cualquier producto solo con las medidas. En cocinas, la poceta va sobre el desagüe y la estufa sobre el gas,
   // y el resto se llena con la modulación automática (se lanza en el siguiente render, cuando ya están puestas las medidas nuevas)
   const [bosquejoPend, setBosquejoPend] = useState(false);
+  const [bosquejoListo, setBosquejoListo] = useState(false); // ya se aceptó un boceto: se muestra pasado en limpio
   const crearDesdeBosquejo = (d: DatosBosquejo) => {
     switchSection(d.producto);
     setWallA(d.A); setSpaceHeight(d.alto);
-    if (d.producto === 'puertas') { setActiveTab('design'); return; }
+    setBosquejoListo(true); // se queda en Bosquejo y muestra el diseño pasado en limpio
+    if (d.producto === 'puertas') return;
     setLayout(d.forma); setLArm(d.brazo); setWallB(d.B); setWallC(d.C);
-    if (d.producto !== 'cocinas') { setActiveTab('design'); return; }
+    // muros a los lados del muro A (mueble entre muros): en la app son los muros de cierre izquierdo y derecho
+    if (d.forma === 'STRAIGHT') { setHasLeftClosure(d.muroIzq); setHasRightClosure(d.muroDer); }
+    // dilatada contra los muros (regla del carpintero): 2 cm de holgura y dilatada de 7 cm de canto
+    if (d.muroIzq || d.muroDer) { setHasDilatation(true); setDilatationGap(HOLGURA_MURO); }
+    if (d.producto !== 'cocinas') return;
     const largo = (m: 'A' | 'B' | 'C') => (m === 'A' ? d.A : m === 'B' ? d.B : d.C);
     // el equipo se centra en el punto (su mueble mide mínimo 600), sin salirse del muro
     const centrar = (pt: { muro: 'A' | 'B' | 'C'; dist: number }, ancho = 600) => Math.max(0, Math.min(Math.round(pt.dist - ancho / 2), largo(pt.muro) - Math.max(600, ancho)));
@@ -1631,27 +1659,51 @@ export default function App() {
     const moduloEn = (dist: number) => { let x = 0; for (const w of mods) { if (dist >= x && dist < x + w) return { x, w }; x += w; } return null; };
     const enModulo = (pt: { muro: 'A' | 'B' | 'C'; dist: number }, ancho: number) => { const m = pt.muro === 'A' ? moduloEn(pt.dist) : null; return m && m.w >= 600 ? { distance: m.x, width: m.w } : { distance: centrar(pt, ancho), width: ancho }; };
     const anchoNevera = (w?: number) => (w && w >= 400 ? w - 2 * FRIDGE_CLEARANCE : undefined); // el espacio de la nevera deja 5 cm libres a cada lado
+    // módulos dibujados en el boceto: la cocina se parte en ellos (abajo y arriba por separado); poceta, estufa y campana van en el módulo
+    // donde se dibujaron
+    const conFilas = !mods.length && !!d.bajos?.length;
+    const [t0, t1] = tramoModulos(d);
+    const filaX = (fila: DatosBosquejo['bajos']) => {
+      if (!fila?.length) return [] as { x: number; w: number; frente: string }[];
+      const ws = anchosFila(fila, t1 - t0); let x = t0;
+      return fila.map((m, i) => { const r = { x, w: ws[i], frente: m.frente }; x += ws[i]; return r; });
+    };
+    const bajosX = conFilas ? filaX(d.bajos) : [], altosX = conFilas ? filaX(d.altos?.length ? d.altos : d.bajos) : [];
+    const en = (fila: { x: number; w: number; frente: string }[], f: string) => fila.find(m => m.frente === f);
+    const pocetaB = en(bajosX, 'poceta'), estufaB = en(bajosX, 'estufa'), campanaA = estufaB; // la campana va sobre el módulo de la estufa
     setAppliances(prev => prev.map(a => {
-      if (a.type === 'sink') return d.desague ? { ...a, active: true, wall: d.desague.muro, distance: enModulo(d.desague, a.width).distance } : { ...a, active: false };
-      if (a.type === 'stove') return d.gas ? { ...a, active: true, wall: d.gas.muro, ...enModulo(d.gas, 600) } : { ...a, active: false };
-      if (a.type === 'hood-under') return d.gas && d.campana ? { ...a, active: true, wall: d.gas.muro, ...enModulo(d.gas, 600) } : { ...a, active: false };
+      if (a.type === 'sink') return pocetaB ? { ...a, active: true, wall: 'A', distance: pocetaB.x + Math.max(0, (pocetaB.w - Math.min(a.width, pocetaB.w - 50)) / 2), width: Math.min(a.width, pocetaB.w - 50), space: pocetaB.w } : d.desague ? { ...a, active: true, wall: d.desague.muro, distance: enModulo(d.desague, a.width).distance } : { ...a, active: false };
+      if (a.type === 'stove') return estufaB ? { ...a, active: true, wall: 'A', distance: estufaB.x, width: estufaB.w } : d.gas ? { ...a, active: true, wall: d.gas.muro, ...enModulo(d.gas, 600) } : { ...a, active: false };
+      if (a.type === 'hood-under') return campanaA && (estufaB || d.gas) && d.campana ? { ...a, active: true, wall: 'A', distance: campanaA.x, width: campanaA.w } : d.gas && d.campana ? { ...a, active: true, wall: d.gas.muro, ...enModulo(d.gas, 600) } : { ...a, active: false };
       if (a.type === 'fridge') {
         if (d.nevera === 'no') return { ...a, active: false };
-        const w = anchoNevera(d.nevera === 'inicio' ? mods[0] : mods[mods.length - 1]) ?? a.width;
-        return { ...a, active: true, wall: 'A', width: w, distance: d.nevera === 'inicio' ? (mods.length ? FRIDGE_CLEARANCE : 0) : Math.max(0, d.A - w - (mods.length ? FRIDGE_CLEARANCE : 0)) };
+        // espacio de la nevera: el del boceto (o el primer/último módulo); la nevera, con su ancho y alto reales, va centrada en él
+        const esp = d.neveraEspacio ?? (mods.length ? (d.nevera === 'inicio' ? mods[0] : mods[mods.length - 1]) : undefined);
+        const w = d.neveraAncho ?? anchoNevera(esp) ?? a.width, h = d.neveraAlto ?? a.height;
+        const hueco = Math.max(esp ?? 0, w + 2 * FRIDGE_CLEARANCE);
+        // contra un muro, la sobrenevera deja la holgura de la dilatada: el espacio empieza (o termina) 2 cm más adentro
+        const g = d.nevera === 'inicio' ? (d.muroIzq ? HOLGURA_MURO : 0) : (d.muroDer ? HOLGURA_MURO : 0);
+        const huecoU = esp ? esp - g : w + 2 * FRIDGE_CLEARANCE; // con espacio dado, la sobrenevera termina donde empiezan los bajos
+        const ini = d.nevera === 'inicio' ? g : Math.max(0, d.A - g - huecoU);
+        return { ...a, active: true, wall: 'A', width: w, height: h, space: esp ? huecoU : undefined, distance: Math.round(ini + (huecoU - w) / 2) };
       }
       return a;
     }));
-    bosquejoCortes.current = cortes;
+    if (conFilas) {
+      bosquejoCortes.current = bajosX.slice(1).map(m => m.x);
+      bosquejoAltos.current = undefined; // los aéreos se alinean con los bajos
+      bosquejoFrentes.current = { bajos: bajosX.map(m => m.frente), altos: altosX.map(m => m.frente) };
+    } else { bosquejoCortes.current = cortes; bosquejoAltos.current = undefined; bosquejoFrentes.current = undefined; }
     setBosquejoPend(true);
   };
   const bosquejoCortes = useRef<number[]>([]);
+  const bosquejoAltos = useRef<number[] | undefined>(undefined);
+  const bosquejoFrentes = useRef<{ bajos: string[]; altos: string[] } | undefined>(undefined);
   useEffect(() => {
     if (!bosquejoPend) return;
     setBosquejoPend(false);
-    runAutoModulation(appliances, 'efficiency', bosquejoCortes.current);
-    bosquejoCortes.current = [];
-    setActiveTab('design');
+    runAutoModulation(appliances, 'efficiency', bosquejoCortes.current, bosquejoAltos.current, bosquejoFrentes.current);
+    bosquejoCortes.current = []; bosquejoAltos.current = undefined; bosquejoFrentes.current = undefined;
   }, [bosquejoPend, runAutoModulation, appliances]);
 
   // Modula solo las islas y penínsulas (el resto de la cocina no se toca): reemplaza los módulos de cada una por una hilera nueva
@@ -5335,8 +5387,17 @@ export default function App() {
         {activeTab === 'bosquejo' && (
           <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-1">Bosquejo</h2>
-            <p className="text-xs font-bold text-slate-400 mb-6">De un boceto a mano alzada al producto del cliente: adjunta la foto o escribe las medidas.</p>
-            <Bosquejo actual={section} onCrear={crearDesdeBosquejo} />
+            <p className="text-xs font-bold text-slate-400 mb-6">Adjunta la foto del boceto a mano alzada, revisa lo que se entendió y acéptalo o corrígelo.</p>
+            {bosquejoListo && labeledModules.length > 0 && (
+              <div className="mb-4 space-y-3 max-w-6xl">
+                <PlanoLimpio boxes={boxes} modules={labeledModules} />
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => setActiveTab('design')} className="rounded-xl px-5 py-2.5 text-sm font-black bg-indigo-600 text-white">Ir a Diseño</button>
+                  <button onClick={() => setBosquejoListo(false)} className="rounded-xl px-5 py-2.5 text-sm font-black border border-slate-200 text-slate-700">Leer otro boceto</button>
+                </div>
+              </div>
+            )}
+            <div className={bosquejoListo && labeledModules.length > 0 ? 'hidden' : ''}><Bosquejo actual={section} onCrear={crearDesdeBosquejo} /></div>
           </div>
         )}
         {/* cada fase en su sección: láminas (optimización), planos de ensamble y render */}

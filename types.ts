@@ -134,6 +134,7 @@ export interface Appliance {
   distance: number;
   active: boolean;
   faucetHeight?: number; // Specific for sinks
+  space?: number;        // nevera: ancho del espacio que se le deja (el hueco entre muebles); sin valor = ancho de la nevera + 5 cm por lado
 }
 
 export interface Material {

@@ -1845,6 +1845,14 @@ const SwingLines: React.FC<{ hw: number; hh: number; op: 'izq' | 'der' | 'sup' |
   return <Line points={pts} color="#64748b" lineWidth={1} dashed dashSize={0.03} gapSize={0.025} transparent opacity={0.45} raycast={() => null} />;
 };
 
+/** Contorno oscuro de un frente (puerta o cajón) en su cara visible: marca las luces entre puertas y frentes, que con las aristas finas no se notaban */
+const FrontOutline: React.FC<{ hw: number; hh: number; face: 'z+' | 'x+' | 'x-'; depth: number; color: string }> = ({ hw, hh, face, depth, color }) => {
+  const f = depth + 0.001, i = 0.0015; // un poco hacia adentro del borde, para que dos frentes vecinos dejen ver la luz entre ellos
+  const uv: [number, number][] = [[-hw + i, -hh + i], [hw - i, -hh + i], [hw - i, hh - i], [-hw + i, hh - i], [-hw + i, -hh + i]];
+  const pts = uv.map(([u, v]) => (face === 'z+' ? [u, v, f] : face === 'x+' ? [f, v, u] : [-f, v, u]) as [number, number, number]);
+  return <Line points={pts} color={color} lineWidth={1.2} raycast={() => null} />;
+};
+
 /** Formulario de un cuerpo del Closet fit (doble clic): ¿marco puerta o surrón? y sus puertas, entrepaños y cajones */
 const FitBodyForm: React.FC<{ label: string; cfg: FitBodyCfg | undefined; onChange: (c: FitBodyCfg | undefined) => void; onClose: () => void; hiddenCount?: number; onShowAll?: () => void; suggestedMaletero?: number; fondo?: number; onFondo?: (n: number) => void; desde?: number; onDesde?: (n: number) => void }> = ({ label, cfg, onChange, onClose, hiddenCount = 0, onShowAll, suggestedMaletero = 1900, fondo, onFondo, desde, onDesde }) => {
   const drag = useDragOffset();
@@ -3987,6 +3995,10 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
             <meshStandardMaterial color={b.id.startsWith('front-upper-') ? '#d6b48a' : '#c19a6b'} roughness={0.55} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
             <Edges color={b.moduleId && b.moduleId === selectedId ? '#ef4444' : (b.moduleId && pair.includes(b.moduleId) ? '#f59e0b' : '#3b2a1a')} linewidth={b.moduleId && (b.moduleId === selectedId || pair.includes(b.moduleId)) ? 3 : 1} />
+            {(b.wall === 'A' || b.wall === 'B' || b.wall === 'C') && !b.islandId && (
+              <FrontOutline hw={(b.wall === 'A' ? b.sx : b.sy) / 2000} hh={b.sz / 2000} face={b.wall === 'A' ? 'z+' : b.wall === 'B' ? 'x+' : 'x-'} depth={(b.wall === 'A' ? b.sy : b.sx) / 2000}
+                color={b.moduleId && b.moduleId === selectedId ? '#ef4444' : '#334155'} />
+            )}
             {b.name.startsWith('Puerta') && (b.wall === 'A' || b.wall === 'B' || b.wall === 'C') && (() => {
               // mismas reglas de abertura que en el Closet fit: parejas puerta izquierda y puerta derecha (la bisagra en el borde exterior) y una sola puerta con bisagra a la izquierda
               const doors = boxes.filter(q => q.kind === 'front' && q.moduleId === b.moduleId && q.name.startsWith('Puerta'));
