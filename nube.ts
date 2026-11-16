@@ -12,7 +12,7 @@ export const nubeConfigurada = !!url && !!key;
 export const nube = nubeConfigurada ? createClient(url!, key!) : null;
 
 export interface Proyecto { id: string; cliente: string; nombre: string; notas: string; updated_at: string }
-export interface DisenoGuardado { id: string; proyecto_id: string; seccion: string; nombre: string; ubicacion: string; cantidad: number; datos: unknown; updated_at: string }
+export interface DisenoGuardado { id: string; proyecto_id: string; seccion: string; nombre: string; ubicacion: string; cantidad: number; datos: unknown; updated_at: string; aprobado_at: string | null }
 
 const sinNube = () => new Error('Falta configurar Supabase (VITE_SUPABASE_URL y VITE_SUPABASE_KEY en .env.local).');
 const traducir = (m: string) =>
@@ -59,14 +59,20 @@ export async function borrarProyecto(id: string) {
 }
 export async function listarDisenos(proyectoId: string): Promise<DisenoGuardado[]> {
   if (!nube) throw sinNube();
-  return ok(await nube.from('disenos').select('id, proyecto_id, seccion, nombre, ubicacion, cantidad, datos, updated_at').eq('proyecto_id', proyectoId).order('updated_at', { ascending: false })) as DisenoGuardado[];
+  return ok(await nube.from('disenos').select('id, proyecto_id, seccion, nombre, ubicacion, cantidad, datos, updated_at, aprobado_at').eq('proyecto_id', proyectoId).order('updated_at', { ascending: false })) as DisenoGuardado[];
 }
 /** Guarda un producto nuevo del proyecto, o reemplaza su diseño si se da su id (la cantidad y la ubicación se conservan si no se dan) */
 export async function guardarDiseno(proyectoId: string, seccion: string, nombre: string, datos: unknown, id?: string, extra?: { cantidad?: number; ubicacion?: string }): Promise<DisenoGuardado> {
   if (!nube) throw sinNube();
-  const fila = { proyecto_id: proyectoId, seccion, nombre, datos, ...(extra?.cantidad ? { cantidad: extra.cantidad } : {}), ...(extra?.ubicacion !== undefined ? { ubicacion: extra.ubicacion } : {}) };
+  // al cambiar el diseño se pierde la aprobación: hay que volver a aprobarlo para que se rehagan sus documentos
+  const fila = { proyecto_id: proyectoId, seccion, nombre, datos, aprobado_at: null, ...(extra?.cantidad ? { cantidad: extra.cantidad } : {}), ...(extra?.ubicacion !== undefined ? { ubicacion: extra.ubicacion } : {}) };
   const q = id ? nube.from('disenos').update(fila).eq('id', id) : nube.from('disenos').insert(fila);
-  return ok(await q.select('id, proyecto_id, seccion, nombre, ubicacion, cantidad, datos, updated_at').single()) as DisenoGuardado;
+  return ok(await q.select('id, proyecto_id, seccion, nombre, ubicacion, cantidad, datos, updated_at, aprobado_at').single()) as DisenoGuardado;
+}
+/** Marca el diseño del producto como aprobado (la orden para crear sus documentos) */
+export async function marcarAprobado(id: string) {
+  if (!nube) throw sinNube();
+  ok(await nube.from('disenos').update({ aprobado_at: new Date().toISOString() }).eq('id', id));
 }
 /** Cambia la cantidad, el nombre o la ubicación de un producto sin tocar su diseño */
 export async function ajustarDiseno(id: string, cambios: { cantidad?: number; nombre?: string; ubicacion?: string }) {

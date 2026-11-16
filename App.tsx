@@ -26,8 +26,8 @@ import { RenderVista } from './RenderVista';
 import { Bosquejo, DatosBosquejo, tramoModulos, anchosFila, HOLGURA_MURO } from './Bosquejo';
 import { Inicio } from './Inicio';
 import { PlanoLimpio } from './PlanoLimpio';
-import { Proyectos } from './Proyectos';
-import { subirDocumentos, archivoDeDataURL, DocumentoNuevo } from './nube';
+import { Proyectos, DialogoAprobar, ProductoActivo } from './Proyectos';
+import { subirDocumentos, archivoDeDataURL, DocumentoNuevo, guardarDiseno, marcarAprobado } from './nube';
 import { htmlLaminas } from './PanelLaminas';
 import { htmlPlanos } from './PlanosEnsamble';
 import { resizeSymmetric, snapToNeighbors } from './moduleResize';
@@ -1643,7 +1643,40 @@ export default function App() {
   const [bosquejoPend, setBosquejoPend] = useState(false);
   const [bosquejoListo, setBosquejoListo] = useState(false);
   const [fotoBoceto, setFotoBoceto] = useState<string | null>(null); // foto del boceto con que se armó el diseño abierto: se guarda con el producto
-  const [productoActivo, setProductoActivo] = useState<{ id: string; nombre: string } | null>(null); // producto del proyecto abierto ahora (render y fotos se guardan en él) // ya se aceptó un boceto: se muestra pasado en limpio
+  const [productoActivo, setProductoActivo] = useState<ProductoActivo | null>(null);
+  // aprobación del diseño abierto: el diseño (su clave) que se aprobó; si se cambia algo, vuelve a quedar sin aprobar
+  const [aprobadoKey, setAprobadoKey] = useState<string | null>(null);
+  const [aprobando, setAprobando] = useState<'dialogo' | 'guardando' | null>(null);
+  const [avisoAprobar, setAvisoAprobar] = useState<string | null>(null);
+  // al abrir un producto ya aprobado, su diseño cargado cuenta como aprobado (se toma la clave cuando la app termina de cargarlo)
+  const aprobadoAlAbrir = useRef(false); // producto del proyecto abierto ahora (render y fotos se guardan en él) // ya se aceptó un boceto: se muestra pasado en limpio
+  useEffect(() => { if (aprobadoAlAbrir.current) { aprobadoAlAbrir.current = false; setAprobadoKey(snapshotKey); } }, [snapshotKey]);
+  // documentos del producto: Excel de corte (lista de partes, CorteCloud y herrajes), láminas y planos; con el boceto si se armó desde uno
+  const docsDelDiseno = (nombre: string, cliente: string, nuevo: boolean): DocumentoNuevo[] => {
+    const docs: DocumentoNuevo[] = [];
+    const base = nombre.replace(/[^\wáéíóúñÁÉÍÓÚÑ -]+/g, '').trim().replace(/\s+/g, '_') || 'producto';
+    if (lista.piezas.length) {
+      docs.push({ tipo: 'listado', nombre: `Listado_${base}.xlsx`, archivo: archivoListadoDeCorte(lista) });
+      docs.push({ tipo: 'laminas', nombre: `Laminas_${base}.html`, archivo: new Blob([htmlLaminas(lista.piezas, nombre)], { type: 'text/html' }) });
+      docs.push({ tipo: 'planos', nombre: `Planos_${base}.html`, archivo: new Blob([htmlPlanos(boxes, { lineType, faceColor }, nombre, cliente)], { type: 'text/html' }) });
+    }
+    if (nuevo && fotoBoceto) docs.push({ tipo: 'boceto', nombre: `Boceto_${base}.jpg`, archivo: archivoDeDataURL(fotoBoceto) });
+    return docs;
+  };
+  // Aprobar diseño: guarda el diseño abierto en su producto, crea sus documentos y lo marca aprobado
+  const aprobarDiseno = async (p: ProductoActivo, nuevo?: { ubicacion: string; cantidad: number }) => {
+    setAprobando('guardando'); setAvisoAprobar(null);
+    const clave = snapshotKey;
+    try {
+      const d = await guardarDiseno(p.proyectoId, section, p.nombre, latestSnapshot.current.snapshot, nuevo ? undefined : p.id, nuevo);
+      const docs = docsDelDiseno(p.nombre, p.cliente, !!nuevo);
+      const n = await subirDocumentos(d.id, docs);
+      await marcarAprobado(d.id);
+      setProductoActivo({ ...p, id: d.id, aprobado: true }); setAprobadoKey(clave); if (nuevo) setFotoBoceto(null);
+      setAvisoAprobar(`Aprobado: ${p.nombre} de ${p.cliente}, con ${n} ${n === 1 ? 'documento' : 'documentos'}. Están en Proyectos.`);
+    } catch (e) { setAvisoAprobar(e instanceof Error ? e.message : String(e)); }
+    setAprobando(null);
+  };
   const crearDesdeBosquejo = (d: DatosBosquejo, foto?: string) => {
     setFotoBoceto(foto ?? null); setProductoActivo(null);
     switchSection(d.producto);
@@ -3916,6 +3949,8 @@ export default function App() {
   return (
     <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
       {isSuggesting && <LoadingOverlay message={suggestMessage} />}
+      {aprobando === 'dialogo' && <DialogoAprobar seccion={section} onCerrar={() => setAprobando(null)}
+        onListo={p => aprobarDiseno({ id: '', nombre: p.nombre, proyectoId: p.proyectoId, cliente: p.cliente }, { ubicacion: p.ubicacion, cantidad: p.cantidad })} />}
       <header className="px-6 py-4 flex items-center justify-between bg-white/70 backdrop-blur-lg border-b border-slate-200 z-[60]">
         <div className="flex items-center gap-3 cursor-pointer" title="Ir a Inicio" onClick={() => setActiveTab('inicio')}><div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg"><Box size={20} /></div><div><h1 className="text-base font-black text-slate-800 tracking-tighter uppercase">MODULLY</h1><span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none block">Cierre Exacto</span></div></div>
         <div className="relative flex items-center gap-2">
@@ -5207,6 +5242,20 @@ export default function App() {
                     <span className="text-xs font-black uppercase tracking-tight">{isFitSection ? (fit.converted ? 'Volver a cubos' : 'Convertir a módulos') : (modules.length > 0 && modules.every(m => m.detailed) ? 'Volver a cubos' : 'Convertir a módulos')}</span>
                   </button>
 
+                  {/* Aprobar diseño: la orden para crear los documentos del producto (listado de corte, láminas y planos) */}
+                  {(isFitSection ? fit.converted : modules.length > 0 && modules.every(m => m.detailed)) && (
+                    <button
+                      onClick={() => { if (aprobadoKey === snapshotKey) return; if (productoActivo) aprobarDiseno(productoActivo); else setAprobando('dialogo'); }}
+                      disabled={aprobando === 'guardando'}
+                      className={`px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2 active:scale-95 transition-all border-b-4 ${aprobadoKey === snapshotKey ? 'bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default' : 'bg-emerald-600 text-white border-emerald-800'} disabled:opacity-60`}
+                      title={aprobadoKey === snapshotKey ? 'Este diseño ya está aprobado; si lo cambias, hay que volver a aprobarlo' : 'Guarda el diseño en el proyecto y crea sus documentos'}
+                    >
+                      <CheckCircle2 size={18} />
+                      <span className="text-xs font-black uppercase tracking-tight">{aprobando === 'guardando' ? 'Aprobando…' : aprobadoKey === snapshotKey ? 'Diseño aprobado' : 'Aprobar diseño'}</span>
+                    </button>
+                  )}
+                  {avisoAprobar && <div className="max-w-[260px] text-[11px] font-bold text-slate-600 bg-white/95 rounded-xl px-3 py-2 shadow">{avisoAprobar}</div>}
+
                   {isOptMenuOpen && (
                     <div className="absolute top-full mt-2 w-72 bg-white rounded-3xl shadow-2xl border border-slate-100 p-2 z-[80] animate-in slide-in-from-top-2 duration-300 flex flex-col gap-1">
                       <button 
@@ -5389,20 +5438,9 @@ export default function App() {
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-1">Proyectos</h2>
             <p className="text-xs font-bold text-slate-400 mb-6">Tus clientes y los diseños guardados de cada uno.</p>
             <Proyectos seccion={section} diseñoActual={() => latestSnapshot.current.snapshot}
-              documentos={(nombre, cliente, nuevo) => {
-                // documentos del producto: Excel de corte (lista de partes, CorteCloud y herrajes), láminas y planos; con el boceto si se armó desde uno
-                const docs: DocumentoNuevo[] = [];
-                const base = nombre.replace(/[^\wáéíóúñÁÉÍÓÚÑ -]+/g, '').trim().replace(/\s+/g, '_') || 'producto';
-                if (lista.piezas.length) {
-                  docs.push({ tipo: 'listado', nombre: `Listado_${base}.xlsx`, archivo: archivoListadoDeCorte(lista) });
-                  docs.push({ tipo: 'laminas', nombre: `Laminas_${base}.html`, archivo: new Blob([htmlLaminas(lista.piezas, nombre)], { type: 'text/html' }) });
-                  docs.push({ tipo: 'planos', nombre: `Planos_${base}.html`, archivo: new Blob([htmlPlanos(boxes, { lineType, faceColor }, nombre, cliente)], { type: 'text/html' }) });
-                }
-                if (nuevo && fotoBoceto) docs.push({ tipo: 'boceto', nombre: `Boceto_${base}.jpg`, archivo: archivoDeDataURL(fotoBoceto) });
-                return docs;
-              }}
-              onProductoActivo={p => { setProductoActivo(p); if (p) setFotoBoceto(null); }}
-              onAbrir={(sec, datos, prod) => { switchSection(sec); applySnapshot(datos as DesignSnapshot); bumpHistory(); setProductoActivo(prod); setFotoBoceto(null); setActiveTab('design'); }} />
+              documentos={docsDelDiseno}
+              onProductoActivo={p => { setProductoActivo(p); setAprobadoKey(null); if (p) setFotoBoceto(null); }}
+              onAbrir={(sec, datos, prod) => { switchSection(sec); applySnapshot(datos as DesignSnapshot); bumpHistory(); setProductoActivo(prod); setAprobadoKey(null); aprobadoAlAbrir.current = !!prod.aprobado; setFotoBoceto(null); setActiveTab('design'); }} />
           </div>
         )}
         {activeTab === 'inicio' && (
