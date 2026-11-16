@@ -218,6 +218,7 @@ export interface IslandItem {
   dy: number;     // mm desde el punto 0 hacia el frente
   stove?: { distance: number };  // lleva estufa: distancia (mm) desde el punto 0 de la isla (su extremo izquierdo) al inicio del mueble
   sink?: { distance: number };   // lleva poceta / fregadero: igual
+  campana?: boolean;  // campana de isla sobre la estufa (colgada del techo con su chimenea); solo si lleva estufa
   alistonado?: Liston; // espaldar de la isla o península (parte posterior de los módulos; el frente es el de las puertas) forrado con listones, del piso al mesón
   bar?: number;   // barra: voladizo del mesón por el frente (mm); los módulos miden ancho - barra de fondo y el zócalo retrocede la barra
 }

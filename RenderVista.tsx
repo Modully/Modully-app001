@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, ContactShadows, Edges } from '@react-three/drei';
 import type { Box } from './boxes';
+import { hexDe } from './colores';
 import { claveIAConfigurada, fotoConIA } from './fotoIA';
 
 /**
@@ -38,12 +39,12 @@ const Campo: React.FC<{ label: string; value: string; onChange: (v: string) => v
   </label>
 );
 
-export const RenderVista: React.FC<{ boxes: Box[]; faceColor: string; lineType: string; nombre: string; producto?: string | null; onGuardar?: (dataUrl: string, tipo: 'render' | 'foto_ia') => Promise<void> }> = ({ boxes, faceColor, lineType, nombre, producto, onGuardar }) => {
+export const RenderVista: React.FC<{ boxes: Box[]; faceColor: string; lineType: string; nombre: string; estructura?: string; producto?: string | null; onGuardar?: (dataUrl: string, tipo: 'render' | 'foto_ia') => Promise<void> }> = ({ boxes, faceColor, lineType, nombre, estructura, producto, onGuardar }) => {
   const [guardado, setGuardado] = useState<string | null>(null);
   const guardarEn = async (url: string, tipo: 'render' | 'foto_ia') => { if (!onGuardar) return; setGuardado('Guardando…'); try { await onGuardar(url, tipo); setGuardado(`Guardada en ${producto}.`); } catch (e) { setGuardado(e instanceof Error ? e.message : String(e)); } };
-  const fachadaIni = colorDe(faceColor, '#c9a26b');
+  const fachadaIni = hexDe(faceColor, colorDe(faceColor, '#c9a26b'));
   const [col, setCol] = useState<Record<Papel | 'piso', string>>({
-    fachada: fachadaIni, estructura: lineType === 'Básica' ? '#f4f4f1' : fachadaIni, meson: '#e7e5e0', muro: '#ecebe7', electro: '#b9bcc0', zocalo: '#2b2c2e', piso: '#bfae97',
+    fachada: fachadaIni, estructura: estructura ? hexDe(estructura, '#f4f4f1') : lineType === 'Básica' ? '#f4f4f1' : fachadaIni, meson: '#e7e5e0', muro: '#ecebe7', electro: '#b9bcc0', zocalo: '#2b2c2e', piso: '#bfae97',
   });
   const [vista, setVista] = useState(0);
   // foto con IA: la vista actual se manda a Gemini y vuelve como foto realista

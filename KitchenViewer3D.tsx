@@ -685,6 +685,7 @@ interface Module3DProps {
   onChooseFronts?: (id: string, kind: 'doors' | 'drawers' | 'vertical' | 'horizontal' | 'open') => void;
   onApplyMeasures?: (id: string, m: { width: number; depth: number; height: number }) => void;
   onSetTop?: (id: string, height: number, topGap: number) => void;
+  tono?: string; // color parecido al elegido para este módulo (cubo sin convertir)
   onSetVistos?: (id: string, v: SideConfig) => void;
   onSplitHorizontal?: (id: string) => void; // divide el módulo en dos a lo alto
   onSplitDepth?: (id: string) => void;       // divide el módulo en dos: frente y fondo
@@ -696,7 +697,7 @@ interface Module3DProps {
   source?: KitchenModule; // módulo completo (la copia `module` puede venir con el cuerpo acortado por los vistos)
 }
 
-const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0, 0], onDelete, onSplit, onEditDimension, onDragPosition, onResizeEdge, controlsRef, hideLeftArrow, hideRightArrow, viewMode, selected, marked, lShape, pocket, costado = 'right', editing, onSelect, onOpenEditor, onCloseEditor, contextOpen, onContext, onCloseContext, onChooseFronts, onApplyMeasures, onSetTop, onSetVistos, onSplitHorizontal, onSplitDepth, faces, onExtendFace, hoverRef, resolveReference, showLabel = true, source }) => {
+const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0, 0], onDelete, onSplit, onEditDimension, onDragPosition, onResizeEdge, controlsRef, hideLeftArrow, hideRightArrow, viewMode, selected, marked, lShape, pocket, costado = 'right', editing, onSelect, onOpenEditor, onCloseEditor, contextOpen, onContext, onCloseContext, onChooseFronts, onApplyMeasures, onSetTop, tono, onSetVistos, onSplitHorizontal, onSplitDepth, faces, onExtendFace, hoverRef, resolveReference, showLabel = true, source }) => {
   const isPlan = viewMode === 'plan';
   const [hovered, setHover] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -748,7 +749,7 @@ const Module3D: React.FC<Module3DProps> = ({ module, position, rotation = [0, 0,
   }, [pocket?.dx, pocket?.dz, pocket?.w, pocket?.d, pocket?.depth, module.width, module.depth, module.height]);
   const isP = !!pocketGeos;
 
-  const color = isResizing ? '#10b981' : (isDragging ? '#4f46e5' : (hovered ? '#FFD700' : (COLORS[module.type] || '#cccccc')));
+  const color = isResizing ? '#10b981' : (isDragging ? '#4f46e5' : (hovered ? '#FFD700' : (tono ?? COLORS[module.type] ?? '#cccccc')));
 
   // Arrastre del módulo completo: se mide a lo largo del eje del muro (X en el muro A, Z en B y C)
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
@@ -1436,16 +1437,17 @@ const Appliance3D: React.FC<{ appliance: Appliance, position: [number, number, n
 /** Doble clic en el mesón: sus tres medidas (largo, fondo y espesor) y el salpicadero */
 type CounterSettings = { thickness: number; overhang: number; hasSplash: boolean; splashHeight: number };
 /** Estado izquierda/derecha (visto desde el frente) del salpicadero lateral y de la cascada de un tramo de mesón */
-type CounterSides = { splashLeft: boolean; splashRight: boolean; waterfallLeft: boolean; waterfallRight: boolean; bottomLeft?: number; bottomRight?: number; edge?: CounterEdge };
+export type CounterSides = { splashLeft: boolean; splashRight: boolean; waterfallLeft: boolean; waterfallRight: boolean; bottomLeft?: number; bottomRight?: number; edge?: CounterEdge };
 
-const CounterEditor: React.FC<{
+export const CounterEditor: React.FC<{
   box: Box;
   wall: string;
   settings: CounterSettings;
   sides: CounterSides;
   onApply: (s: CounterSettings, sides: CounterSides) => void;
   onClose: () => void;
-}> = ({ box, wall, settings, sides, onApply, onClose }) => {
+  registrar?: (aplicar: () => void) => void; // embebido en otro formulario: ese formulario lo aplica con su botón
+}> = ({ box, wall, settings, sides, onApply, onClose, registrar }) => {
   // Largo = a lo largo del muro (lo definen los módulos); fondo = hacia el frente (módulos + voladizo)
   // Isla o península: el voladizo va por delante y por detrás (2 lados); lleva salpicadero y cascada (con medida inferior)
   const isIsland = box.id.startsWith('counter-isla-');
@@ -1466,6 +1468,7 @@ const CounterEditor: React.FC<{
     }, { ...side, edge });
     onClose();
   };
+  registrar?.(apply);
   const field = (key: 'depth' | 'thickness' | 'splashHeight', label: string) => (
     <label className="flex items-center justify-between gap-2 text-[11px] font-bold text-slate-600">
       {label}
@@ -1480,8 +1483,8 @@ const CounterEditor: React.FC<{
     </label>
   );
   return (
-    <div data-overlay data-module-editor className="pointer-events-auto w-48 p-2.5 space-y-1.5 rounded-xl bg-white border border-slate-300 shadow-xl" onMouseDown={(e) => e.stopPropagation()}>
-      <div className="text-[10px] font-black uppercase tracking-wide text-slate-500 truncate">{box.name}</div>
+    <div data-overlay data-module-editor className={registrar ? 'w-full space-y-1.5' : 'pointer-events-auto w-48 p-2.5 space-y-1.5 rounded-xl bg-white border border-slate-300 shadow-xl'} onMouseDown={(e) => e.stopPropagation()}>
+      {!registrar && <div className="text-[10px] font-black uppercase tracking-wide text-slate-500 truncate">{box.name}</div>}
       <div className="flex items-center justify-between text-[11px] font-bold text-slate-600">
         Largo
         <span className="w-20 px-1.5 py-1 rounded bg-slate-100 text-[12px] font-black text-slate-500" title="Lo definen los módulos del tramo">{length}</span>
@@ -1528,7 +1531,7 @@ const CounterEditor: React.FC<{
           </label>
         ))}
       </div>
-"      <div className="pt-1 border-t border-slate-200 space-y-1">
+      <div className="pt-1 border-t border-slate-200 space-y-1">
         <div className="text-[10px] font-black uppercase tracking-wide text-slate-500" title="Frentero: pieza unida a 45° con el mesón. Reengruese: una pieza pegada por debajo del mesón">Canto</div>
         <div className="grid grid-cols-3 gap-1">
           {([['none', 'Ninguno'], ['frentero', 'Frentero'], ['reengruese', 'Reengruese']] as const).map(([k, label]) => (
@@ -1567,13 +1570,41 @@ const CounterEditor: React.FC<{
           </>
         )}
       </div>
-      <div className="flex gap-1.5 pt-1">
+      {!registrar && <div className="flex gap-1.5 pt-1">
         <button className="flex-1 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black" onClick={apply}>Aplicar</button>
         <button className="flex-1 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-black" onClick={onClose}>Cerrar</button>
-      </div>
+      </div>}
     </div>
   );
 };
+
+/** Qué tiene hoy el mesón a cada lado (salpicaderos, cascadas, canto), visto desde el frente */
+export function ladosDelMeson(b: Box, boxes: Box[], counterExtras?: Record<string, CounterExtras>): CounterSides {
+  if (b.islandId) {
+    const hasI = (label: string) => boxes.some(x => x.id === `salpicadero-isla-${b.islandId}-${label}`);
+    const wf = (label: string) => boxes.find(x => x.id === `cascada-isla-${b.islandId}-${label}`);
+    const bottom = (label: string) => b.sy - (wf(label)?.chamferY ?? 0);
+    return { splashLeft: hasI('izquierda'), splashRight: hasI('derecha'), waterfallLeft: !!wf('izquierda'), waterfallRight: !!wf('derecha'), bottomLeft: bottom('izquierda'), bottomRight: bottom('derecha'), edge: counterExtras?.[b.id]?.edge };
+  }
+  // inicio del muro en A y C, final en B
+  const has = (kind: string, label: string) => boxes.some(x => x.id === `${kind}-${b.wall}-${b.id.split('-')[2]}-${label}`);
+  const l = b.wall === 'B' ? 'final' : 'inicio';
+  const r = b.wall === 'B' ? 'inicio' : 'final';
+  return { splashLeft: has('salpicadero', l), splashRight: has('salpicadero', r), waterfallLeft: has('cascada', l), waterfallRight: has('cascada', r), edge: counterExtras?.[b.id]?.edge };
+}
+
+/** Solo lo que el usuario cambió en el mesón (lo demás sigue automático) */
+export function cambiosDelMeson(b: Box, boxes: Box[], counterExtras: Record<string, CounterExtras> | undefined, now: CounterSides): CounterExtras {
+  const before = ladosDelMeson(b, boxes, counterExtras);
+  const extras: CounterExtras = {};
+  if (JSON.stringify(now.edge ?? null) !== JSON.stringify(counterExtras?.[b.id]?.edge ?? null) && !(now.edge?.kind === 'none' && !counterExtras?.[b.id]?.edge)) extras.edge = now.edge;
+  (['splashLeft', 'splashRight', 'waterfallLeft', 'waterfallRight'] as const).forEach(k => { if (now[k] !== before[k]) extras[k] = now[k]; });
+  if (b.islandId) {
+    if (now.bottomLeft !== undefined && Math.round(now.bottomLeft) !== Math.round(before.bottomLeft ?? 0)) extras.waterfallBottomLeft = Math.round(now.bottomLeft);
+    if (now.bottomRight !== undefined && Math.round(now.bottomRight) !== Math.round(before.bottomRight ?? 0)) extras.waterfallBottomRight = Math.round(now.bottomRight);
+  }
+  return extras;
+}
 
 /**
  * Isla o península en la escena: medida general sobre el piso (se arrastra con el ratón), etiqueta, botón para eliminarla
@@ -1587,7 +1618,8 @@ const Island3D: React.FC<{
   controlsRef: React.RefObject<any>;
   onEdit?: (id: string, patch: Partial<IslandItem>) => void;
   onDelete?: (id: string) => void;
-}> = ({ isl, toWorld, viewMode, interactive, controlsRef, onEdit, onDelete }) => {
+  onAbrir?: (id: string) => void;
+}> = ({ isl, toWorld, viewMode, interactive, controlsRef, onEdit, onDelete, onAbrir }) => {
   const { camera, size } = useThree();
   const [confirming, setConfirming] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -1651,6 +1683,7 @@ const Island3D: React.FC<{
         position={[cx, y, cz]}
         rotation={[-Math.PI / 2, 0, 0]}
         onPointerDown={handleDown}
+        onDoubleClick={e => { if (!interactive || !onAbrir || isOverlay(e)) return; e.stopPropagation(); onAbrir(isl.id); }}
         onPointerOver={() => { if (interactive && !dragging) document.body.style.cursor = 'grab'; }}
         onPointerOut={() => { if (!dragging) document.body.style.cursor = 'auto'; }}
       >
@@ -2831,6 +2864,7 @@ interface KitchenViewer3DProps {
   island: { length: number; width: number; height: number; dx: number; dy: number };
   islands?: IslandItem[];
   onEditIsland?: (id: string, patch: Partial<IslandItem>) => void;
+  onAbrirIsla?: (id: string) => void; // doble clic en la isla: su formulario (medidas, barra, electrodomésticos…)
   onEditWall?: (wall: 'A' | 'B' | 'C', value: number) => void;
   closetForm?: ClosetFormApi; // closet: doble clic en una de sus secciones abre su formulario
   puertaApi?: { cfg: PuertaCfg; onChange: (p: PuertaCfg) => void; onOpenForm: () => void }; // Puertas: clic = flechas del vano, doble clic = formulario
@@ -2860,18 +2894,23 @@ interface KitchenViewer3DProps {
   onDragModule?: (id: string, newPositionX: number) => void;
   onResizeEdge?: (id: string, side: 'left' | 'right', deltaX: number, initialWidth: number, initialPositionX: number) => void;
   onMoveAppliance?: (type: ApplianceType, wall: WallName, distance: number) => void;
-  visibility?: { upper: boolean; lower: boolean; counter: boolean; appliances: boolean; doors?: boolean; shelves?: boolean; cajonero?: boolean; costado?: boolean; dims?: boolean; wallA?: boolean; wallB?: boolean; wallC?: boolean; hoja?: boolean; marco?: boolean; tapaluz?: boolean };
+  colores?: { fachada: string; fachadaMA?: string; ma: string; mb: string; otros: string; fondo?: string; fondoMA?: string }; // tonos parecidos a los colores elegidos (catálogo)
+  visibility?: { upper: boolean; lower: boolean; counter: boolean; appliances: boolean; isla?: boolean; muros?: boolean; doors?: boolean; shelves?: boolean; cajonero?: boolean; costado?: boolean; dims?: boolean; wallA?: boolean; wallB?: boolean; wallC?: boolean; hoja?: boolean; marco?: boolean; tapaluz?: boolean };
   collisions?: Box[]; // cajas que chocan: se marcan en rojo
   measureMode?: boolean; // cinta métrica activa: la escena solo se mira y se mide
   onResizeJunction?: (leftId: string, rightId: string, deltaX: number, initialLeftWidth: number, initialRightWidth: number, initialLeftPositionX: number, initialRightPositionX: number) => void;
 }
 
 export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
-  wallThickMm, puertaApi,
-  layout, lArm, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules, boxes, appliances, hasIsland, island, islands = [], onEditIsland, onEditWall, closetForm, fitApi, onDeleteIsland, viewMode, hasZocalo, zocaloHeight = 100,
+  wallThickMm, puertaApi, colores,
+  layout, lArm, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules: modulesIn, boxes: boxesIn, appliances, onAbrirIsla, hasIsland, island, islands = [], onEditIsland, onEditWall, closetForm, fitApi, onDeleteIsland, viewMode, hasZocalo, zocaloHeight = 100,
   hasLeftClosure, hasRightClosure, counterExtras, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSetModuleFronts, onSplitHorizontal, onSplitDepth, onExtendFace, onJoinCorner, onSplitCorner, onEditCornerArm, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
 }) => {
   const controlsRef = useRef<any>(null);
+  // botones Isla y Muros de la barra de vistas: ocultan las islas (con su mesón, campana y piezas) y los muros
+  const verIsla = visibility?.isla !== false, verMuros = visibility?.muros !== false;
+  const boxes = useMemo(() => boxesIn.filter(b => (verIsla || !b.islandId) && (verMuros || (b.kind !== 'wall' && !b.id.startsWith('closure-')))), [boxesIn, verIsla, verMuros]);
+  let modules = useMemo(() => (verIsla ? modulesIn : modulesIn.filter(m => m.wall !== 'Island')), [modulesIn, verIsla]);
   // Módulo seleccionado (clic) y módulo cuyo editor de medidas está abierto (doble clic)
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Dos módulos elegidos con Shift + clic para unirlos en un esquinero en L
@@ -3391,7 +3430,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             } : {})}
           >
             {b.face ? <FaceExtrude b={b} /> : <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />}
-            <meshStandardMaterial color={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? '#bfdbfe' : fitCopySrc === b.id ? '#22c55e' : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? '#fb923c' : '#60a5fa') : b.name.startsWith('Sanitario') ? '#f8fafc' : isAmb(b.name) ? '#bae6fd' : b.name.startsWith('Espaldar') || b.name.includes('fondo') ? '#e5e7eb' : isClosetDoor(b.name) ? '#cdb592' : (b.name.startsWith('Tubo') || b.name === 'Chapa puerta') ? '#9ca3af' : b.name === 'Televisor' ? '#111827' : b.name.startsWith('Entrepaño') ? '#f3e8d2' : (b.id.startsWith('panel-upper-') ? '#e8d3b0' : '#dcc5a0')} roughness={0.7} key={isFitBody(b.name) ? 'fit' : (doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name) || isAmb(b.name) ? 'ghost' : 'solid'} transparent={isFitBody(b.name) || isAmb(b.name) || ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name))} opacity={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? 0.08 : (fitApi?.fit.converted && fitApi.fit.bodies?.[b.id] && fitCopySrc !== b.id) ? 0.03 : b.name.startsWith('Hueco ') ? ((fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? 0.25 : 0.02) : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? 0.4 : 0.22) : isAmb(b.name) ? 0.5 : ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name)) ? 0.25 : 1} depthWrite={!(isFitBody(b.name) || isAmb(b.name) || ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name)))}  polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+            <meshStandardMaterial color={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? '#bfdbfe' : fitCopySrc === b.id ? '#22c55e' : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? '#fb923c' : '#60a5fa') : b.name.startsWith('Sanitario') ? '#f8fafc' : isAmb(b.name) ? '#bae6fd' : b.name.startsWith('Espaldar') || b.name.includes('fondo') ? ((b.id.startsWith('panel-upper-') ? colores?.fondoMA : colores?.fondo) ?? '#e5e7eb') : isClosetDoor(b.name) ? '#cdb592' : (b.name.startsWith('Tubo') || b.name === 'Chapa puerta') ? '#9ca3af' : b.name === 'Televisor' ? '#111827' : colores && b.moduleId ? (/^(Visto|Pieza de dilatación|Dilatada)/.test(b.name) ? colores.fachada : b.id.startsWith('panel-upper-') ? colores.ma : /tall-/.test(b.moduleId) ? colores.otros : colores.mb) : b.name.startsWith('Entrepaño') ? '#f3e8d2' : (b.id.startsWith('panel-upper-') ? '#e8d3b0' : '#dcc5a0')} roughness={0.7} key={isFitBody(b.name) ? 'fit' : (doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name) || isAmb(b.name) ? 'ghost' : 'solid'} transparent={isFitBody(b.name) || isAmb(b.name) || ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name))} opacity={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? 0.08 : (fitApi?.fit.converted && fitApi.fit.bodies?.[b.id] && fitCopySrc !== b.id) ? 0.03 : b.name.startsWith('Hueco ') ? ((fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? 0.25 : 0.02) : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? 0.4 : 0.22) : isAmb(b.name) ? 0.5 : ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name)) ? 0.25 : 1} depthWrite={!(isFitBody(b.name) || isAmb(b.name) || ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name)))}  polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
             {isFitBody(b.name) && viewMode === 'frontal' ? (
               // En frontal solo se dibuja el contorno de la cara frontal (una línea), sin las aristas de profundidad que se ven dobles
               b.name !== 'Cubo closet fit' && (() => { const hw = b.sx / 2000, hh = b.sz / 2000, zf = b.sy / 2000 + 0.002; return (
@@ -3993,7 +4032,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         {boxes.filter(b => b.kind === 'front' && (b.id.startsWith('front-upper-') ? vis.upper : vis.lower)).map(b => (
           <mesh key={b.id} position={boxCenter(b)} castShadow receiveShadow raycast={() => null}>
             <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
-            <meshStandardMaterial color={b.id.startsWith('front-upper-') ? '#d6b48a' : '#c19a6b'} roughness={0.55} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
+            <meshStandardMaterial color={(b.id.startsWith('front-upper-') ? colores?.fachadaMA ?? colores?.fachada : colores?.fachada) ?? (b.id.startsWith('front-upper-') ? '#d6b48a' : '#c19a6b')} roughness={0.55} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
             <Edges color={b.moduleId && b.moduleId === selectedId ? '#ef4444' : (b.moduleId && pair.includes(b.moduleId) ? '#f59e0b' : '#3b2a1a')} linewidth={b.moduleId && (b.moduleId === selectedId || pair.includes(b.moduleId)) ? 3 : 1} />
             {(b.wall === 'A' || b.wall === 'B' || b.wall === 'C') && !b.islandId && (
               <FrontOutline hw={(b.wall === 'A' ? b.sx : b.sy) / 2000} hh={b.sz / 2000} face={b.wall === 'A' ? 'z+' : b.wall === 'B' ? 'x+' : 'x-'} depth={(b.wall === 'A' ? b.sy : b.sx) / 2000}
@@ -4038,49 +4077,24 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             selected={!measureMode && selectedCounter === b.id}
             editing={!measureMode && editingCounter === b.id}
             settings={counterSettings}
-            sides={(() => {
-              // Qué hay hoy a cada lado del tramo (visto desde el frente): inicio del muro en A y C, final en B
-              if (b.islandId) {
-                const hasI = (label: string) => boxes.some(x => x.id === `salpicadero-isla-${b.islandId}-${label}`);
-                const wf = (label: string) => boxes.find(x => x.id === `cascada-isla-${b.islandId}-${label}`);
-                const bottom = (label: string) => b.sy - (wf(label)?.chamferY ?? 0);
-                return { splashLeft: hasI('izquierda'), splashRight: hasI('derecha'), waterfallLeft: !!wf('izquierda'), waterfallRight: !!wf('derecha'), bottomLeft: bottom('izquierda'), bottomRight: bottom('derecha'), edge: counterExtras?.[b.id]?.edge };
-              }
-              const has = (kind: string, label: string) => boxes.some(x => x.id === `${kind}-${b.wall}-${b.id.split('-')[2]}-${label}`);
-              const l = b.wall === 'B' ? 'final' : 'inicio';
-              const r = b.wall === 'B' ? 'inicio' : 'final';
-              return { splashLeft: has('salpicadero', l), splashRight: has('salpicadero', r), waterfallLeft: has('cascada', l), waterfallRight: has('cascada', r), edge: counterExtras?.[b.id]?.edge };
-            })()}
+            sides={ladosDelMeson(b, boxes, counterExtras)}
             onSelect={measureMode || !onEditCounter ? undefined : (id) => { setSelectedCounter(id); setSelectedId(null); setEditingId(null); }}
-            onOpenEditor={setEditingCounter}
+            onOpenEditor={b.islandId && onAbrirIsla ? () => onAbrirIsla(b.islandId!) : setEditingCounter}
             onCloseEditor={() => setEditingCounter(null)}
-            onApply={onEditCounter ? ((s, now) => {
-              // Solo se guarda lo que el usuario cambió; lo demás sigue automático
-              const before = b.islandId
-                ? { splashLeft: boxes.some(x => x.id === `salpicadero-isla-${b.islandId}-izquierda`), splashRight: boxes.some(x => x.id === `salpicadero-isla-${b.islandId}-derecha`), waterfallLeft: boxes.some(x => x.id === `cascada-isla-${b.islandId}-izquierda`), waterfallRight: boxes.some(x => x.id === `cascada-isla-${b.islandId}-derecha`), bottomLeft: b.sy - (boxes.find(x => x.id === `cascada-isla-${b.islandId}-izquierda`)?.chamferY ?? 0), bottomRight: b.sy - (boxes.find(x => x.id === `cascada-isla-${b.islandId}-derecha`)?.chamferY ?? 0) }
-                : { splashLeft: boxes.some(x => x.id === `salpicadero-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'final' : 'inicio'}`), splashRight: boxes.some(x => x.id === `salpicadero-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'inicio' : 'final'}`), waterfallLeft: boxes.some(x => x.id === `cascada-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'final' : 'inicio'}`), waterfallRight: boxes.some(x => x.id === `cascada-${b.wall}-${b.id.split('-')[2]}-${b.wall === 'B' ? 'inicio' : 'final'}`) };
-              const extras: CounterExtras = {};
-              if (JSON.stringify(now.edge ?? null) !== JSON.stringify(counterExtras?.[b.id]?.edge ?? null) && !(now.edge?.kind === 'none' && !counterExtras?.[b.id]?.edge)) extras.edge = now.edge;
-              (['splashLeft', 'splashRight', 'waterfallLeft', 'waterfallRight'] as const).forEach(k => { if (now[k] !== before[k]) extras[k] = now[k]; });
-              if (b.islandId) {
-                if (now.bottomLeft !== undefined && Math.round(now.bottomLeft) !== Math.round(before.bottomLeft ?? 0)) extras.waterfallBottomLeft = Math.round(now.bottomLeft);
-                if (now.bottomRight !== undefined && Math.round(now.bottomRight) !== Math.round(before.bottomRight ?? 0)) extras.waterfallBottomRight = Math.round(now.bottomRight);
-              }
-              onEditCounter(s, b.id, extras);
-            }) : undefined}
+            onApply={onEditCounter ? ((s, now) => onEditCounter(s, b.id, cambiosDelMeson(b, boxes, counterExtras, now))) : undefined}
           />
         ))}
 
         {/* Islas y penínsulas */}
         {islands.map(isl => (
-          <Island3D key={isl.id} isl={isl} toWorld={toWorldXZ} viewMode={viewMode} interactive={!measureMode} controlsRef={controlsRef} onEdit={onEditIsland} onDelete={onDeleteIsland} />
+          verIsla && <Island3D key={isl.id} isl={isl} toWorld={toWorldXZ} viewMode={viewMode} interactive={!measureMode} controlsRef={controlsRef} onEdit={onEditIsland} onDelete={onDeleteIsland} onAbrir={onAbrirIsla} />
         ))}
 
         {modules.map((mod) => {
           const box = findModuleBox(boxes, mod.uniqueId);
           if (!box) return null;
           const pos = boxCenter(box);
-          const rot: [number, number, number] = [0, mod.wall === 'B' ? Math.PI / 2 : mod.wall === 'C' ? -Math.PI / 2 : 0, 0];
+          const rot: [number, number, number] = [0, mod.wall === 'Island' ? Math.PI : mod.wall === 'B' ? Math.PI / 2 : mod.wall === 'C' ? -Math.PI / 2 : 0, 0];
 
           // Verificar si este módulo tiene junctions a la izquierda o derecha
           const hasLeftJunction = junctions.some(j => j.rightId === mod.uniqueId);
@@ -4188,13 +4202,14 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             })()}
             editing={editingId === mod.uniqueId}
             onSelect={measureMode ? undefined : selectModule}
-            onOpenEditor={measureMode ? undefined : setEditingId}
+            onOpenEditor={measureMode ? undefined : mod.wall === 'Island' && onAbrirIsla && mod.islandId ? () => onAbrirIsla(mod.islandId!) : setEditingId}
             onCloseEditor={() => setEditingId(null)}
             contextOpen={contextId === mod.uniqueId}
             onContext={measureMode || !onSetModuleFronts ? undefined : (id) => { setEditingId(null); setContextId(id); }}
             onCloseContext={() => setContextId(null)}
             onChooseFronts={onSetModuleFronts}
             onSetTop={onSetModuleTopEdge}
+            tono={colores?.fachada}
             onApplyMeasures={(id, m) => {
               if (Math.round(m.depth) !== Math.round(mod.depth)) onEditModuleMeasure?.(id, 'depth', m.depth);
               if (Math.round(m.height) !== Math.round(mod.height)) onEditModuleMeasure?.(id, 'height', m.height);
@@ -4260,6 +4275,18 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           />;
         })}
 
+        {/* Campana de isla: cuerpo bajo (la campana), pirámide y chimenea hasta el techo */}
+        {vis.appliances && boxes.filter(b => b.applianceType === 'hood-island').map(b => {
+          const [cx, , cz] = boxCenter(b), w = b.sx / 1000, d = b.sy / 1000, y0 = b.z / 1000, alto = b.sz / 1000, chim = Math.max(0.22, Math.min(w, d) * 0.4);
+          const metal = <meshStandardMaterial color="#d4d7db" metalness={0.75} roughness={0.3} />;
+          return (
+            <group key={b.id} position={[cx, y0, cz]}>
+              <mesh position={[0, 0.03, 0]} castShadow>{<boxGeometry args={[w, 0.06, d]} />}{metal}<Edges color="#6b7280" /></mesh>
+              <mesh position={[0, 0.06 + 0.12, 0]} rotation={[0, Math.PI / 4, 0]} castShadow><cylinderGeometry args={[chim * 0.75, Math.min(w, d) * 0.7, 0.24, 4]} />{metal}<Edges color="#6b7280" /></mesh>
+              <mesh position={[0, 0.3 + (alto - 0.3) / 2, 0]} castShadow><boxGeometry args={[chim, Math.max(0.05, alto - 0.3), chim]} />{metal}<Edges color="#6b7280" /></mesh>
+            </group>
+          );
+        })}
         {vis.appliances && appliances.filter(a => a.active).map((app, idx) => {
           // Cara superior del mesón (o de los módulos bajos si no hay mesón)
           const counterTop = counterTopZ(boxes, zh * 1000 + COUNTER_HEIGHT) / 1000;

@@ -16,7 +16,7 @@ import {
 import {
   MODULE_TEMPLATES, LABOR_CONFIG, COLORS
 } from './constants';
-import { KitchenViewer3D } from './KitchenViewer3D';
+import { CounterEditor, KitchenViewer3D, cambiosDelMeson, ladosDelMeson } from './KitchenViewer3D';
 import { getAgentAdvice, type KitchenAgentContext } from './agentService';
 import { generateBOM, exportBOMToExcel } from './bomService';
 import { listaDePiezas, exportarListadoDeCorte, bordesDeCanto, archivoListadoDeCorte } from './piezas';
@@ -25,6 +25,7 @@ import { PlanosEnsamble } from './PlanosEnsamble';
 import { RenderVista } from './RenderVista';
 import { Bosquejo, DatosBosquejo, tramoModulos, anchosFila, HOLGURA_MURO } from './Bosquejo';
 import { Inicio } from './Inicio';
+import { ACABADOS, Acabados, AcabadosNivel, CALIBRES, CATALOGO, Tablero, calTexto, colorDeCatalogo, completarAcabados, esBlanco, hexDe } from './colores';
 import { PlanoLimpio } from './PlanoLimpio';
 import { Proyectos, DialogoAprobar, ProductoActivo } from './Proyectos';
 import { subirDocumentos, archivoDeDataURL, DocumentoNuevo, guardarDiseno, marcarAprobado } from './nube';
@@ -190,11 +191,77 @@ const MeasureSketch: React.FC<{ kind: 'A' | 'B' | 'C' | 'height' | 'zH' | 'zD' |
 };
 
 /** Campos de estufa y poceta de una isla o península: si lleva, y a qué distancia de su punto 0 (su extremo izquierdo) */
+/** Campo de color con lista propia del catálogo: al escribir las iniciales se despliegan los colores que coinciden (con su tono) */
+const CampoColor: React.FC<{ label: string; value: string; onChange: (v: string) => void; calibres?: number[]; cal?: number; onCal?: (n: number) => void; rh?: boolean; onRh?: (v: boolean) => void; rigido?: boolean; onRigido?: (v: boolean) => void }> = ({ label, value, onChange, calibres, cal, onCal, rh, onRh, rigido, onRigido }) => {
+  const [abierto, setAbierto] = useState(false);
+  const [marcado, setMarcado] = useState(0);
+  const c = colorDeCatalogo(value);
+  const sinTilde = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const q = sinTilde(value);
+  // primero los que empiezan por lo escrito, después los que lo contienen; vacío o igual a un color = todo el catálogo
+  const exacto = CATALOGO.some(x => sinTilde(x.nombre) === q);
+  const opciones = !q || exacto ? CATALOGO : [...CATALOGO.filter(x => sinTilde(x.nombre).startsWith(q)), ...CATALOGO.filter(x => !sinTilde(x.nombre).startsWith(q) && sinTilde(x.nombre).includes(q))];
+  const elegir = (n: string) => { onChange(n); setAbierto(false); };
+  return (
+    <label className="block relative">
+      <span className="text-[9px] font-black text-slate-400 uppercase block mb-1">{label}</span>
+      <span className="flex items-center gap-2">
+        <span className="w-8 h-8 shrink-0 rounded-lg border border-slate-300" style={{ background: c?.hex ?? 'repeating-linear-gradient(45deg,#e2e8f0,#e2e8f0 4px,#fff 4px,#fff 8px)' }} title={c ? c.nombre : 'Color fuera del catálogo'} />
+        <input value={value} autoComplete="off"
+          onChange={e => { onChange(e.target.value); setAbierto(true); setMarcado(0); }}
+          onFocus={e => { e.currentTarget.select(); setAbierto(true); setMarcado(0); }}
+          onBlur={() => setTimeout(() => { setAbierto(false); const m = colorDeCatalogo(value); if (m && m.nombre !== value) onChange(m.nombre); }, 150)}
+          onKeyDown={e => {
+            if (e.key === 'ArrowDown') { e.preventDefault(); setAbierto(true); setMarcado(k => Math.min(opciones.length - 1, k + 1)); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setMarcado(k => Math.max(0, k - 1)); }
+            else if (e.key === 'Enter' && abierto && opciones[marcado]) { e.preventDefault(); elegir(opciones[marcado].nombre); }
+            else if (e.key === 'Escape') setAbierto(false);
+          }}
+          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-slate-800 outline-none focus:border-indigo-500" />
+      </span>
+      {abierto && opciones.length > 0 && (
+        <div className="absolute left-10 right-0 top-full mt-1 z-[400] max-h-56 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl py-1">
+          {opciones.map((o, k) => (
+            <button key={o.nombre} type="button" onMouseDown={e => { e.preventDefault(); elegir(o.nombre); }} onMouseEnter={() => setMarcado(k)}
+              className={`w-full flex items-center gap-2 px-3 py-1.5 text-left ${k === marcado ? 'bg-indigo-50' : ''}`}>
+              <span className="w-5 h-5 shrink-0 rounded border border-slate-300" style={{ background: o.hex }} />
+              <span className="text-xs font-black text-slate-800">{o.nombre}</span>
+              <span className="ml-auto text-[9px] font-bold text-slate-400 uppercase">{o.grupo}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {abierto && opciones.length === 0 && <div className="absolute left-10 right-0 top-full mt-1 z-[400] bg-white border border-slate-200 rounded-xl shadow-xl px-3 py-2 text-[11px] font-bold text-slate-400">No está en el catálogo: se usará tal cual.</div>}
+      {/* calibre del tablero y RH (resistente a la humedad) */}
+      {(calibres || onRh) && (
+        <span className="block mt-1.5 pl-10 space-y-1.5">
+          {calibres && (
+            <span className="flex items-center gap-1">
+              {calibres.map(n => (
+                <button key={n} type="button" onClick={e => { e.preventDefault(); onCal?.(n); }} className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${cal === n ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{calTexto(n)}</button>
+              ))}
+              <span className="text-[9px] font-bold text-slate-400">mm</span>
+            </span>
+          )}
+          <span className="flex items-center gap-4">
+            {([[onRigido, rigido, 'Rígido', 'Canto rígido; sin marcar va flexible'], [onRh, rh, 'RH', 'Resistente a la humedad']] as const).filter(([f]) => f).map(([f, v, t, title]) => (
+              <span key={t} className="flex items-center gap-1 text-[10px] font-black text-slate-600 cursor-pointer" title={title} onClick={e => { e.preventDefault(); f!(!v); }} role="checkbox" aria-checked={!!v}>
+                <span className={`w-4 h-4 rounded border flex items-center justify-center ${v ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300'}`}>{v ? '✓' : ''}</span>{t}
+              </span>
+            ))}
+          </span>
+        </span>
+      )}
+    </label>
+  );
+};
+
 const IslandApplianceFields: React.FC<{
   stove?: { distance: number | string }; sink?: { distance: number | string };
   onToggle: (kind: 'stove' | 'sink', on: boolean) => void;
   onDistance: (kind: 'stove' | 'sink', value: string) => void;
-}> = ({ stove, sink, onToggle, onDistance }) => (
+  campana?: boolean; onCampana?: (on: boolean) => void; // campana de isla (solo con estufa)
+}> = ({ stove, sink, onToggle, onDistance, campana, onCampana }) => (
   <div className="space-y-2 pt-1">
     {([['stove', 'Lleva estufa', stove], ['sink', 'Lleva poceta / fregadero', sink]] as const).map(([kind, label, val]) => (
       <div key={kind} className="space-y-1">
@@ -213,6 +280,12 @@ const IslandApplianceFields: React.FC<{
               className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"
             />
           </div>
+        )}
+        {kind === 'stove' && val && onCampana && (
+          <label className="flex items-center gap-2 text-[10px] font-black text-slate-600 uppercase tracking-wide pt-1">
+            <input type="checkbox" checked={!!campana} onChange={(e) => onCampana(e.target.checked)} />
+            Lleva campana de isla
+          </label>
         )}
       </div>
     ))}
@@ -539,7 +612,7 @@ export default function App() {
   const [dilatationGap, setDilatationGap] = useState(DILATATION_GAP_DEFAULT);
   const [dilatationDepth, setDilatationDepth] = useState(DILATATION_DEPTH_DEFAULT);
   // Qué se ve en la escena (solo visual: no cambia el diseño, el despiece ni la exportación)
-  const [visibility, setVisibility] = useState({ upper: true, lower: true, counter: true, appliances: true, doors: true, shelves: true, cajonero: true, costado: true, dims: true, wallA: true, wallB: true, wallC: true, hoja: true, marco: true, tapaluz: true });
+  const [visibility, setVisibility] = useState({ isla: true, muros: true, upper: true, lower: true, counter: true, appliances: true, doors: true, shelves: true, cajonero: true, costado: true, dims: true, wallA: true, wallB: true, wallC: true, hoja: true, marco: true, tapaluz: true });
   const [hasLeftClosure, setHasLeftClosure] = useState(false);
   const [hasRightClosure, setHasRightClosure] = useState(false);
 
@@ -554,6 +627,17 @@ export default function App() {
   // BOM y configuración de producto
   const [lineType, setLineType] = useState<'Básica' | 'Media' | 'Alta'>('Media');
   const [faceColor, setFaceColor] = useState('Blanco');
+  const [acabadosGuardados, setAcabados] = useState<Acabados>(ACABADOS);
+  // siempre completos: un diseño guardado antes (o el estado de antes de una actualización) puede no traer fondo, calibres ni RH
+  const acabados = useMemo(() => {
+    const a = completarAcabados(acabadosGuardados);
+    return { ...a, MA: { ...a.MA, fach: { ...a.MA.fach, color: a.MA.fach.color || faceColor } }, MB: { ...a.MB, fach: { ...a.MB.fach, color: faceColor } } };
+  }, [acabadosGuardados, faceColor]);
+  // cambia un tablero de un nivel; la fachada de MB es el color de fachada general
+  const setTablero = (n: 'MA' | 'MB', k: keyof AcabadosNivel, p: Partial<Tablero>) => {
+    if (n === 'MB' && k === 'fach' && p.color !== undefined) setFaceColor(p.color);
+    setAcabados(prev => { const a = completarAcabados(prev); return { ...a, [n]: { ...a[n], [k]: { ...a[n][k], ...p } } }; });
+  }; // estructura por tipo de mueble, canto del frente y sistema gola
   const [bom, setBom] = useState<BOM | null>(null);
 
   const [appliances, setAppliances] = useState<Appliance[]>([
@@ -632,8 +716,8 @@ export default function App() {
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
     hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, closet, fit, puerta, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
-    modules, specialModules, appliances, hasIsland, lineType, faceColor,
-  }), [puerta, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
+    modules, specialModules, appliances, hasIsland, lineType, faceColor, acabados,
+  }), [acabados, puerta, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
     hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, closet, fit, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
     modules, specialModules, appliances, hasIsland, lineType, faceColor]);
@@ -704,7 +788,7 @@ export default function App() {
     setCounterOverhang(snap.counterOverhang); setHasSplash(snap.hasSplash); setSplashHeight(snap.splashHeight); setCounterExtras(snap.counterExtras); setIslands(snap.islands); setColumns(snap.columns ?? []); setFit({ ...DEFAULT_FIT, ...(snap.fit ?? {}) }); setCloset({ ...DEFAULT_CLOSET, ...(snap.closet ?? {}) }); setLArm(snap.lArm); setHasLeftClosure(snap.hasLeftClosure); setHasRightClosure(snap.hasRightClosure);
     setHasDilatation(snap.hasDilatation); setDilatationGap(snap.dilatationGap); setDilatationDepth(snap.dilatationDepth);
     setModules(snap.modules); setSpecialModules(snap.specialModules); setAppliances(snap.appliances);
-    setHasIsland(snap.hasIsland); setLineType(snap.lineType); setFaceColor(snap.faceColor);
+    setHasIsland(snap.hasIsland); setLineType(snap.lineType); setFaceColor(snap.faceColor); setAcabados(completarAcabados(snap.acabados));
   };
 
   // Cada sección guarda su propio diseño: al cambiar de sección se guarda el actual y se carga el de la otra (o uno nuevo con sus valores)
@@ -984,10 +1068,11 @@ export default function App() {
     puerta: cfg.id === 'puertas' ? puerta : undefined, wallThickness: cfg.id === 'puertas' ? puerta.espesor : undefined, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
     modules: labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, closet: closetInput, fit: fitInput, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth, costadosCortos, corredera,
-  }), [costadosCortos, corredera, cfg.id, puerta, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, closetInput, fitInput, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
+    calEstructura: { MA: acabados.MA.est.cal, MB: acabados.MB.est.cal, otros: acabados.MB.est.cal },
+  }), [acabados.MA.est.cal, acabados.MB.est.cal, costadosCortos, corredera, cfg.id, puerta, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, closetInput, fitInput, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
 
   // Fase 0: lista de piezas única, sacada de las mismas cajas que se dibujan
-  const lista = useMemo(() => listaDePiezas(boxes, { lineType, faceColor, puerta: cfg.id === 'puertas' ? puerta : undefined, abiertos: modules.filter(m => m.frontsLayout === 'open').map(m => m.uniqueId) }), [boxes, lineType, faceColor, cfg.id, puerta, modules]);
+  const lista = useMemo(() => listaDePiezas(boxes, { lineType, faceColor: colorDeCatalogo(faceColor)?.nombre ?? faceColor, acabados, puerta: cfg.id === 'puertas' ? puerta : undefined, abiertos: modules.filter(m => m.frontsLayout === 'open').map(m => m.uniqueId) }), [boxes, lineType, faceColor, acabados, cfg.id, puerta, modules]);
   // Regla: ningún módulo puede ocupar el mismo espacio que un electrodoméstico (ni otro módulo)
   const collisions = useMemo(() => findCollisions(boxes), [boxes]);
   const collidingBoxes = useMemo(() => {
@@ -1759,7 +1844,23 @@ export default function App() {
     setSuggestMessage('Modulando la isla o península...');
     await new Promise(resolve => setTimeout(resolve, 500));
     const ids = new Set(activeIslands.map(i => i.id));
-    setModules(prev => [...prev.filter(m => !(m.wall === 'Island' && m.islandId && ids.has(m.islandId))), ...activeIslands.flatMap(isl => buildIslandRow(isl, [900, 600, 300], currentBaseModuleHeight, appliances.find(a => a.type === 'stove')?.width, appliances.find(a => a.type === 'sink')?.width))]);
+    // la cascada (o el frentero) que ya tenga el mesón de la isla ocupa un espesor dentro de la medida general:
+    // el módulo de ese extremo se acorta ese espesor, igual que cuando se activa la cascada
+    const recortarExtremos = (isl: IslandItem, row: KitchenModule[]): KitchenModule[] => {
+      const ex = counterExtras[`counter-isla-${isl.id}-0`];
+      if (!ex || row.length === 0) return row;
+      const fr = (side: 'left' | 'right') => ex.edge?.kind === 'frentero' && ex.edge.sides[side];
+      const izq = !!ex.waterfallLeft || fr('left'), der = !!ex.waterfallRight || fr('right');
+      const first = row.reduce((p, q) => (q.positionX < p.positionX ? q : p));
+      const last = row.reduce((p, q) => (q.positionX + q.width > p.positionX + p.width ? q : p));
+      return row.map(m => {
+        let n = m;
+        if (izq && m.uniqueId === first.uniqueId && n.width - counterThickness >= 15) n = { ...n, width: n.width - counterThickness, positionX: n.positionX + counterThickness };
+        if (der && m.uniqueId === last.uniqueId && n.width - counterThickness >= 15) n = { ...n, width: n.width - counterThickness };
+        return n;
+      });
+    };
+    setModules(prev => [...prev.filter(m => !(m.wall === 'Island' && m.islandId && ids.has(m.islandId))), ...activeIslands.flatMap(isl => recortarExtremos(isl, buildIslandRow(isl, [900, 600, 300], currentBaseModuleHeight, appliances.find(a => a.type === 'stove')?.width, appliances.find(a => a.type === 'sink')?.width)))]);
     setIsSuggesting(false);
     setActiveTab('design');
   };
@@ -3813,8 +3914,82 @@ export default function App() {
       sink: islandDraft.sink ? { distance: Math.max(0, Math.round(parseFloat(islandDraft.sink.distance) || 0)) } : undefined }]);
     setIslandDraft(d => ({ ...d, kind: null, stove: null, sink: null }));
   };
+  // formulario propio de la isla (doble clic en ella): medidas, barra, alistonado, electrodomésticos y su mesón
+  const [islaAbierta, setIslaAbierta] = useState<string | null>(null);
+  const aplicarMesonIsla = useRef<(() => void) | null>(null);
   const updateIsland = (id: string, patch: Partial<IslandItem>) => setIslands(prev => prev.map(i => (i.id === id ? { ...i, ...patch, ...(i.kind === 'peninsula' ? { dx: 0 } : {}) } : i)));
   const removeIsland = (id: string) => { setIslands(prev => prev.filter(i => i.id !== id)); setModules(prev => prev.filter(m => m.islandId !== id)); };
+
+  const contenidoIsla = (isl: IslandItem) => (
+    <>
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-black text-indigo-700 uppercase">{isl.kind === 'isla' ? 'Isla' : 'Península'} {isl.length} × {isl.width}{isl.kind === 'peninsula' && layout !== 'L_SHAPE' ? ' · inactiva (solo en L)' : ''}</p>
+        {pendingDelete === isl.id ? (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] font-black text-slate-600 uppercase">¿Eliminar?</span>
+            <button onClick={() => { removeIsland(isl.id); setPendingDelete(null); }} className="px-2 py-1 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[9px] font-black uppercase">Sí</button>
+            <button onClick={() => setPendingDelete(null)} className="px-2 py-1 rounded-lg bg-white text-slate-500 hover:text-slate-700 text-[9px] font-black uppercase border border-slate-200">No</button>
+          </div>
+        ) : (
+          <button onClick={() => setPendingDelete(isl.id)} className="p-1 rounded-lg bg-white text-slate-400 hover:text-red-500" title="Eliminar"><X size={14} /></button>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {(['isla', 'peninsula'] as const).map(k => (
+          <button
+            key={k}
+            disabled={k === 'peninsula' && layout !== 'L_SHAPE' && isl.kind !== 'peninsula'}
+            title={k === 'peninsula' && layout !== 'L_SHAPE' ? 'La península solo se crea en cocinas en L' : undefined}
+            onClick={() => updateIsland(isl.id, k === 'peninsula' ? { kind: 'peninsula' } : { kind: 'isla', dx: 1000 })}
+            className={`py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide border-2 disabled:opacity-40 disabled:cursor-not-allowed ${isl.kind === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}
+          >{k === 'isla' ? 'Isla' : 'Península'}</button>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {([['length', 'Largo'], ['width', 'Ancho'], ['dx', 'Cota X desde 0'], ['dy', 'Cota Y desde 0'], ['bar', 'Barra']] as const).map(([key, label]) => (
+          <div key={key} className="space-y-1"><div className="flex items-center justify-between gap-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label><MeasureSketch kind={({ length: 'iL', width: 'iW', dx: 'iX', dy: 'iY', bar: 'iBar' } as const)[key]} /></div>
+            <input type="number" disabled={isl.kind === 'peninsula' && key === 'dx'} value={isl[key]} onChange={(e) => updateIsland(isl.id, { [key]: Math.max(key === 'length' || key === 'width' ? 300 : 0, parseInt(e.target.value) || 0) })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
+        ))}
+      </div>
+      {(() => {
+        // espaldar alistonado de la isla o península (parte posterior de los módulos): listones del piso al mesón, con fondo de 6 o 15 o sin fondo
+        const L = isl.alistonado;
+        const setL = (p: Partial<NonNullable<typeof L>>) => updateIsland(isl.id, { alistonado: { ancho: 65, esp: 15, sep: 35, fondo: 0, ...(L ?? {}), ...p } });
+        return (
+          <div className="space-y-2">
+            <button type="button" onClick={() => updateIsland(isl.id, { alistonado: L ? undefined : { ancho: 65, esp: 15, sep: 35, fondo: 0 } })} className={`w-full flex items-center justify-between px-3 py-1.5 rounded-full border text-[10px] font-black uppercase transition-colors ${L ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+              <span>Espaldar alistonado</span>
+              <span className={`flex items-center w-8 h-4 rounded-full p-0.5 ${L ? 'bg-white/40 justify-end' : 'bg-slate-200 justify-start'}`}><span className="w-3 h-3 rounded-full bg-white shadow" /></span>
+            </button>
+            {L && (
+              <>
+                <div className="grid grid-cols-3 gap-2">
+                  {([['ancho', 'Ancho listón'], ['esp', 'Espesor'], ['sep', 'Separación']] as const).map(([k, label]) => (
+                    <div key={k} className="space-y-1">
+                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
+                      <DeferredNumber value={L[k]} onCommit={(n) => setL({ [k]: Math.max(k === 'sep' ? 0 : 3, Math.round(n)) })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {([[0, 'Sin fondo'], [6, 'Fondo 6'], [15, 'Fondo 15']] as const).map(([v, label]) => (
+                    <button key={v} type="button" onClick={() => setL({ fondo: v })} className={`py-1.5 rounded-lg text-[9px] font-black uppercase border-2 ${(L.fondo ?? 0) === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
+      <IslandApplianceFields
+        stove={isl.stove}
+        sink={isl.sink}
+        onToggle={(k, on) => updateIsland(isl.id, { [k]: on ? { distance: k === 'stove' ? 0 : 900 } : undefined, ...(k === 'stove' && !on ? { campana: false } : {}) })}
+        onDistance={(k, v) => updateIsland(isl.id, { [k]: { distance: Math.max(0, parseInt(v) || 0) } })}
+        campana={isl.campana} onCampana={on => updateIsland(isl.id, { campana: on })}
+      />
+    </>
+  );
 
   type SpecialItem = { id: string; kind: 'tall-pantry' | 'tall-oven'; name: string; active: boolean; width: number; distance: number };
 
@@ -4082,6 +4257,26 @@ export default function App() {
                         )}
                       </div>
                     ))}
+                    {/* Campana de isla: va sobre la estufa de la isla o península; se activa y desactiva aquí o en la configuración de la isla */}
+                    {cfg.accessories.includes('hood-under') && (() => {
+                      const conEstufa = activeIslands.filter(i => i.stove);
+                      const on = conEstufa.length > 0 && conEstufa.some(i => i.campana);
+                      return (
+                        <div className={`p-4 rounded-3xl border-2 transition-all space-y-2 ${on ? 'bg-indigo-50 border-indigo-600' : 'bg-white border-slate-100'}`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className={`p-2 rounded-xl ${on ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'}`}><Wind size={20} /></div>
+                              <div>
+                                <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">Campana de isla</p>
+                                <p className="text-[9px] font-bold text-slate-400 uppercase">{conEstufa.length === 0 ? 'Necesita una isla con estufa' : on ? 'Activo' : 'Desactivado'}</p>
+                              </div>
+                            </div>
+                            <button disabled={conEstufa.length === 0} onClick={() => conEstufa.forEach(i => updateIsland(i.id, { campana: !on }))} className={`w-10 h-5 rounded-full transition-all relative disabled:opacity-40 ${on ? 'bg-indigo-600' : 'bg-slate-200'}`}><div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${on ? 'left-5' : 'left-0.5'}`} /></button>
+                          </div>
+                          {conEstufa.length === 0 && <p className="text-[9px] font-bold text-slate-400">Agrega una isla o península y marca "Lleva estufa" en su configuración.</p>}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -4260,8 +4455,70 @@ export default function App() {
                 </div>
               </Modal>
 
+              {(() => {
+                const isl = islands.find(i => i.id === islaAbierta);
+                if (!isl) return null;
+                const meson = boxes.find(b => b.kind === 'counter' && b.islandId === isl.id);
+                return (
+                  <Modal isOpen onClose={() => { setIslaAbierta(null); aplicarMesonIsla.current = null; }} onApply={() => aplicarMesonIsla.current?.()} title={isl.kind === 'peninsula' ? 'Península' : 'Isla'}>
+                    <div className="space-y-4">
+                      <div className="p-3 rounded-2xl bg-indigo-50 border border-indigo-200 space-y-2">{contenidoIsla(isl)}</div>
+                      <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Mesón de la {isl.kind === 'peninsula' ? 'península' : 'isla'}</p>
+                        {meson ? (
+                          <CounterEditor key={meson.id} box={meson} wall={meson.wall} settings={{ thickness: counterThickness, overhang: counterOverhang, hasSplash, splashHeight }}
+                            sides={ladosDelMeson(meson, boxes, counterExtras)}
+                            onApply={(st, now) => applyCounterEdit(st, meson.id, cambiosDelMeson(meson, boxes, counterExtras, now))}
+                            onClose={() => {}} registrar={fn => { aplicarMesonIsla.current = fn; }} />
+                        ) : (
+                          <p className="text-[10px] font-bold text-slate-500">{hasCounter ? 'Aparece cuando la isla tenga módulos: usa "Modular isla / península".' : 'El mesón está apagado: actívalo en Espacio.'}</p>
+                        )}
+                      </div>
+                    </div>
+                  </Modal>
+                );
+              })()}
               <Modal isOpen={isWorkspaceModalOpen} onClose={() => setIsWorkspaceModalOpen(false)} onApply={addIsland} title="Configuración de Espacio">
                 <div className="space-y-8">
+                  {/* Colores y sistema: estructura por tipo de mueble, fachada, canto del frente y gola */}
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Colores y sistema</label>
+                    <div className={`grid ${cfg.hasUpper ? 'grid-cols-2 divide-x divide-slate-300' : 'grid-cols-1'}`}>
+                      {((cfg.hasUpper ? ['MA', 'MB'] : ['MB']) as ('MA' | 'MB')[]).map(n => (
+                        <div key={n} className={`space-y-4 min-w-0 ${cfg.hasUpper ? (n === 'MA' ? 'pr-4' : 'pl-4') : ''}`}>
+                          <div className="text-[11px] font-black text-indigo-700 uppercase pb-1 border-b border-indigo-100">{cfg.id === 'cocinas' ? (n === 'MA' ? 'Mueble aéreo' : 'Muebles base') : (n === 'MA' ? cfg.upperName : cfg.lowerName)}</div>
+                          {([['est', 'Estructura', CALIBRES.estructura, true], ['fach', 'Fachada', CALIBRES.fachada, true], ['fondo', 'Espaldares y fondos', CALIBRES.fondo, false]] as const).map(([k, t, cals, canto]) => (
+                            <CampoColor key={k} label={t} value={acabados[n][k].color} onChange={v => setTablero(n, k, { color: v })}
+                              calibres={cals as unknown as number[]} cal={acabados[n][k].cal} onCal={c => setTablero(n, k, { cal: c })}
+                              rh={acabados[n][k].rh} onRh={v => setTablero(n, k, { rh: v })}
+                              {...(canto ? { rigido: acabados[n][k].rigido, onRigido: (v: boolean) => setTablero(n, k, { rigido: v }) } : {})} />
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                    {(['MA', 'MB'] as const).some(n => esBlanco(acabados[n].est.color) && !esBlanco(acabados[n].fach.color)) && (
+                      <div className="p-3 bg-slate-50 rounded-2xl space-y-2">
+                        <div className="text-[11px] font-black text-slate-700">La estructura es blanca y la fachada es de color. ¿El canto del frente va del color de la fachada?</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([[true, 'Sí, del color de la fachada'], [false, 'No, todo blanco']] as const).map(([v, t]) => (
+                            <button key={String(v)} type="button" onClick={() => setAcabados(a => ({ ...a, cantoFachada: v }))} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.cantoFachada === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
+                          ))}
+                        </div>
+                        {acabados.cantoFachada && <div className="text-[10px] font-bold text-slate-400">Laterales y entrepaños: 1L del color de la fachada y 2A blanco. Bases y tapas: 1L del color de la fachada.</div>}
+                      </div>
+                    )}
+                    {cfg.id === 'cocinas' && (
+                      <div className="space-y-1">
+                        <div className="text-[9px] font-black text-slate-400 uppercase px-1">Sistema gola</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([['melamina', 'En melamina (puente en L)'], ['aluminio', 'En aluminio (perfil)']] as const).map(([v, t]) => (
+                            <button key={v} type="button" onClick={() => setAcabados(a => ({ ...a, gola: v }))} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.gola === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="text-[10px] font-bold text-slate-400">En el diseño se ven tonos parecidos; el color real se ve en el render.</div>
+                  </div>
                   <div className="space-y-4">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Tipo de {cfg.singular}</label>
                     <div className="grid grid-cols-3 gap-3">
@@ -4536,71 +4793,7 @@ export default function App() {
 
                       {islands.map(isl => (
                         <div key={isl.id} className="p-3 rounded-2xl bg-indigo-50 border border-indigo-200 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <p className="text-[10px] font-black text-indigo-700 uppercase">{isl.kind === 'isla' ? 'Isla' : 'Península'} {isl.length} × {isl.width}{isl.kind === 'peninsula' && layout !== 'L_SHAPE' ? ' · inactiva (solo en L)' : ''}</p>
-                            {pendingDelete === isl.id ? (
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[9px] font-black text-slate-600 uppercase">¿Eliminar?</span>
-                                <button onClick={() => { removeIsland(isl.id); setPendingDelete(null); }} className="px-2 py-1 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[9px] font-black uppercase">Sí</button>
-                                <button onClick={() => setPendingDelete(null)} className="px-2 py-1 rounded-lg bg-white text-slate-500 hover:text-slate-700 text-[9px] font-black uppercase border border-slate-200">No</button>
-                              </div>
-                            ) : (
-                              <button onClick={() => setPendingDelete(isl.id)} className="p-1 rounded-lg bg-white text-slate-400 hover:text-red-500" title="Eliminar"><X size={14} /></button>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            {(['isla', 'peninsula'] as const).map(k => (
-                              <button
-                                key={k}
-                                disabled={k === 'peninsula' && layout !== 'L_SHAPE' && isl.kind !== 'peninsula'}
-                                title={k === 'peninsula' && layout !== 'L_SHAPE' ? 'La península solo se crea en cocinas en L' : undefined}
-                                onClick={() => updateIsland(isl.id, k === 'peninsula' ? { kind: 'peninsula' } : { kind: 'isla', dx: 1000 })}
-                                className={`py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide border-2 disabled:opacity-40 disabled:cursor-not-allowed ${isl.kind === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}
-                              >{k === 'isla' ? 'Isla' : 'Península'}</button>
-                            ))}
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            {([['length', 'Largo'], ['width', 'Ancho'], ['dx', 'Cota X desde 0'], ['dy', 'Cota Y desde 0'], ['bar', 'Barra']] as const).map(([key, label]) => (
-                              <div key={key} className="space-y-1"><div className="flex items-center justify-between gap-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label><MeasureSketch kind={({ length: 'iL', width: 'iW', dx: 'iX', dy: 'iY', bar: 'iBar' } as const)[key]} /></div>
-                                <input type="number" disabled={isl.kind === 'peninsula' && key === 'dx'} value={isl[key]} onChange={(e) => updateIsland(isl.id, { [key]: Math.max(key === 'length' || key === 'width' ? 300 : 0, parseInt(e.target.value) || 0) })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
-                            ))}
-                          </div>
-                          {(() => {
-                            // espaldar alistonado de la isla o península (parte posterior de los módulos): listones del piso al mesón, con fondo de 6 o 15 o sin fondo
-                            const L = isl.alistonado;
-                            const setL = (p: Partial<NonNullable<typeof L>>) => updateIsland(isl.id, { alistonado: { ancho: 65, esp: 15, sep: 35, fondo: 0, ...(L ?? {}), ...p } });
-                            return (
-                              <div className="space-y-2">
-                                <button type="button" onClick={() => updateIsland(isl.id, { alistonado: L ? undefined : { ancho: 65, esp: 15, sep: 35, fondo: 0 } })} className={`w-full flex items-center justify-between px-3 py-1.5 rounded-full border text-[10px] font-black uppercase transition-colors ${L ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
-                                  <span>Espaldar alistonado</span>
-                                  <span className={`flex items-center w-8 h-4 rounded-full p-0.5 ${L ? 'bg-white/40 justify-end' : 'bg-slate-200 justify-start'}`}><span className="w-3 h-3 rounded-full bg-white shadow" /></span>
-                                </button>
-                                {L && (
-                                  <>
-                                    <div className="grid grid-cols-3 gap-2">
-                                      {([['ancho', 'Ancho listón'], ['esp', 'Espesor'], ['sep', 'Separación']] as const).map(([k, label]) => (
-                                        <div key={k} className="space-y-1">
-                                          <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label}</label>
-                                          <DeferredNumber value={L[k]} onCommit={(n) => setL({ [k]: Math.max(k === 'sep' ? 0 : 3, Math.round(n)) })} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
-                                        </div>
-                                      ))}
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-1.5">
-                                      {([[0, 'Sin fondo'], [6, 'Fondo 6'], [15, 'Fondo 15']] as const).map(([v, label]) => (
-                                        <button key={v} type="button" onClick={() => setL({ fondo: v })} className={`py-1.5 rounded-lg text-[9px] font-black uppercase border-2 ${(L.fondo ?? 0) === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{label}</button>
-                                      ))}
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                            );
-                          })()}
-                          <IslandApplianceFields
-                            stove={isl.stove}
-                            sink={isl.sink}
-                            onToggle={(k, on) => updateIsland(isl.id, { [k]: on ? { distance: k === 'stove' ? 0 : 900 } : undefined })}
-                            onDistance={(k, v) => updateIsland(isl.id, { [k]: { distance: Math.max(0, parseInt(v) || 0) } })}
-                          />
+                          {contenidoIsla(isl)}
                         </div>
                       ))}
                       </>}
@@ -4756,6 +4949,7 @@ export default function App() {
               {/* Las 4 vistas (planta, frontal, isométrica y 3D) son cámaras de la misma escena 3D */}
               {(
                 <KitchenViewer3D
+                  colores={{ fachada: hexDe(acabados.MB.fach.color), fachadaMA: hexDe(acabados.MA.fach.color), ma: hexDe(acabados.MA.est.color, '#f4f4f1'), mb: hexDe(acabados.MB.est.color, '#f4f4f1'), otros: hexDe(acabados.MB.est.color, '#f4f4f1'), fondo: hexDe(acabados.MB.fondo.color, '#e5e7eb'), fondoMA: hexDe(acabados.MA.fondo.color, '#e5e7eb') }}
                   wallThickMm={cfg.id === 'puertas' ? puerta.espesor : undefined}
                   puertaApi={cfg.id === 'puertas' ? { cfg: puerta, onChange: setPuerta, onOpenForm: () => setPuertaHidden(false) } : undefined}
                   layout={layout} 
@@ -4773,6 +4967,7 @@ export default function App() {
                   islands={activeIslands}
                   lArm={lArm}
                   onEditIsland={updateIsland}
+                  onAbrirIsla={setIslaAbierta}
                   fitApi={isFitSection && fitInput ? { fit: fitInput, onChange: setFit } : undefined}
                   closetForm={isClosetSection && closetDerivedValues ? {
                     config: closet.twoCajoneros ? { ...closet, cajoneroPos: closet.twoPlacement === 'extremos' ? 'left' : 'center' } : closet,
@@ -5207,7 +5402,7 @@ export default function App() {
                   )}
                   <div className="w-px h-6 bg-slate-200" />
                   <div className="flex gap-1">
-                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos'], ['doors', 'Puertas', 'las puertas corredizas'], ['shelves', 'Entrepaños', 'los entrepaños'], ['cajonero', 'Cajonero', 'el cajonero'], ['costado', 'Costado', 'el costado piso a techo'], ['hoja', 'Hoja', 'la hoja y la chapa'], ['marco', 'Marco', 'los marcos, batientes y dilatadas'], ['tapaluz', 'Tapaluz', 'el tapaluz'], ['dims', 'Dimensiones', 'las notas de dimensiones'], ['wallA', 'A', 'el muro A con sus cubos'], ['wallB', 'B', 'el muro B con sus cubos'], ['wallC', 'C', 'el muro C con sus cubos']] as const).filter(([key]) => ((key !== 'hoja' && key !== 'marco' && key !== 'tapaluz') || cfg.id === 'puertas') && (cfg.id !== 'puertas' || key === 'hoja' || key === 'marco' || key === 'tapaluz') && (key !== 'dims' || isFitSection) && (key !== 'wallA' || (isFitSection && layout !== 'STRAIGHT')) && (key !== 'wallB' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')))) && (key !== 'wallC' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')))) && ((key !== 'doors' && key !== 'shelves' && key !== 'cajonero' && key !== 'costado') || isClosetSection || (key as string) === 'dims' || (key as string).startsWith('wall')) && (key !== 'upper' || (cfg.hasUpper && !isClosetSection && !isFitSection)) && (key !== 'lower' || !(isClosetSection || isFitSection)) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
+                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos'], ['isla', 'Isla', 'las islas y penínsulas'], ['muros', 'Muros', 'los muros'], ['doors', 'Puertas', 'las puertas corredizas'], ['shelves', 'Entrepaños', 'los entrepaños'], ['cajonero', 'Cajonero', 'el cajonero'], ['costado', 'Costado', 'el costado piso a techo'], ['hoja', 'Hoja', 'la hoja y la chapa'], ['marco', 'Marco', 'los marcos, batientes y dilatadas'], ['tapaluz', 'Tapaluz', 'el tapaluz'], ['dims', 'Dimensiones', 'las notas de dimensiones'], ['wallA', 'A', 'el muro A con sus cubos'], ['wallB', 'B', 'el muro B con sus cubos'], ['wallC', 'C', 'el muro C con sus cubos']] as const).filter(([key]) => (key !== 'isla' || (cfg.features.islands && islands.length > 0)) && (key !== 'muros' || cfg.id !== 'puertas') && ((key !== 'hoja' && key !== 'marco' && key !== 'tapaluz') || cfg.id === 'puertas') && (cfg.id !== 'puertas' || key === 'hoja' || key === 'marco' || key === 'tapaluz') && (key !== 'dims' || isFitSection) && (key !== 'wallA' || (isFitSection && layout !== 'STRAIGHT')) && (key !== 'wallB' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')))) && (key !== 'wallC' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')))) && ((key !== 'doors' && key !== 'shelves' && key !== 'cajonero' && key !== 'costado') || isClosetSection || (key as string) === 'dims' || (key as string).startsWith('wall')) && (key !== 'upper' || (cfg.hasUpper && !isClosetSection && !isFitSection)) && (key !== 'lower' || !(isClosetSection || isFitSection)) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
                       <button
                         key={key}
                         onClick={() => setVisibility(v => ({ ...v, [key]: !v[key] }))}
@@ -5482,7 +5677,7 @@ export default function App() {
         {activeTab === 'render' && (
           <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-6">Render</h2>
-            <RenderVista boxes={boxes} faceColor={faceColor} lineType={lineType} nombre={cfg.name} producto={productoActivo?.nombre ?? null}
+            <RenderVista key={`${faceColor}|${acabados.MB.est.color}`} boxes={boxes} faceColor={faceColor} lineType={lineType} nombre={cfg.name} estructura={acabados.MB.est.color} producto={productoActivo?.nombre ?? null}
               onGuardar={productoActivo ? async (url, tipo) => { await subirDocumentos(productoActivo.id, [{ tipo, nombre: `${tipo === 'render' ? 'Render' : 'Foto_IA'}_${productoActivo.nombre.replace(/\s+/g, '_')}.png`, archivo: archivoDeDataURL(url) }], false); } : undefined} />
           </div>
         )}

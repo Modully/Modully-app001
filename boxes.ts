@@ -32,7 +32,7 @@ export interface CounterExtras {
   waterfallBottomLeft?: number;
   waterfallBottomRight?: number;
 }
-export type BoxFacing = '+Y' | '+X' | '-X' | null; // hacia dónde mira el frente del módulo
+export type BoxFacing = '+Y' | '-Y' | '+X' | '-X' | null; // hacia dónde mira el frente del módulo
 
 /** Abertura rectangular en una caja (mesón): misma convención de coordenadas que las cajas */
 export interface Cutout {
@@ -112,6 +112,7 @@ export const CLOSET_TOP_MARGIN = 5;      // en closets se deja 5 mm al techo
 export const FRIDGE_CLEARANCE = 50;      // mm
 export const OVER_FRIDGE_DEPTH = 500;    // mm (más profundo que los demás aéreos, que miden 330)
 // Dilatación: los módulos pegados a un muro dejan una holgura (por los muros descuadrados) que se tapa con una pieza
+export const ISLAND_HOOD_GAP = 750;          // campana de isla: altura de su borde inferior sobre el mesón (mm)
 export const DILATATION_GAP_DEFAULT = 15;    // holgura contra el muro y espesor de la pieza (mm)
 export const DILATATION_DEPTH_DEFAULT = 70;  // fondo de la pieza, medido desde el frente del módulo (mm)
 export const CLOSURE_THICKNESS = 120;    // espesor de los muros auxiliares (mm)
@@ -163,6 +164,7 @@ export interface BuildBoxesInput {
   modules: KitchenModule[];
   appliances: Appliance[];
   corredera?: { tipo: 'full' | 'oculta'; menos10?: boolean; fondo15?: boolean }; // corredera de los cajones (por defecto full extensión)
+  calEstructura?: { MA: number; MB: number; otros: number }; // calibre de la estructura (15 o 18) de aéreos, bajos y demás
   costadosCortos?: boolean; // opción del carpintero: puente L corrido entre varios bajos y costados internos 80 mm más cortos (no se les hace la caja)
   hasLeftClosure?: boolean;
   hasRightClosure?: boolean;
@@ -352,7 +354,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     const z = mod.type === 'UPPER' ? spaceHeight - TOP_MARGIN - (mod.topGap ?? 0) - mod.height : zh;
     // Isla o península: el módulo va a lo largo del largo de la isla, con el frente hacia +Y
     const p = isl
-      ? { x: isl.dx + mod.positionX, y: isl.dy + (mod.depthOffset ?? 0), sx: mod.width, sy: mod.depth, facing: '+Y' as BoxFacing }
+      ? { x: isl.dx + mod.positionX, y: isl.dy + (mod.depthOffset ?? 0), sx: mod.width, sy: mod.depth, facing: '-Y' as BoxFacing }
       : placeOnWall(mod.wall as WallName, mod.positionX, mod.width, mod.depth, armOrigin(mod.wall as WallName, mod.type === 'UPPER'), mod.depthOffset ?? 0);
     // Piezas laterales pegadas al módulo: la dilatada (con su propio fondo y alto) y el visto (todo el fondo). El ancho del
     // módulo ya viene restado, así que el conjunto ocupa la misma medida. De adentro hacia afuera: dilatada y luego visto.
@@ -414,13 +416,15 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     const ciego = ciegoInicio ? armDepth - mod.positionX : ciegoFin ? armDepth - (wallA - mod.positionX - mod.width) : 0; // largo del frente que queda tapado
     const esquinero = ciego > 0 && mod.width >= ciego + 10 + 300 ? (ciegoInicio ? 'inicio' : 'fin') : null;
     if (convertido) {
-      const E = PANEL_THICKNESS, W = mod.width, D = mod.depth, H = mod.height;
+      // espesor de la estructura según el tipo de mueble (15 por defecto; con 18 las bases, tapas y puentes quedan 6 mm más cortas)
+      const E = (mod.type === 'UPPER' ? input.calEstructura?.MA : mod.type === 'LOWER' ? input.calEstructura?.MB : input.calEstructura?.otros) ?? PANEL_THICKNESS, W = mod.width, D = mod.depth, H = mod.height;
       let n = 0;
       const tier = mod.type === 'UPPER' ? 'upper' : 'lower';
       const piece = (name: string, du: number, dv: number, dw: number, ou: number, ov: number, ow: number) => {
         if (du <= 0 || dv <= 0 || dw <= 0) return;
         let x0: number, y0: number, sx: number, sy: number;
-        if (boxWall === 'A') { sx = du; sy = dv; x0 = p.x + ou; y0 = p.y + p.sy - ov - dv; }
+        if (p.facing === '-Y') { sx = du; sy = dv; x0 = p.x + p.sx - ou - du; y0 = p.y + ov; } // isla: el frente mira hacia la cocina
+        else if (boxWall === 'A') { sx = du; sy = dv; x0 = p.x + ou; y0 = p.y + p.sy - ov - dv; }
         else if (boxWall === 'B') { sx = dv; sy = du; x0 = p.x + p.sx - ov - dv; y0 = p.y + ou; }
         else { sx = dv; sy = du; x0 = p.x + ov; y0 = p.y + ou; }
         boxes.push({
@@ -575,9 +579,9 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       fronts.forEach((f, i) => {
         const along = boxWall === 'A' ? 'x' : 'y';
         const alongStart = along === 'x' ? p.x : p.y;
-        const outward = p.facing === '+Y' ? { y: p.y + p.sy } : p.facing === '+X' ? { x: p.x + p.sx } : { x: p.x - T };
+        const outward = p.facing === '+Y' ? { y: p.y + p.sy } : p.facing === '-Y' ? { y: p.y - T } : p.facing === '+X' ? { x: p.x + p.sx } : { x: p.x - T };
         const pos = boxWall === 'A'
-          ? { x: alongStart + f.a0, y: outward.y as number, sx: f.a1 - f.a0, sy: T }
+          ? { x: p.facing === '-Y' ? p.x + p.sx - f.a1 : alongStart + f.a0, y: outward.y as number, sx: f.a1 - f.a0, sy: T }
           : { x: outward.x as number, y: alongStart + f.a0, sx: T, sy: f.a1 - f.a0 };
         boxes.push({
           id: `front-${mod.type === 'UPPER' ? 'upper' : 'lower'}-${mod.uniqueId}-${i}`, name: `${f.name} ${mod.label ?? ''}`.trim(), kind: 'front', wall: boxWall, islandId: isl?.id,
@@ -948,10 +952,19 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         mitreBottom: islMitre.length ? islMitre : undefined,
       });
       addEdgePieces(islId, 'A', { x: isl.dx, y: isl.dy, sx: isl.length, sy: isl.width, z: islTop, sz: counterThickness }, islEdgePlan, isl.id);
-      // espaldar alistonado: del piso al mesón, contra la parte posterior de los módulos (el frente es el de las puertas, hacia +Y)
+      // Campana de isla: centrada sobre el mueble de la estufa, la campana a 750 mm sobre el mesón y la chimenea hasta el techo
+      const estufaIsla = isl.campana ? lowers.find(lb => modules.find(m => m.uniqueId === lb.moduleId)?.isStoveCabinet) : undefined;
+      if (estufaIsla) {
+        const ancho = Math.max(600, Math.min(900, estufaIsla.sx)), fondo = 600, z0 = islTop + counterThickness + ISLAND_HOOD_GAP;
+        boxes.push({
+          id: `campana-isla-${isl.id}`, name: `Campana ${isl.kind === 'peninsula' ? 'península' : 'isla'}`, kind: 'appliance', applianceType: 'hood-island', wall: 'A', islandId: isl.id,
+          x: estufaIsla.x + estufaIsla.sx / 2 - ancho / 2, y: estufaIsla.y + estufaIsla.sy / 2 - fondo / 2, z: z0, sx: ancho, sy: fondo, sz: Math.max(200, spaceHeight - z0), facing: null,
+        });
+      }
+      // espaldar alistonado: del piso al mesón, contra la parte posterior de los módulos (las puertas miran a la cocina, hacia -Y; atrás queda la barra)
       if (isl.alistonado) {
-        const yBackMods = Math.min(...lowers.map(bx => bx.y));
-        listonBoxes(`isla-liston-${isl.id}`, isl.alistonado, isl.dx, yBackMods, 0, isl.length, islTop, { islandId: isl.id }, -1).forEach(b => boxes.push(b));
+        const yBackMods = Math.max(...lowers.map(bx => bx.y + bx.sy));
+        listonBoxes(`isla-liston-${isl.id}`, isl.alistonado, isl.dx, yBackMods, 0, isl.length, islTop, { islandId: isl.id }, 1).forEach(b => boxes.push(b));
       }
       // Visto o dilatada en un extremo de la isla con frentero o reengruese: pierde la altura de esa pieza y queda al ras
       if (islEdgePlan.edge) {

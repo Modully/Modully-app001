@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import type { Box } from './boxes';
 import type { BOMPiece } from './types';
 import { PuertaCfg, puertaDespiece } from './puertas';
+import { Acabados, calTexto, esBlanco, nivelDe } from './colores';
 
 /**
  * Fase 0 · Lista de piezas única.
@@ -109,6 +110,7 @@ export interface ContextoPiezas {
   lineType: string;   // Básica | Media | Alta
   faceColor: string;  // color de fachada del cliente
   puerta?: PuertaCfg; // sección Puertas: la puerta se despieza con su propia regla
+  acabados?: Acabados; // colores de estructura por tipo de mueble, canto del frente y sistema gola (si no se dan, manda la línea)
   abiertos?: string[]; // módulos abiertos (sin puertas): todas sus piezas van en el material de la fachada, también el fondo
 }
 
@@ -124,10 +126,16 @@ function etiquetaModulo(b: Box): { resto: string; etiqueta: string } | null {
   return { resto: l[1], etiqueta: `${tipo} ${l[2]}` };
 }
 
-function material(papel: Papel, ctx: ContextoPiezas): string {
-  const est = ctx.lineType === 'Básica' ? 'Blanco RH' : `${ctx.faceColor || 'Color'} RH`;
-  if (papel === 'fachada' || papel === 'liston') return ctx.faceColor || 'Color fachada';
-  if (papel === 'fondo') return 'Blanco 5,5'; // el fondo se pide de 6 pero su calibre real es 5,5
+/** Color de la fachada de ese tipo de mueble (aéreos con la suya; si no se dio, la general) */
+const fachadaDe = (ctx: ContextoPiezas, tipo?: string) => (ctx.acabados ? nivelDe(ctx.acabados, tipo).fach.color : '') || ctx.faceColor || 'Color fachada';
+
+function material(papel: Papel, ctx: ContextoPiezas, tipo?: string): string {
+  // estructura: el color elegido para ese tipo de mueble (aéreo, base u otros); sin acabados, según la línea
+  const a = ctx.acabados ? nivelDe(ctx.acabados, tipo) : null; // MA para los aéreos; MB para los demás
+  const est = a ? `${a.est.color || 'Blanco'}${a.est.rh ? ' RH' : ''}` : ctx.lineType === 'Básica' ? 'Blanco RH' : `${ctx.faceColor || 'Color'} RH`;
+  if (papel === 'fachada' || papel === 'liston') return `${fachadaDe(ctx, tipo)}${a?.fach.rh ? ' RH' : ''}`;
+  // fondo y espaldar: su color con el calibre real (se pide de 6 pero mide 5,5; también se vende de 2,5 y de 4)
+  if (papel === 'fondo') return a ? `${a.fondo.color || 'Blanco'}${a.fondo.rh ? ' RH' : ''} ${calTexto(a.fondo.cal)}` : 'Blanco 5,5';
   if (papel === 'meson') return 'Material del mesón';
   return est;
 }
@@ -202,6 +210,13 @@ export function listaDePiezas(boxes: Box[], ctx: ContextoPiezas): ListaPiezas {
       push({ name: 'Zócalo', quantity: tramos, length: Math.round(largoZ / tramos), width: Math.round(b.sz), thickness: 15, color: 'Blanco RH', edgeType: '1L', papel: 'estructura', modulos: [] }, moduloDe(b));
       return;
     }
+    // sistema gola en aluminio: el puente en L no es de melamina, es un perfil (va a herrajes por su largo)
+    if (ctx.acabados?.gola === 'aluminio' && /^(gola|puente l)/.test(n)) {
+      if (/vertical/.test(n)) return; // el perfil reemplaza las dos piezas del puente en L
+      const medida = `${Math.round(Math.max(b.sx, b.sy, b.sz))} mm`, k = `Perfil gola aluminio|${medida}`;
+      const h = herr.get(k); if (h) h.cant++; else herr.set(k, { nombre: 'Perfil gola aluminio', cant: 1, medida });
+      return;
+    }
     const r = REGLAS.find(x => x.re.test(n));
     let papel: Papel = r?.papel ?? 'estructura';
     const em = etiquetaModulo(b);
@@ -212,20 +227,32 @@ export function listaDePiezas(boxes: Box[], ctx: ContextoPiezas): ListaPiezas {
       if (parte === 'Puente' && em.etiqueta.startsWith('MA')) parte = 'Soporte';
       parte = `${parte} ${em.etiqueta}`;
       // fachada de cocina: 15 por defecto y 18 solo en la línea Alta
-      if (papel === 'fachada' && b.kind === 'front') cal = ctx.lineType === 'Alta' ? 18 : 15;
+      if (papel === 'fachada' && b.kind === 'front') cal = ctx.acabados ? nivelDe(ctx.acabados, em.etiqueta.split(' ')[0]).fach.cal : ctx.lineType === 'Alta' ? 18 : 15;
     }
     if (/^espaldar/.test(n) && cal >= 15) { canto = '2A'; papel = 'estructura'; } // espaldar de 15 (torre de hornos): tablero de estructura con canto en los dos anchos
     if (papel === 'fondo' && cal >= 15 && !/^espaldar/.test(n)) papel = 'estructura'; // fondo de cajón de 15 (corredera oculta): tablero de estructura, sin canto
-    let color = material(papel, ctx);
-    const esBlanca = ctx.lineType === 'Básica' && !!ctx.faceColor && !/^blanco/i.test(ctx.faceColor);
+    const tipoMueble = em?.etiqueta.split(' ')[0];
+    let color = material(papel, ctx, tipoMueble);
+    // calibre del fondo en la columna CAL: 3, 4 o 6 (el real va en el color)
+    if (papel === 'fondo' && ctx.acabados && cal < 15) cal = Math.ceil(nivelDe(ctx.acabados, tipoMueble).fondo.cal);
+    const fach = fachadaDe(ctx, tipoMueble);
+    // estructura blanca con fachada de otro color: el canto del frente va en el color de la fachada (si así se pidió)
+    const esBlanca = !!fach && !esBlanco(fach) && (ctx.acabados ? ctx.acabados.cantoFachada && esBlanco(color) : ctx.lineType === 'Básica');
     if (b.moduleId && ctx.abiertos?.includes(b.moduleId)) {
       // módulo abierto: todo en el material de la fachada, con el fondo del mismo color; se ve por dentro, así que sus cantos van completos
-      color = papel === 'fondo' ? `${ctx.faceColor || 'Color fachada'} 5,5` : (ctx.faceColor || 'Color fachada');
+      color = papel === 'fondo' ? `${fach} 5,5` : fach;
       if (papel === 'estructura' && canto && !/cajon/.test(n)) canto = /^(lateral|entrepano|base|piso|techo|tapa)/.test(n) ? '4L' : canto;
     } else if (esBlanca && papel === 'estructura' && em && canto) {
       // estructura Blanco RH con fachada de color: el canto del frente (el largo que se ve) va en el color de la fachada y los anchos en blanco
-      if (/^(lateral(?! cajon)|entrepano|base|piso|techo|tapa)/.test(n) && !/^tapa base/.test(n)) canto = canto.replace(/^1L/, `1L ${ctx.faceColor}`).replace(/2A$/, '2A Blanco');
-      else if (/^(gola|puente l)/.test(n)) canto = `2L ${ctx.faceColor}`;
+      if (/^(lateral(?! cajon)|entrepano|base|piso|techo|tapa)/.test(n) && !/^tapa base/.test(n)) canto = canto.replace(/^1L/, `1L ${fach}`).replace(/2A$/, '2A Blanco');
+      else if (/^(gola|puente l)/.test(n)) canto = `2L ${fach}`;
+    }
+    // canto rígido o flexible según lo elegido: estructura del tipo de mueble y fachada (R en cada grupo: 1LR, 2AR, 4LR)
+    if (ctx.acabados && canto) {
+      const nv = nivelDe(ctx.acabados, tipoMueble);
+      const rig = papel === 'fachada' ? nv.fach.rigido : papel === 'estructura' ? nv.est.rigido : undefined;
+      if (rig === true) canto = canto.replace(/(\d[LA])(?!R)/g, '$1R');
+      else if (rig === false) canto = canto.replace(/(\d[LA])R/g, '$1');
     }
     if (/^dilatada esquinero/.test(n)) an = 140; // las dos dilatadas de la esquina (70 + 70) salen de una pieza de 140
     push({ name: parte, quantity: 1, length: lar, width: an, thickness: cal, color, edgeType: canto, papel, modulos: [], confirmar: !r || r.confirmar }, moduloDe(b));
