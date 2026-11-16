@@ -58,6 +58,9 @@ export const Proyectos: React.FC<{
 }> = ({ seccion, diseñoActual, documentos, onProductoActivo, onAbrir }) => {
   const [docs, setDocs] = useState<Record<string, Documento[] | undefined>>({}); // documentos de cada producto (al desplegarlos)
   const [verDocs, setVerDocs] = useState<string | null>(null);
+  // confirmación dentro de la página (las ventanitas del navegador no aparecen en algunos visores, como el panel de la app)
+  const [confirmar, setConfirmar] = useState<{ texto: string; accion: () => void } | null>(null);
+  const pedir = (texto: string, accion: () => void) => setConfirmar({ texto, accion });
   const cargarDocs = async (id: string) => { const l = await listarDocumentos(id); setDocs(x => ({ ...x, [id]: l })); };
   const TIPO_DOC: Record<string, string> = { listado: 'Listado de corte (Excel)', laminas: 'Láminas', planos: 'Planos de ensamble', render: 'Render', foto_ia: 'Foto con IA', boceto: 'Boceto' };
   const [sesion, setSesion] = useState<Session | null>(null);
@@ -91,6 +94,17 @@ export const Proyectos: React.FC<{
         <span>Sesión: <span className="text-slate-800">{sesion.user.email}</span></span>
         <button onClick={() => salir()} className="rounded-xl px-3 py-1.5 border border-slate-200 text-slate-600 font-black">Salir</button>
       </div>
+      {confirmar && (
+        <div className="fixed inset-0 z-[300] bg-slate-900/40 flex items-center justify-center p-4" onClick={() => setConfirmar(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-5 max-w-sm w-full space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="text-sm font-black text-slate-800">{confirmar.texto}</div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirmar(null)} className="rounded-xl px-4 py-2 text-xs font-black border border-slate-200 text-slate-700">Cancelar</button>
+              <button onClick={() => { const f = confirmar.accion; setConfirmar(null); f(); }} className="rounded-xl px-4 py-2 text-xs font-black bg-rose-600 text-white">Sí, seguir</button>
+            </div>
+          </div>
+        </div>
+      )}
       {msg.error && <div className="text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{msg.error}</div>}
       {msg.ok && <div className="text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">{msg.ok}</div>}
 
@@ -131,7 +145,7 @@ export const Proyectos: React.FC<{
                 <div className="text-sm font-black text-slate-800 uppercase tracking-tight">{proyecto.cliente}{proyecto.nombre ? ` · ${proyecto.nombre}` : ''}</div>
                 <div className="text-[11px] font-bold text-slate-400">{disenos.length} {disenos.length === 1 ? 'producto' : 'productos'} · {unidades} {unidades === 1 ? 'unidad' : 'unidades'}</div>
               </div>
-              <button onClick={() => { if (window.confirm(`¿Borrar el proyecto de ${proyecto.cliente} con todos sus productos? No se puede deshacer.`)) intentar(async () => { await borrarProyecto(proyecto.id); setAbierto(null); await cargar(); }); }} className="text-[11px] font-black text-rose-600">Borrar proyecto</button>
+              <button onClick={() => { pedir(`¿Borrar el proyecto de ${proyecto.cliente} con todos sus productos? No se puede deshacer.`, () => intentar(async () => { for (const d of disenos) for (const doc of await listarDocumentos(d.id)) await borrarDocumento(doc); await borrarProyecto(proyecto.id); setAbierto(null); await cargar(); setMsg({ ok: `Se borró el proyecto de ${proyecto.cliente}.` }); })); }} className="text-[11px] font-black text-rose-600">Borrar proyecto</button>
             </div>
 
             {/* resumen por tipo de producto */}
@@ -182,8 +196,8 @@ export const Proyectos: React.FC<{
                       </div>
                       <button onClick={() => { setVerDocs(v => (v === d.id ? null : d.id)); if (verDocs !== d.id) intentar(() => cargarDocs(d.id)); }} className={`rounded-xl px-3 py-1.5 text-xs font-black border ${verDocs === d.id ? 'border-indigo-500 text-indigo-700 bg-indigo-50' : 'border-slate-200 text-slate-700'}`}>Documentos</button>
                       <button onClick={() => onAbrir(d.seccion as SectionId, d.datos, { id: d.id, nombre: d.nombre })} className="rounded-xl px-3 py-1.5 text-xs font-black bg-slate-800 text-white">Abrir</button>
-                      <button onClick={() => { if (window.confirm(`¿Reemplazar el diseño de "${d.nombre}" con el que está abierto (${SECTIONS[seccion].name})? La cantidad y la ubicación se conservan.`)) intentar(async () => { await guardarDiseno(proyecto.id, seccion, d.nombre, diseñoActual(), d.id); const n = await subirDocumentos(d.id, documentos(d.nombre, proyecto.cliente, false)); onProductoActivo({ id: d.id, nombre: d.nombre }); setDisenos(await listarDisenos(proyecto.id)); if (verDocs === d.id) await cargarDocs(d.id); setMsg({ ok: `Se actualizó "${d.nombre}" y ${n} ${n === 1 ? 'documento' : 'documentos'}.` }); }); }} className="rounded-xl px-3 py-1.5 text-xs font-black border border-slate-200 text-slate-700">Reemplazar</button>
-                      <button onClick={() => { if (window.confirm(`¿Quitar "${d.nombre}" del proyecto con sus documentos? No se puede deshacer.`)) intentar(async () => { for (const doc of await listarDocumentos(d.id)) await borrarDocumento(doc); await borrarDiseno(d.id); setDisenos(await listarDisenos(proyecto.id)); }); }} className="text-[11px] font-black text-rose-600 px-1">Quitar</button>
+                      <button onClick={() => { pedir(`¿Reemplazar el diseño de "${d.nombre}" con el que está abierto (${SECTIONS[seccion].name})? La cantidad y la ubicación se conservan.`, () => intentar(async () => { await guardarDiseno(proyecto.id, seccion, d.nombre, diseñoActual(), d.id); const n = await subirDocumentos(d.id, documentos(d.nombre, proyecto.cliente, false)); onProductoActivo({ id: d.id, nombre: d.nombre }); setDisenos(await listarDisenos(proyecto.id)); if (verDocs === d.id) await cargarDocs(d.id); setMsg({ ok: `Se actualizó "${d.nombre}" y ${n} ${n === 1 ? 'documento' : 'documentos'}.` }); })); }} className="rounded-xl px-3 py-1.5 text-xs font-black border border-slate-200 text-slate-700">Reemplazar</button>
+                      <button onClick={() => { pedir(`¿Quitar "${d.nombre}" del proyecto con sus documentos? No se puede deshacer.`, () => intentar(async () => { for (const doc of await listarDocumentos(d.id)) await borrarDocumento(doc); await borrarDiseno(d.id); setDisenos(await listarDisenos(proyecto.id)); })); }} className="text-[11px] font-black text-rose-600 px-1">Quitar</button>
                       {verDocs === d.id && (
                         <div className="w-full bg-slate-50 rounded-xl p-2 space-y-1">
                           {!docs[d.id] && <div className="text-[11px] font-bold text-slate-400">Cargando…</div>}
@@ -193,7 +207,7 @@ export const Proyectos: React.FC<{
                               <span className="font-black text-slate-700 mr-auto">{TIPO_DOC[doc.tipo] ?? doc.tipo} <span className="font-bold text-slate-400">· {doc.nombre} · {Math.max(1, Math.round(doc.bytes / 1024))} KB · {fecha(doc.created_at)}</span></span>
                               <button onClick={() => intentar(async () => { window.open(await enlaceDocumento(doc), '_blank', 'noopener'); })} className="font-black text-indigo-700">Abrir</button>
                               <button onClick={() => intentar(async () => { const a = document.createElement('a'); a.href = await enlaceDocumento(doc, true); a.click(); })} className="font-black text-indigo-700">Descargar</button>
-                              <button onClick={() => { if (window.confirm(`¿Borrar ${doc.nombre}?`)) intentar(async () => { await borrarDocumento(doc); await cargarDocs(d.id); }); }} className="font-black text-rose-600">Borrar</button>
+                              <button onClick={() => { pedir(`¿Borrar ${doc.nombre}?`, () => intentar(async () => { await borrarDocumento(doc); await cargarDocs(d.id); })); }} className="font-black text-rose-600">Borrar</button>
                             </div>
                           ))}
                         </div>
