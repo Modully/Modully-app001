@@ -1871,19 +1871,20 @@ const DraftNum: React.FC<{ value: number; onCommit: (n: number) => void; min?: n
 
 
 /** Líneas de abertura de una puerta (norma de dibujo de arquitectura): dos líneas segmentadas y suaves con el vértice en el borde libre; `face` = en qué cara de la pieza se dibujan */
-const SwingLines: React.FC<{ hw: number; hh: number; op: 'izq' | 'der' | 'sup' | 'inf'; face: 'z+' | 'x+' | 'x-'; depth: number }> = ({ hw, hh, op, face, depth }) => {
+const SwingLines: React.FC<{ hw: number; hh: number; op: 'izq' | 'der' | 'sup' | 'inf'; face: 'z+' | 'z-' | 'x+' | 'x-'; depth: number }> = ({ hw, hh, op, face, depth }) => {
   const uv: [number, number][] = op === 'izq' ? [[-hw, hh], [hw, 0], [-hw, -hh]] : op === 'der' ? [[hw, hh], [-hw, 0], [hw, -hh]] : op === 'sup' ? [[-hw, hh], [0, -hh], [hw, hh]] : [[-hw, -hh], [0, hh], [hw, -hh]];
   const f = depth + 0.002;
-  const pts = uv.map(([u, v]) => (face === 'z+' ? [u, v, f] : face === 'x+' ? [f, v, u] : [-f, v, u]) as [number, number, number]);
-  return <Line points={pts} color="#64748b" lineWidth={1} dashed dashSize={0.03} gapSize={0.025} transparent opacity={0.45} raycast={() => null} />;
+  const pts = uv.map(([u, v]) => (face === 'z+' ? [u, v, f] : face === 'z-' ? [-u, v, -f] : face === 'x+' ? [f, v, u] : [-f, v, u]) as [number, number, number]);
+  // polygonOffset: el frente lleva el suyo y, visto en ángulo (isométrica), se adelanta y tapaba las líneas; estas se adelantan más
+  return <Line points={pts} color="#475569" lineWidth={1.2} dashed dashSize={0.035} gapSize={0.025} transparent opacity={0.75} polygonOffset polygonOffsetFactor={-8} polygonOffsetUnits={-8} raycast={() => null} />;
 };
 
 /** Contorno oscuro de un frente (puerta o cajón) en su cara visible: marca las luces entre puertas y frentes, que con las aristas finas no se notaban */
-const FrontOutline: React.FC<{ hw: number; hh: number; face: 'z+' | 'x+' | 'x-'; depth: number; color: string }> = ({ hw, hh, face, depth, color }) => {
+const FrontOutline: React.FC<{ hw: number; hh: number; face: 'z+' | 'z-' | 'x+' | 'x-'; depth: number; color: string }> = ({ hw, hh, face, depth, color }) => {
   const f = depth + 0.001, i = 0.0015; // un poco hacia adentro del borde, para que dos frentes vecinos dejen ver la luz entre ellos
   const uv: [number, number][] = [[-hw + i, -hh + i], [hw - i, -hh + i], [hw - i, hh - i], [-hw + i, hh - i], [-hw + i, -hh + i]];
-  const pts = uv.map(([u, v]) => (face === 'z+' ? [u, v, f] : face === 'x+' ? [f, v, u] : [-f, v, u]) as [number, number, number]);
-  return <Line points={pts} color={color} lineWidth={1.2} raycast={() => null} />;
+  const pts = uv.map(([u, v]) => (face === 'z+' ? [u, v, f] : face === 'z-' ? [-u, v, -f] : face === 'x+' ? [f, v, u] : [-f, v, u]) as [number, number, number]);
+  return <Line points={pts} color={color} lineWidth={1.5} polygonOffset polygonOffsetFactor={-8} polygonOffsetUnits={-8} raycast={() => null} />;
 };
 
 /** Formulario de un cuerpo del Closet fit (doble clic): ¿marco puerta o surrón? y sus puertas, entrepaños y cajones */
@@ -4034,8 +4035,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
             <meshStandardMaterial color={(b.id.startsWith('front-upper-') ? colores?.fachadaMA ?? colores?.fachada : colores?.fachada) ?? (b.id.startsWith('front-upper-') ? '#d6b48a' : '#c19a6b')} roughness={0.55} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
             <Edges color={b.moduleId && b.moduleId === selectedId ? '#ef4444' : (b.moduleId && pair.includes(b.moduleId) ? '#f59e0b' : '#3b2a1a')} linewidth={b.moduleId && (b.moduleId === selectedId || pair.includes(b.moduleId)) ? 3 : 1} />
-            {(b.wall === 'A' || b.wall === 'B' || b.wall === 'C') && !b.islandId && (
-              <FrontOutline hw={(b.wall === 'A' ? b.sx : b.sy) / 2000} hh={b.sz / 2000} face={b.wall === 'A' ? 'z+' : b.wall === 'B' ? 'x+' : 'x-'} depth={(b.wall === 'A' ? b.sy : b.sx) / 2000}
+            {(b.wall === 'A' || b.wall === 'B' || b.wall === 'C') && (
+              <FrontOutline hw={(b.wall === 'A' ? b.sx : b.sy) / 2000} hh={b.sz / 2000} face={b.islandId ? 'z-' : b.wall === 'A' ? 'z+' : b.wall === 'B' ? 'x+' : 'x-'} depth={(b.wall === 'A' ? b.sy : b.sx) / 2000}
                 color={b.moduleId && b.moduleId === selectedId ? '#ef4444' : '#334155'} />
             )}
             {b.name.startsWith('Puerta') && (b.wall === 'A' || b.wall === 'B' || b.wall === 'C') && (() => {
@@ -4044,7 +4045,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               const n = doors.length, k = doors.findIndex(q => q.id === b.id);
               const op: 'izq' | 'der' | 'sup' | 'inf' = b.name.startsWith('Puerta superior') ? 'sup' : b.name.startsWith('Puerta inferior') ? 'inf' : n <= 1 ? 'izq' : k < n / 2 ? 'izq' : 'der';
               const alongW = (b.wall === 'A' ? b.sx : b.sy) / 2000, thick = (b.wall === 'A' ? b.sy : b.sx) / 2000;
-              return <SwingLines hw={alongW} hh={b.sz / 2000} op={op} face={b.wall === 'A' ? 'z+' : b.wall === 'B' ? 'x+' : 'x-'} depth={thick} />;
+              return <SwingLines hw={alongW} hh={b.sz / 2000} op={op} face={b.islandId ? 'z-' : b.wall === 'A' ? 'z+' : b.wall === 'B' ? 'x+' : 'x-'} depth={thick} />;
             })()}
           </mesh>
         ))}

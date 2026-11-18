@@ -28,7 +28,9 @@ import { Inicio } from './Inicio';
 import { ACABADOS, Acabados, AcabadosNivel, CALIBRES, CATALOGO, Tablero, calTexto, colorDeCatalogo, completarAcabados, esBlanco, hexDe } from './colores';
 import { PlanoLimpio } from './PlanoLimpio';
 import { Proyectos, DialogoAprobar, ProductoActivo } from './Proyectos';
-import { subirDocumentos, archivoDeDataURL, DocumentoNuevo, guardarDiseno, marcarAprobado } from './nube';
+import { subirDocumentos, archivoDeDataURL, DocumentoNuevo, guardarDiseno, marcarAprobado, guardarEnBiblioteca, listarBiblioteca } from './nube';
+import { Biblioteca, huellaDiseno } from './Biblioteca';
+import { Precios } from './Precios';
 import { htmlLaminas } from './PanelLaminas';
 import { htmlPlanos } from './PlanosEnsamble';
 import { resizeSymmetric, snapToNeighbors } from './moduleResize';
@@ -1072,7 +1074,8 @@ export default function App() {
   }), [acabados.MA.est.cal, acabados.MB.est.cal, costadosCortos, corredera, cfg.id, puerta, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, closetInput, fitInput, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
 
   // Fase 0: lista de piezas única, sacada de las mismas cajas que se dibujan
-  const lista = useMemo(() => listaDePiezas(boxes, { lineType, faceColor: colorDeCatalogo(faceColor)?.nombre ?? faceColor, acabados, puerta: cfg.id === 'puertas' ? puerta : undefined, abiertos: modules.filter(m => m.frontsLayout === 'open').map(m => m.uniqueId) }), [boxes, lineType, faceColor, acabados, cfg.id, puerta, modules]);
+  const ctxPiezas = useMemo(() => ({ lineType, faceColor: colorDeCatalogo(faceColor)?.nombre ?? faceColor, acabados, puerta: cfg.id === 'puertas' ? puerta : undefined, abiertos: modules.filter(m => m.frontsLayout === 'open').map(m => m.uniqueId) }), [lineType, faceColor, acabados, cfg.id, puerta, modules]);
+  const lista = useMemo(() => listaDePiezas(boxes, ctxPiezas), [boxes, ctxPiezas]);
   // Regla: ningún módulo puede ocupar el mismo espacio que un electrodoméstico (ni otro módulo)
   const collisions = useMemo(() => findCollisions(boxes), [boxes]);
   const collidingBoxes = useMemo(() => {
@@ -1734,6 +1737,12 @@ export default function App() {
   const [aprobando, setAprobando] = useState<'dialogo' | 'guardando' | null>(null);
   const [avisoAprobar, setAvisoAprobar] = useState<string | null>(null);
   // al abrir un producto ya aprobado, su diseño cargado cuenta como aprobado (se toma la clave cuando la app termina de cargarlo)
+  // Biblioteca: después de aprobar se ofrece guardar el diseño para volver a usarlo en otros proyectos
+  const [paraBiblioteca, setParaBiblioteca] = useState<{ disenoId: string; nombre: string; seccion: SectionId; datos: unknown } | null>(null);
+  const [bibEstado, setBibEstado] = useState<'guardando' | null>(null);
+  const [bibRecargar, setBibRecargar] = useState(0);
+  const [nombreAprobar, setNombreAprobar] = useState<string | undefined>(undefined); // nombre del producto traído de la biblioteca
+  const huellaBiblioteca = useRef<string | null>(null); // diseño tal como salió de la biblioteca: no se ofrece guardarlo otra vez
   const aprobadoAlAbrir = useRef(false); // producto del proyecto abierto ahora (render y fotos se guardan en él) // ya se aceptó un boceto: se muestra pasado en limpio
   useEffect(() => { if (aprobadoAlAbrir.current) { aprobadoAlAbrir.current = false; setAprobadoKey(snapshotKey); } }, [snapshotKey]);
   // documentos del producto: Excel de corte (lista de partes, CorteCloud y herrajes), láminas y planos; con el boceto si se armó desde uno
@@ -1750,7 +1759,7 @@ export default function App() {
   };
   // Aprobar diseño: guarda el diseño abierto en su producto, crea sus documentos y lo marca aprobado
   const aprobarDiseno = async (p: ProductoActivo, nuevo?: { ubicacion: string; cantidad: number }) => {
-    setAprobando('guardando'); setAvisoAprobar(null);
+    setAprobando('guardando'); setAvisoAprobar(null); setParaBiblioteca(null);
     const clave = snapshotKey;
     try {
       const d = await guardarDiseno(p.proyectoId, section, p.nombre, latestSnapshot.current.snapshot, nuevo ? undefined : p.id, nuevo);
@@ -1759,8 +1768,31 @@ export default function App() {
       await marcarAprobado(d.id);
       setProductoActivo({ ...p, id: d.id, aprobado: true }); setAprobadoKey(clave); if (nuevo) setFotoBoceto(null);
       setAvisoAprobar(`Aprobado: ${p.nombre} de ${p.cliente}, con ${n} ${n === 1 ? 'documento' : 'documentos'}. Están en Proyectos.`);
+      setParaBiblioteca(huellaDiseno(latestSnapshot.current.snapshot) === huellaBiblioteca.current ? null : { disenoId: d.id, nombre: p.nombre, seccion: section, datos: latestSnapshot.current.snapshot });
     } catch (e) { setAvisoAprobar(e instanceof Error ? e.message : String(e)); }
     setAprobando(null);
+  };
+  const guardarBiblioteca = async () => {
+    if (!paraBiblioteca) return;
+    setBibEstado('guardando');
+    try {
+      // si ese mismo diseño ya está en la biblioteca no se guarda repetido
+      const h = huellaDiseno(paraBiblioteca.datos);
+      const ya = (await listarBiblioteca()).find(b => b.seccion === paraBiblioteca.seccion && huellaDiseno(b.datos) === h);
+      if (ya) { setAvisoAprobar(`Este diseño ya está en la biblioteca como "${ya.nombre}".`); setParaBiblioteca(null); setBibEstado(null); return; }
+      await guardarEnBiblioteca(paraBiblioteca.seccion, paraBiblioteca.nombre.trim() || SECTIONS[paraBiblioteca.seccion].name, paraBiblioteca.datos, paraBiblioteca.disenoId);
+      setAvisoAprobar(`"${paraBiblioteca.nombre.trim() || SECTIONS[paraBiblioteca.seccion].name}" quedó en la biblioteca (Proyectos): úsalo en otro proyecto sin rehacer el diseño.`);
+      setParaBiblioteca(null); setBibRecargar(n => n + 1);
+    } catch (e) { setAvisoAprobar(e instanceof Error ? e.message : String(e)); }
+    setBibEstado(null);
+  };
+  // abrir un diseño de la biblioteca: queda como diseño suelto (sin producto); con "usar" se pide de una vez el proyecto para aprobarlo
+  const abrirDeBiblioteca = (sec: SectionId, datos: unknown, usarComo?: string) => {
+    switchSection(sec); applySnapshot(datos as DesignSnapshot); bumpHistory();
+    setProductoActivo(null); setAprobadoKey(null); aprobadoAlAbrir.current = false; setFotoBoceto(null);
+    setParaBiblioteca(null); setAvisoAprobar(null); huellaBiblioteca.current = huellaDiseno(datos);
+    setActiveTab('design');
+    if (usarComo !== undefined) { setNombreAprobar(usarComo); setAprobando('dialogo'); }
   };
   const crearDesdeBosquejo = (d: DatosBosquejo, foto?: string) => {
     setFotoBoceto(foto ?? null); setProductoActivo(null);
@@ -4124,8 +4156,8 @@ export default function App() {
   return (
     <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
       {isSuggesting && <LoadingOverlay message={suggestMessage} />}
-      {aprobando === 'dialogo' && <DialogoAprobar seccion={section} onCerrar={() => setAprobando(null)}
-        onListo={p => aprobarDiseno({ id: '', nombre: p.nombre, proyectoId: p.proyectoId, cliente: p.cliente }, { ubicacion: p.ubicacion, cantidad: p.cantidad })} />}
+      {aprobando === 'dialogo' && <DialogoAprobar seccion={section} nombreInicial={nombreAprobar} onCerrar={() => { setAprobando(null); setNombreAprobar(undefined); }}
+        onListo={p => { setNombreAprobar(undefined); aprobarDiseno({ id: '', nombre: p.nombre, proyectoId: p.proyectoId, cliente: p.cliente }, { ubicacion: p.ubicacion, cantidad: p.cantidad }); }} />}
       <header className="px-6 py-4 flex items-center justify-between bg-white/70 backdrop-blur-lg border-b border-slate-200 z-[60]">
         <div className="flex items-center gap-3 cursor-pointer" title="Ir a Inicio" onClick={() => setActiveTab('inicio')}><div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg"><Box size={20} /></div><div><h1 className="text-base font-black text-slate-800 tracking-tighter uppercase">MODULLY</h1><span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none block">Cierre Exacto</span></div></div>
         <div className="relative flex items-center gap-2">
@@ -5450,6 +5482,16 @@ export default function App() {
                     </button>
                   )}
                   {avisoAprobar && <div className="max-w-[260px] text-[11px] font-bold text-slate-600 bg-white/95 rounded-xl px-3 py-2 shadow">{avisoAprobar}</div>}
+                  {paraBiblioteca && (
+                    <div className="w-[260px] bg-white/95 rounded-xl px-3 py-2.5 shadow space-y-2 pointer-events-auto">
+                      <div className="text-[11px] font-black text-slate-700">¿Guardar este diseño en la biblioteca para usarlo en otros proyectos?</div>
+                      <input value={paraBiblioteca.nombre} onChange={e => setParaBiblioteca(b => (b ? { ...b, nombre: e.target.value } : b))} className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800" aria-label="Nombre en la biblioteca" />
+                      <div className="flex gap-1.5">
+                        <button onClick={guardarBiblioteca} disabled={bibEstado === 'guardando'} className="flex-1 rounded-lg px-2 py-1.5 text-[11px] font-black bg-indigo-600 text-white disabled:opacity-50">{bibEstado === 'guardando' ? 'Guardando…' : 'Guardar en biblioteca'}</button>
+                        <button onClick={() => setParaBiblioteca(null)} className="rounded-lg px-2 py-1.5 text-[11px] font-black border border-slate-200 text-slate-600">No</button>
+                      </div>
+                    </div>
+                  )}
 
                   {isOptMenuOpen && (
                     <div className="absolute top-full mt-2 w-72 bg-white rounded-3xl shadow-2xl border border-slate-100 p-2 z-[80] animate-in slide-in-from-top-2 duration-300 flex flex-col gap-1">
@@ -5514,7 +5556,20 @@ export default function App() {
           </div>
         )}
         {activeTab === 'catalog' && (<div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button><h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Catálogo</h2><div className="grid grid-cols-1 gap-3">{MODULE_TEMPLATES.map(m => (<button key={m.id} onClick={() => { addModule(m.id); setActiveTab('design'); }} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-3xl shadow-sm hover:border-indigo-500 transition-all"><div className="flex items-center gap-4"><div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-xs" style={{ background: COLORS[m.type] }}>{m.width}</div><p className="text-sm font-black text-slate-800 uppercase">{m.name}</p></div><Plus size={20} className="text-indigo-600" /></button>))}</div></div>)}
-        {activeTab === 'quote' && (<div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button><h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-4">Presupuesto</h2><div className="bg-indigo-600 p-8 rounded-[2.5rem] text-white shadow-2xl flex flex-col gap-2"><p className="text-xs font-black uppercase tracking-widest opacity-80">Total Proyecto Estimado</p><p className="text-5xl font-black">${quoteSummary.total.toLocaleString()}</p></div></div>)}
+        {activeTab === 'quote' && (
+          <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
+            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-1">Precios</h2>
+            <p className="text-xs font-bold text-slate-400 mb-4">Lo que nos cuesta cada pieza, módulo y mueble con tu tabla de costos, y la cotización para el cliente.</p>
+            <Precios boxes={boxes} ctx={ctxPiezas} lista={lista}
+              modulos={labeledModules.map(m => ({ uniqueId: m.uniqueId, label: m.label, type: m.type, width: m.width, height: m.height, depth: m.depth }))}
+              nombreResto={cfg.id === 'cocinas' ? 'Zócalo, rellenos y mesón' : cfg.name}
+              datos={{
+                cliente: productoActivo?.cliente ?? '', proyecto: productoActivo?.nombre ?? '', producto: cfg.id === 'cocinas' ? 'Cocina integral' : cfg.singular.charAt(0).toUpperCase() + cfg.singular.slice(1),
+                descripcion: [cfg.id === 'cocinas' ? (layout === 'L_SHAPE' ? 'En L' : layout === 'U_SHAPE' ? 'En U' : 'Lineal') : '', `${wallA}${layout !== 'STRAIGHT' && cfg.id === 'cocinas' ? ` × ${wallB}` : ''} mm`, `alto ${spaceHeight} mm`, faceColor ? `fachada ${faceColor}` : ''].filter(Boolean).join(' · '),
+              }}
+              onGuardarCotizacion={productoActivo ? async (archivo, nombre) => { await subirDocumentos(productoActivo.id, [{ tipo: 'cotizacion', nombre, archivo }], false); } : undefined} />
+          </div>
+        )}
         {activeTab === 'listado' && (
           <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
             <div className="flex items-center justify-between mb-6">
@@ -5636,6 +5691,9 @@ export default function App() {
               documentos={docsDelDiseno}
               onProductoActivo={p => { setProductoActivo(p); setAprobadoKey(null); if (p) setFotoBoceto(null); }}
               onAbrir={(sec, datos, prod) => { switchSection(sec); applySnapshot(datos as DesignSnapshot); bumpHistory(); setProductoActivo(prod); setAprobadoKey(null); aprobadoAlAbrir.current = !!prod.aprobado; setFotoBoceto(null); setActiveTab('design'); }} />
+            <div className="mt-8">
+              <Biblioteca recargar={bibRecargar} onUsar={(sec, datos, nombre) => abrirDeBiblioteca(sec, datos, nombre)} onAbrir={(sec, datos) => abrirDeBiblioteca(sec, datos)} />
+            </div>
           </div>
         )}
         {activeTab === 'inicio' && (

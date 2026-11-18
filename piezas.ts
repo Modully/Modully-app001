@@ -99,7 +99,7 @@ function limpiar(name: string): string {
 }
 
 /** Módulo o cuerpo de donde sale la caja (para rastrear la pieza) */
-function moduloDe(b: Box): string {
+export function moduloDe(b: Box): string {
   if (b.moduleId) return b.moduleId;
   const m = /^(fit[A-Z]?-(?:inf|sup)-\d+-\d+(?:-s\d+)?)/.exec(b.id);
   if (m) return m[1];

@@ -67,7 +67,7 @@ export const Proyectos: React.FC<{
   const pedir = (texto: string, accion: () => void) => setConfirmar({ texto, accion });
   const [viendo, setViendo] = useState<Documento | null>(null); // documento abierto en el visor (dentro de la app, no en otra pestaña)
   const cargarDocs = async (id: string) => { const l = await listarDocumentos(id); setDocs(x => ({ ...x, [id]: l })); };
-  const TIPO_DOC: Record<string, string> = { listado: 'Listado de corte (Excel)', laminas: 'Láminas', planos: 'Planos de ensamble', render: 'Render', foto_ia: 'Foto con IA', boceto: 'Boceto' };
+  const TIPO_DOC: Record<string, string> = { listado: 'Listado de corte (Excel)', laminas: 'Láminas', planos: 'Planos de ensamble', render: 'Render', foto_ia: 'Foto con IA', boceto: 'Boceto', cotizacion: 'Cotización' };
   const [sesion, setSesion] = useState<Session | null>(null);
   const [listo, setListo] = useState(false);
   const [proyectos, setProyectos] = useState<Proyecto[]>([]);
@@ -238,12 +238,12 @@ export const Proyectos: React.FC<{
  * Aprobar diseño sin producto abierto: se elige el proyecto (o se crea el cliente) y se guarda ahí como producto nuevo.
  * Devuelve el producto para que la app cree sus documentos.
  */
-export const DialogoAprobar: React.FC<{ seccion: SectionId; onListo: (p: { proyectoId: string; cliente: string; nombre: string; ubicacion: string; cantidad: number }) => void; onCerrar: () => void }> = ({ seccion, onListo, onCerrar }) => {
+export const DialogoAprobar: React.FC<{ seccion: SectionId; nombreInicial?: string; onListo: (p: { proyectoId: string; cliente: string; nombre: string; ubicacion: string; cantidad: number }) => void; onCerrar: () => void }> = ({ seccion, nombreInicial, onListo, onCerrar }) => {
   const [sesion, setSesion] = useState<Session | null | undefined>(undefined);
   const [proyectos, setProyectos] = useState<Proyecto[]>([]);
   const [elegido, setElegido] = useState<string>('');
   const [nuevoCliente, setNuevoCliente] = useState('');
-  const [prod, setProd] = useState({ nombre: SECTIONS[seccion].name, ubicacion: '', cantidad: 1 });
+  const [prod, setProd] = useState({ nombre: nombreInicial || SECTIONS[seccion].name, ubicacion: '', cantidad: 1 });
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { sesionActual().then(s => { setSesion(s); if (s) listarProyectos().then(l => { setProyectos(l); setElegido(l[0]?.id ?? ''); }).catch(e => setError(e.message)); }); }, []);
   const continuar = async () => {

@@ -84,6 +84,42 @@ export async function borrarDiseno(id: string) {
   ok(await nube.from('disenos').delete().eq('id', id));
 }
 
+/** Tabla de costos del usuario y datos de su empresa (para el costeo y la cotización): una fila por usuario */
+export async function leerPerfilCostos(): Promise<{ costos: unknown; empresa: unknown } | null> {
+  if (!nube) return null;
+  const uid = (await nube.auth.getUser()).data.user?.id;
+  if (!uid) return null;
+  const r = await nube.from('perfil_costos').select('costos, empresa').eq('owner_id', uid).maybeSingle();
+  if (r.error) throw new Error(r.error.message);
+  return r.data as { costos: unknown; empresa: unknown } | null;
+}
+export async function guardarPerfilCostos(costos: unknown, empresa: unknown) {
+  if (!nube) return;
+  const uid = (await nube.auth.getUser()).data.user?.id;
+  if (!uid) return;
+  ok(await nube.from('perfil_costos').upsert({ owner_id: uid, costos, empresa, updated_at: new Date().toISOString() }));
+}
+
+/** Biblioteca: diseños aprobados guardados para volver a usarlos en otros proyectos sin rehacer el proceso */
+export interface DisenoBiblioteca { id: string; seccion: string; nombre: string; notas: string; datos: unknown; diseno_id: string | null; created_at: string; updated_at: string }
+const COLS_BIB = 'id, seccion, nombre, notas, datos, diseno_id, created_at, updated_at';
+export async function listarBiblioteca(): Promise<DisenoBiblioteca[]> {
+  if (!nube) throw sinNube();
+  return ok(await nube.from('biblioteca').select(COLS_BIB).order('updated_at', { ascending: false })) as DisenoBiblioteca[];
+}
+export async function guardarEnBiblioteca(seccion: string, nombre: string, datos: unknown, disenoId?: string, notas = ''): Promise<DisenoBiblioteca> {
+  if (!nube) throw sinNube();
+  return ok(await nube.from('biblioteca').insert({ seccion, nombre, datos, notas, diseno_id: disenoId ?? null }).select(COLS_BIB).single()) as DisenoBiblioteca;
+}
+export async function ajustarBiblioteca(id: string, cambios: { nombre?: string; notas?: string }) {
+  if (!nube) throw sinNube();
+  ok(await nube.from('biblioteca').update({ ...cambios, updated_at: new Date().toISOString() }).eq('id', id));
+}
+export async function borrarDeBiblioteca(id: string) {
+  if (!nube) throw sinNube();
+  ok(await nube.from('biblioteca').delete().eq('id', id));
+}
+
 /**
  * IA por el servidor: la clave de Gemini vive en Supabase (función "gemini") y no dentro de la app.
  * Se usa igual que `ai.models.generateContent` del SDK de Google: { model, contents, config } y devuelve { text, candidates }.
