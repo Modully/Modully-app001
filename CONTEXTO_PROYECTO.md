@@ -1,8 +1,12 @@
 # Modully-02 — Contexto del proyecto
 
-Automatización parametrizada de diseño de cocinas modulares en **Autodesk Fusion** (Python), para carpintería. Objetivo: acelerar fabricación y mantener consistencia entre cocinas.
+Configurador web de muebles para carpintería (cocinas, closets, walking closets, baños, centros de entretenimiento y puertas): se diseña en minutos sin modelar y salen el despiece, las láminas, los planos, el render, el costeo y la cotización. Empezó como automatización en **Autodesk Fusion** (Python), que sigue como salida opcional.
 
-> Última actualización: 2026-10-28. Si algo de aquí contradice una versión anterior, **este documento y las reglas validadas prevalecen**.
+> Última actualización: 2026-11-18. Si algo de aquí contradice una versión anterior, **este documento y las reglas validadas prevalecen**. Las notas van por fecha: lo de más abajo es lo más reciente.
+
+**Documentos relacionados:** [FLUJO_DE_TRABAJO.md](FLUJO_DE_TRABAJO.md) (cómo trabajamos), [COSTEO_Y_COTIZACION.md](COSTEO_Y_COTIZACION.md) (precios, costeo y cotización), [REGLAS_CLOSET.md](REGLAS_CLOSET.md), [REGLAS_MODULOS_FIT.md](REGLAS_MODULOS_FIT.md).
+
+**Stack:** React 19 + Vite + three.js (`@react-three/fiber`/`drei`), TypeScript. Cuentas, proyectos y documentos en Supabase (proyecto *Modully*). Código en GitHub `modullyapp-001/modullly-app` (privado), rama `main`.
 
 ## 1. Visión del sistema
 
@@ -323,3 +327,45 @@ Pendiente: las posiciones del cajonero (35, 445, 605), la gola media (330) y el 
 - Frontal de los productos por cubos: solo verticales (alto general, espacios libres, mueble de abajo) y la general horizontal de arriba. Cocinas, closet constructor y puertas: ancho general, alto general y cadena de alturas de los cuerpos principales.
 - Notas de cada cubo: primero el alto y después el ancho; texto discreto que muestra campos y candados al pasar el mouse, con línea guía en el cubo. Formulario del cubo con "Altura desde el piso". Cubos sin sombras.
 - Hoja de ruta acordada: lista de piezas única → despiece → optimización de lámina → planos de ensamble → render → bosquejo a mano alzada; formularios más visuales en cada fase.
+
+## Del diseño a los documentos (2026-11-13/14)
+- **Lista de piezas única** (`piezas.ts`, `listaDePiezas`): sale de las mismas cajas de `buildBoxes`, así el 3D y el despiece nunca se contradicen. Material según el papel de la pieza (estructura, fachada, fondo, mesón), canto según la tabla de reglas, piezas iguales agrupadas. Orden del carpintero: calibre, color, canto; el mesón al final.
+- **Listado de corte en Excel** con dos hojas: "LISTA DE PARTES" (ITEM, PARTE, C/D, LAR, AN, CAL, COLOR, CANTO) y "CORTECLOUD" (canto por borde L1, L2, a1, a2) (`archivoListadoDeCorte`).
+- **Láminas** (`optimizador.ts`, `PanelLaminas.tsx`): cortes de guillotina por material (color + calibre), sierra de 4, refilado de 10, respeta la veta y muestra retazos. Se prueban varios órdenes y queda el que usa menos láminas.
+- **Planos de ensamble** (`PlanosEnsamble.tsx`), **Render** (`RenderVista.tsx`, con foto por IA en `fotoIA.ts`) y **Bosquejo** (`Bosquejo.tsx`, `bocetoIA.ts`, `PlanoLimpio.tsx`): desde la foto de un boceto a mano alzada se lee el espacio, se muestra un resumen para aceptar o corregir, se pasa en limpio y se arma la cocina con los módulos dibujados.
+- **Pantalla de Inicio** (`Inicio.tsx`) con el producto y el camino de trabajo; botón de Inicio en todas las secciones.
+- Reglas del carpintero en Convertir a módulos: esquinero recto, torre de hornos, filler, costados cortos, corredera oculta y módulo abierto (detalle en la memoria del proyecto).
+
+## Cuentas, proyectos y documentos en Supabase (2026-11-15)
+- Cuentas con correo y contraseña (sin confirmar correo por ahora). Cliente en `nube.ts`; claves en `.env.local` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_KEY`).
+- Tablas con seguridad por dueño (RLS):
+  - `proyectos`: un proyecto por cliente u obra;
+  - `disenos`: los productos del proyecto, con nombre, ubicación, cantidad, el diseño completo y `aprobado_at`;
+  - `documentos`: los archivos de cada producto, guardados en el almacenamiento privado `documentos`.
+- **Proyectos** (`Proyectos.tsx`): crear cliente, agregar el diseño abierto como producto con dónde va y cantidad, abrir, reemplazar, quitar y borrar el proyecto con sus archivos. Las confirmaciones van dentro de la página: los diálogos del navegador no funcionan en el panel de la app.
+- **Aprobar diseño** (botón en Diseño, junto a Convertir a módulos) es la orden para crear los documentos: guarda el diseño y sube listado de corte (Excel), láminas y planos. Sin producto abierto pide el proyecto (`DialogoAprobar`). Cambiar el diseño le quita la aprobación.
+- Los documentos se ven dentro de la app (`VisorDocumento.tsx`). El render y la foto por IA se guardan desde la pestaña Render.
+- **IA por el servidor:** la clave de Gemini no está en la app; la usa la función `gemini` de Supabase (secreto `GEMINI_API_KEY`).
+
+## Colores, campana de isla y la isla (2026-11-15/17)
+- **Colores y sistema** (`colores.ts`, en Espacio):
+  - catálogo Duratex más el Blanco, con un desplegable que filtra por las iniciales;
+  - dos columnas, "Mueble aéreo" y "Muebles base"; los demás muebles usan lo de los base;
+  - por cada tablero (estructura, fachada, espaldares y fondos): color, calibre (estructura y fachada 15/18; fondo 2,5/4/5,5), RH y canto rígido;
+  - además: canto del frente en el color de la fachada y gola de melamina o de aluminio (el aluminio va a herrajes por metro).
+  - El valor que se sugiere va precargado y nunca se escribe la palabra "sugerido".
+- **Campana de isla**: se activa en la isla cuando lleva estufa; va centrada sobre el mueble de la estufa, a 750 mm del mesón, con chimenea al techo.
+- **Isla:**
+  - las puertas miran hacia la cocina (muro A, `facing: '-Y'`) y la barra y el espaldar alistonado quedan atrás;
+  - botones **Isla** y **Muros** en la barra de vistas;
+  - **doble clic en la isla** abre su formulario propio con medidas, cotas, barra, alistonado, electrodomésticos y el mesón de la isla (salpicadero, cascada, canto);
+  - al volver a modular la isla, el módulo del extremo resta el espesor de la cascada o del frentero.
+- Vista isométrica: las líneas de los frentes llevan un ajuste de profundidad (`polygonOffset`) más fuerte que el frente, para que se vean las luces entre puertas y las líneas de abertura aunque la cámara mire en ángulo.
+
+## Biblioteca de diseños aprobados (2026-11-17)
+- Tabla `biblioteca` en Supabase: diseños aprobados guardados para usarlos en otros proyectos sin rehacer el proceso.
+- Al aprobar se ofrece "Guardar en la biblioteca" con el nombre editable. No se guarda dos veces el mismo diseño: se compara su contenido con `huellaDiseno`, que ordena las claves.
+- La biblioteca está en Proyectos, debajo de los proyectos (`Biblioteca.tsx`): filtro por producto, búsqueda, y los botones **Usar en un proyecto** (abre el diseño y pide el proyecto para aprobarlo ahí con sus documentos), **Abrir** (para ajustarlo antes), Editar y Quitar.
+
+## Costeo y cotización (2026-11-18)
+- Pestaña **Precios** con tres partes: Costeo, Mis costos y Cotización. Reglas y fórmulas en [COSTEO_Y_COTIZACION.md](COSTEO_Y_COTIZACION.md).
