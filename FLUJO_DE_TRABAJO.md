@@ -15,9 +15,9 @@ Este documento describe cómo avanzamos. Se irá ampliando con más funciones. L
 | Frase del usuario | Qué hace Claude |
 |---|---|
 | "comitea", "commit", "haz el commit" | Hace el commit con un mensaje en español que resume los cambios. |
-| "commit y sube", "sí, súbelo" | Commit y push a GitHub (`modullyapp-001/modullly-app`, rama `main`). Después revisa con `git status -sb` que no quede nada sin subir. |
+| "commit y sube", "sí, súbelo" | Commit y push a GitHub (`Modully/Modully-app001`, rama `main`; en el equipo el remoto se llama `modully`). Vercel lo publica solo en https://modully001.vercel.app. Después revisa con `git status -sb` que no quede nada sin subir. |
 | "guardemos", "guarda" | Si hay cambios sin commitear: commit. Después actualiza la memoria del proyecto y las notas. Si ya estaba todo commiteado, solo actualiza la memoria y lo dice. |
-| "sube", "push" | Sube a GitHub lo que ya está commiteado. El repositorio es privado y se sube con la credencial de colaborador ya guardada en el equipo. |
+| "sube", "push" | Sube a GitHub lo que ya está commiteado. Se sube con la cuenta Jersson001, que tiene permiso de escritura en la organización Modully. Subir **publica** la app: lo que llega a `main` queda en línea. |
 
 Reglas:
 - **Claude no commitea ni sube por su cuenta.** Cuando se acumulan cambios, lo recuerda y **pregunta** si commitear.
@@ -43,6 +43,7 @@ Reglas:
 - Lo que escribe en la cuenta del usuario (Supabase: proyectos, biblioteca, costos) solo se prueba con su permiso o con lo que él mismo ya hizo; Claude no escribe contraseñas ni claves, el usuario las pega.
 - En el panel de la app no funcionan `window.confirm` ni `datalist`, y las ventanas emergentes se bloquean: las confirmaciones, listas y visores van dentro de la página.
 - Lo que no se probó **se dice** (por ejemplo: paredes B y C, vista 3D, Fusion).
+- La versión publicada se revisa en https://modully001.vercel.app. En Vercel solo van `VITE_SUPABASE_URL` y `VITE_SUPABASE_KEY`; la clave de Gemini vive en Supabase y nunca va a Vercel. El conector de Vercel de Claude no ve el equipo "Ferry Digital" ni puede crear proyectos: eso se hace desde el panel de Vercel.
 
 ## 5. Principios del proyecto
 

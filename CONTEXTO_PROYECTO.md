@@ -6,7 +6,7 @@ Configurador web de muebles para carpintería (cocinas, closets, walking closets
 
 **Documentos relacionados:** [FLUJO_DE_TRABAJO.md](FLUJO_DE_TRABAJO.md) (cómo trabajamos), [COSTEO_Y_COTIZACION.md](COSTEO_Y_COTIZACION.md) (precios, costeo y cotización), [REGLAS_CLOSET.md](REGLAS_CLOSET.md), [REGLAS_MODULOS_FIT.md](REGLAS_MODULOS_FIT.md).
 
-**Stack:** React 19 + Vite + three.js (`@react-three/fiber`/`drei`), TypeScript. Cuentas, proyectos y documentos en Supabase (proyecto *Modully*). Código en GitHub `modullyapp-001/modullly-app` (privado), rama `main`.
+**Stack:** React 19 + Vite + three.js (`@react-three/fiber`/`drei`), TypeScript. Cuentas, proyectos y documentos en Supabase (proyecto *Modully*). Código en GitHub **`Modully/Modully-app001`**, rama `main` (desde el 2026-11-22; antes `modullyapp-001/modullly-app`, ya sin uso). Publicada en Vercel: **https://modully001.vercel.app**. Cada push a `main` se publica sola en 1–2 minutos.
 
 ## 1. Visión del sistema
 
