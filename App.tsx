@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
-  Box, Settings, Layout, ShoppingCart, Trash2, Plus, Settings2,
+  Box, Settings, Layout, ShoppingCart, Trash2, Plus, Settings2, Palette,
   Sparkles, Printer, Save, RefreshCcw, Loader2, Wand2, Pencil,
   Square, Frame, BoxSelect, Globe, Eye, ChevronLeft, ChevronRight, Menu,
   Flame, Droplets, Refrigerator, Wind, Component, X, List, Layers, Info,
@@ -560,6 +560,8 @@ export default function App() {
   const [isAccessoriesPanelOpen, setIsAccessoriesPanelOpen] = useState(false);
   const [isSpecialModulesPanelOpen, setIsSpecialModulesPanelOpen] = useState(false);
   const [isWorkspaceModalOpen, setIsWorkspaceModalOpen] = useState(false);
+  const [isModulosModalOpen, setIsModulosModalOpen] = useState(false); // Configuración de módulos: colores y sistema, mesón, dilatación
+  const guiaEspacio = useRef(false); // diseño nuevo: Espacio se abrió solo y al aplicarlo sigue Configuración de módulos
   const [isOptMenuOpen, setIsOptMenuOpen] = useState(false);
   const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(false);
   const [agentPrompt, setAgentPrompt] = useState('Ayúdame a mejorar la distribución del muro A.');
@@ -1772,6 +1774,16 @@ export default function App() {
     } catch (e) { setAvisoAprobar(e instanceof Error ? e.message : String(e)); }
     setAprobando(null);
   };
+  // Diseño nuevo de cocina: al entrar a Diseño se abre sola "Configuración de espacio" (y al aplicarla, "Configuración de
+  // módulos"). Solo una vez por producto en la sesión y solo si aún no hay módulos; después se abren con sus botones.
+  const espacioGuiado = useRef<Record<string, boolean>>({});
+  useEffect(() => {
+    if (activeTab !== 'design' || cfg.id !== 'cocinas' || labeledModules.length > 0 || espacioGuiado.current[section]) return;
+    espacioGuiado.current[section] = true;
+    guiaEspacio.current = true;
+    setIsWorkspaceModalOpen(true);
+  }, [activeTab, section, cfg.id, labeledModules.length]);
+
   const guardarBiblioteca = async () => {
     if (!paraBiblioteca) return;
     setBibEstado('guardando');
@@ -4153,95 +4165,8 @@ export default function App() {
     }
   }, [labeledModules, lineType, faceColor, wallA, boxes]);
 
-  return (
-    <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
-      {isSuggesting && <LoadingOverlay message={suggestMessage} />}
-      {aprobando === 'dialogo' && <DialogoAprobar seccion={section} nombreInicial={nombreAprobar} onCerrar={() => { setAprobando(null); setNombreAprobar(undefined); }}
-        onListo={p => { setNombreAprobar(undefined); aprobarDiseno({ id: '', nombre: p.nombre, proyectoId: p.proyectoId, cliente: p.cliente }, { ubicacion: p.ubicacion, cantidad: p.cantidad }); }} />}
-      <header className="px-6 py-4 flex items-center justify-between bg-white/70 backdrop-blur-lg border-b border-slate-200 z-[60]">
-        <div className="flex items-center gap-3 cursor-pointer" title="Ir a Inicio" onClick={() => setActiveTab('inicio')}><div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg"><Box size={20} /></div><div><h1 className="text-base font-black text-slate-800 tracking-tighter uppercase">MODULLY</h1><span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none block">Cierre Exacto</span></div></div>
-        <div className="relative flex items-center gap-2">
-          {activeTab !== 'inicio' && <button onClick={() => setActiveTab('inicio')} title="Ir a Inicio" className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-600 text-[11px] font-black uppercase tracking-wide hover:border-indigo-300 hover:text-indigo-700 transition-colors"><Home size={14} />Inicio</button>}
-          <button onClick={() => setIsSectionMenuOpen(!isSectionMenuOpen)} className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-700 text-[11px] font-black uppercase tracking-wide hover:bg-indigo-100 transition-colors">
-            {SECTION_ICONS[section]}
-            <span>{cfg.name}</span>
-            <ChevronDown size={14} className={`transition-transform ${isSectionMenuOpen ? 'rotate-180' : ''}`} />
-          </button>
-          {isSectionMenuOpen && (
-            <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-3xl shadow-2xl border border-slate-100 p-2 z-[90] flex flex-col gap-1">
-              {SECTION_ORDER.map(id => (
-                <button key={id} onClick={() => switchSection(id)} className={`flex items-center gap-3 p-3 rounded-2xl text-left transition-all ${id === section ? 'bg-indigo-600 text-white' : 'hover:bg-indigo-50 text-slate-700'}`}>
-                  <span className={id === section ? 'text-white' : 'text-indigo-600'}>{SECTION_ICONS[id]}</span>
-                  <span className="text-[11px] font-black uppercase tracking-tight">{SECTIONS[id].name}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </header>
-      <main className="flex-1 flex flex-col overflow-hidden relative">
-        {activeTab === 'design' && (
-          <div className="relative flex-1 bg-white overflow-hidden flex flex-row h-full">
-            <aside className={`relative h-full transition-all duration-300 ease-in-out bg-slate-50 border-r border-slate-200 flex flex-col items-center py-4 gap-4 z-[55] shadow-xl overflow-y-auto no-scrollbar ${isSidebarVisible ? (isSidebarCollapsed ? 'w-20' : 'w-48') : 'w-0 opacity-0 pointer-events-none'}`}>
-              <div className="flex flex-col gap-2 w-full px-3"><button onClick={() => setIsSidebarVisible(false)} className="w-full h-10 flex items-center justify-center rounded-xl bg-white border border-slate-100 text-slate-400 hover:text-red-500 transition-colors shadow-sm mb-2"><X size={18} /></button><button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="w-full h-10 flex items-center justify-center rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 hover:bg-indigo-100 transition-colors mb-2 shadow-sm">{isSidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}</button></div>
-              <div className="flex flex-col gap-4 w-full px-3 mt-4">
-                <SidebarToolButton active={isViewsPanelOpen} onClick={() => togglePanel('views')} icon={<Eye size={24} />} label="Vistas" collapsed={isSidebarCollapsed} />
-                <SidebarToolButton active={isElementsPanelOpen} onClick={() => togglePanel('elements')} icon={<Settings2 size={24} />} label="Elementos" collapsed={isSidebarCollapsed} badge={modules.length > 0 ? modules.length.toString() : undefined} />
-                <SidebarToolButton active={isAccessoriesPanelOpen} onClick={() => togglePanel('accessories')} icon={<Puzzle size={24} />} label="Accesorios" collapsed={isSidebarCollapsed} badge={appliances.filter(a => a.active).length > 0 ? appliances.filter(a => a.active).length.toString() : undefined} />
-                <SidebarToolButton active={isSpecialModulesPanelOpen} onClick={() => togglePanel('special')} icon={<Archive size={24} />} label="Especiales" collapsed={isSidebarCollapsed} badge={specialModules.filter(sm => sm.active).length > 0 ? specialModules.filter(sm => sm.active).length.toString() : undefined} />
-                <SidebarToolButton active={isWorkspaceModalOpen} onClick={() => togglePanel('workspace')} icon={<Maximize size={24} />} label="Espacio" collapsed={isSidebarCollapsed} />
-                <SidebarToolButton 
-                  active={isMeasureMode} 
-                  onClick={() => {
-                    setIsMeasureMode(!isMeasureMode);
-                    setMeasurePoints([]);
-                    setSnapPreview(null);
-                  }} 
-                  icon={<Ruler size={24} />} 
-                  label="Medir" 
-                  collapsed={isSidebarCollapsed}
-                  badge={measurePoints.length > 0 ? measurePoints.length.toString() : undefined}
-                />
-                <SidebarToolButton 
-                  active={isAgentPanelOpen} 
-                  onClick={() => setIsAgentPanelOpen(!isAgentPanelOpen)} 
-                  icon={<Sparkles size={24} />} 
-                  label="Asistente" 
-                  collapsed={isSidebarCollapsed}
-                />
-              </div>
-            </aside>
-            <div className="flex-1 relative bg-slate-50 self-stretch min-h-0">
-              {!isSidebarVisible && (<button onClick={() => setIsSidebarVisible(true)} className="absolute left-0 top-1/2 -translate-y-1/2 z-[50] bg-white/90 backdrop-blur-md border border-slate-200 p-3 rounded-r-2xl shadow-xl text-indigo-600 hover:pr-5 transition-all group"><Menu size={20} /></button>)}
-              
-              <div data-side-panel className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-2xl z-[45] border-r border-slate-200 shadow-2xl transition-all duration-500 ease-out transform ${isElementsPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                <div className="h-full flex flex-col p-6 overflow-y-auto no-scrollbar space-y-8">
-                  <div className="flex items-center justify-between"><div><h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Plan de Diseño</h2><p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none">Cotas Editables ISO</p></div><button onClick={() => setIsElementsPanelOpen(false)} className="p-2 bg-slate-100 rounded-xl text-slate-500 hover:text-red-500"><X size={20} /></button></div>
-                  <div className="space-y-4 flex-1 flex flex-col min-h-0"><div className="flex items-center justify-between px-1"><h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Módulos en Escena</h3><span className="bg-indigo-100 text-indigo-600 text-[10px] font-black px-2 py-0.5 rounded-full">{modules.length}</span></div><div className="flex-1 overflow-y-auto no-scrollbar space-y-2">{labeledModules.map(m => (
-                    <div key={m.uniqueId} className="p-3 bg-white border border-slate-100 rounded-xl shadow-sm space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-indigo-600 text-white font-black text-xs">{m.label}</div>
-                          <p className="text-[10px] font-black text-slate-800 uppercase tracking-tight">{m.name}</p>
-                        </div>
-                        <button onClick={() => deleteModule(m.uniqueId)} className="p-2 text-slate-300 hover:text-red-500" title="Eliminar módulo"><Trash2 size={14} /></button>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <MeasureInput label="Ancho" value={m.width} onCommit={(v) => applyDimensionChange('module', m.uniqueId, v)} />
-                        <MeasureInput label="Alto" value={m.height} onCommit={(v) => updateModuleMeasure(m.uniqueId, 'height', v)} />
-                        <MeasureInput label="Fondo" value={m.depth} onCommit={(v) => updateModuleMeasure(m.uniqueId, 'depth', v)} />
-                      </div>
-                    </div>
-                  ))}</div></div>
-                </div>
-              </div>
-
-              <div data-side-panel className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-2xl z-[45] border-r border-slate-200 shadow-2xl transition-all duration-500 ease-out transform ${isAccessoriesPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                <div className="h-full flex flex-col p-6 overflow-y-auto no-scrollbar space-y-8">
-                  <div className="flex items-center justify-between">
-                    <div><h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Accesorios</h2><p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none">Electrodomésticos</p></div>
-                    <button onClick={() => setIsAccessoriesPanelOpen(false)} className="p-2 bg-slate-100 rounded-xl text-slate-500 hover:text-red-500"><X size={20} /></button>
-                  </div>
+  // electrodomésticos: la misma lista en la ventana de Espacio (paso 3) y en el panel Accesorios
+  const listaElectro = (
                   <div className="space-y-4">
                     {cfg.accessories.length === 0 && (<div className="p-4 rounded-3xl bg-slate-50 border border-slate-100 text-[11px] font-bold text-slate-500">Aún no hay accesorios definidos para {cfg.name.toLowerCase()}. Cuando se definan sus reglas aparecen aquí.</div>)}
                     {appliances.filter(ap => cfg.accessories.includes(ap.type)).map((app) => (
@@ -4310,6 +4235,99 @@ export default function App() {
                       );
                     })()}
                   </div>
+  );
+
+  return (
+    <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
+      {isSuggesting && <LoadingOverlay message={suggestMessage} />}
+      {aprobando === 'dialogo' && <DialogoAprobar seccion={section} nombreInicial={nombreAprobar} onCerrar={() => { setAprobando(null); setNombreAprobar(undefined); }}
+        onListo={p => { setNombreAprobar(undefined); aprobarDiseno({ id: '', nombre: p.nombre, proyectoId: p.proyectoId, cliente: p.cliente }, { ubicacion: p.ubicacion, cantidad: p.cantidad }); }} />}
+      <header className="px-6 py-4 flex items-center justify-between bg-white/70 backdrop-blur-lg border-b border-slate-200 z-[60]">
+        <div className="flex items-center gap-3 cursor-pointer" title="Ir a Inicio" onClick={() => setActiveTab('inicio')}><div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg"><Box size={20} /></div><div><h1 className="text-base font-black text-slate-800 tracking-tighter uppercase">MODULLY</h1><span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none block">Cierre Exacto</span></div></div>
+        <div className="relative flex items-center gap-2">
+          {activeTab !== 'inicio' && <button onClick={() => setActiveTab('inicio')} title="Ir a Inicio" className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-600 text-[11px] font-black uppercase tracking-wide hover:border-indigo-300 hover:text-indigo-700 transition-colors"><Home size={14} />Inicio</button>}
+          <button onClick={() => setIsSectionMenuOpen(!isSectionMenuOpen)} className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-700 text-[11px] font-black uppercase tracking-wide hover:bg-indigo-100 transition-colors">
+            {SECTION_ICONS[section]}
+            <span>{cfg.name}</span>
+            <ChevronDown size={14} className={`transition-transform ${isSectionMenuOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {isSectionMenuOpen && (
+            <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-3xl shadow-2xl border border-slate-100 p-2 z-[90] flex flex-col gap-1">
+              {SECTION_ORDER.map(id => (
+                <button key={id} onClick={() => switchSection(id)} className={`flex items-center gap-3 p-3 rounded-2xl text-left transition-all ${id === section ? 'bg-indigo-600 text-white' : 'hover:bg-indigo-50 text-slate-700'}`}>
+                  <span className={id === section ? 'text-white' : 'text-indigo-600'}>{SECTION_ICONS[id]}</span>
+                  <span className="text-[11px] font-black uppercase tracking-tight">{SECTIONS[id].name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </header>
+      <main className="flex-1 flex flex-col overflow-hidden relative">
+        {activeTab === 'design' && (
+          <div className="relative flex-1 bg-white overflow-hidden flex flex-row h-full">
+            <aside className={`relative h-full transition-all duration-300 ease-in-out bg-slate-50 border-r border-slate-200 flex flex-col items-center py-4 gap-4 z-[55] shadow-xl overflow-y-auto no-scrollbar ${isSidebarVisible ? (isSidebarCollapsed ? 'w-20' : 'w-48') : 'w-0 opacity-0 pointer-events-none'}`}>
+              <div className="flex flex-col gap-2 w-full px-3"><button onClick={() => setIsSidebarVisible(false)} className="w-full h-10 flex items-center justify-center rounded-xl bg-white border border-slate-100 text-slate-400 hover:text-red-500 transition-colors shadow-sm mb-2"><X size={18} /></button><button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="w-full h-10 flex items-center justify-center rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 hover:bg-indigo-100 transition-colors mb-2 shadow-sm">{isSidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}</button></div>
+              <div className="flex flex-col gap-4 w-full px-3 mt-4">
+                <SidebarToolButton active={isViewsPanelOpen} onClick={() => togglePanel('views')} icon={<Eye size={24} />} label="Vistas" collapsed={isSidebarCollapsed} />
+                <SidebarToolButton active={isElementsPanelOpen} onClick={() => togglePanel('elements')} icon={<Settings2 size={24} />} label="Elementos" collapsed={isSidebarCollapsed} badge={modules.length > 0 ? modules.length.toString() : undefined} />
+                <SidebarToolButton active={isAccessoriesPanelOpen} onClick={() => togglePanel('accessories')} icon={<Puzzle size={24} />} label="Accesorios" collapsed={isSidebarCollapsed} badge={appliances.filter(a => a.active).length > 0 ? appliances.filter(a => a.active).length.toString() : undefined} />
+                <SidebarToolButton active={isSpecialModulesPanelOpen} onClick={() => togglePanel('special')} icon={<Archive size={24} />} label="Especiales" collapsed={isSidebarCollapsed} badge={specialModules.filter(sm => sm.active).length > 0 ? specialModules.filter(sm => sm.active).length.toString() : undefined} />
+                <SidebarToolButton active={isWorkspaceModalOpen} onClick={() => togglePanel('workspace')} icon={<Maximize size={24} />} label="Espacio" collapsed={isSidebarCollapsed} />
+                <SidebarToolButton active={isModulosModalOpen} onClick={() => setIsModulosModalOpen(o => !o)} icon={<Palette size={24} />} label="Módulos" collapsed={isSidebarCollapsed} />
+                <SidebarToolButton 
+                  active={isMeasureMode} 
+                  onClick={() => {
+                    setIsMeasureMode(!isMeasureMode);
+                    setMeasurePoints([]);
+                    setSnapPreview(null);
+                  }} 
+                  icon={<Ruler size={24} />} 
+                  label="Medir" 
+                  collapsed={isSidebarCollapsed}
+                  badge={measurePoints.length > 0 ? measurePoints.length.toString() : undefined}
+                />
+                <SidebarToolButton 
+                  active={isAgentPanelOpen} 
+                  onClick={() => setIsAgentPanelOpen(!isAgentPanelOpen)} 
+                  icon={<Sparkles size={24} />} 
+                  label="Asistente" 
+                  collapsed={isSidebarCollapsed}
+                />
+              </div>
+            </aside>
+            <div className="flex-1 relative bg-slate-50 self-stretch min-h-0">
+              {!isSidebarVisible && (<button onClick={() => setIsSidebarVisible(true)} className="absolute left-0 top-1/2 -translate-y-1/2 z-[50] bg-white/90 backdrop-blur-md border border-slate-200 p-3 rounded-r-2xl shadow-xl text-indigo-600 hover:pr-5 transition-all group"><Menu size={20} /></button>)}
+              
+              <div data-side-panel className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-2xl z-[45] border-r border-slate-200 shadow-2xl transition-all duration-500 ease-out transform ${isElementsPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                <div className="h-full flex flex-col p-6 overflow-y-auto no-scrollbar space-y-8">
+                  <div className="flex items-center justify-between"><div><h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Plan de Diseño</h2><p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none">Cotas Editables ISO</p></div><button onClick={() => setIsElementsPanelOpen(false)} className="p-2 bg-slate-100 rounded-xl text-slate-500 hover:text-red-500"><X size={20} /></button></div>
+                  <div className="space-y-4 flex-1 flex flex-col min-h-0"><div className="flex items-center justify-between px-1"><h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Módulos en Escena</h3><span className="bg-indigo-100 text-indigo-600 text-[10px] font-black px-2 py-0.5 rounded-full">{modules.length}</span></div><div className="flex-1 overflow-y-auto no-scrollbar space-y-2">{labeledModules.map(m => (
+                    <div key={m.uniqueId} className="p-3 bg-white border border-slate-100 rounded-xl shadow-sm space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-indigo-600 text-white font-black text-xs">{m.label}</div>
+                          <p className="text-[10px] font-black text-slate-800 uppercase tracking-tight">{m.name}</p>
+                        </div>
+                        <button onClick={() => deleteModule(m.uniqueId)} className="p-2 text-slate-300 hover:text-red-500" title="Eliminar módulo"><Trash2 size={14} /></button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <MeasureInput label="Ancho" value={m.width} onCommit={(v) => applyDimensionChange('module', m.uniqueId, v)} />
+                        <MeasureInput label="Alto" value={m.height} onCommit={(v) => updateModuleMeasure(m.uniqueId, 'height', v)} />
+                        <MeasureInput label="Fondo" value={m.depth} onCommit={(v) => updateModuleMeasure(m.uniqueId, 'depth', v)} />
+                      </div>
+                    </div>
+                  ))}</div></div>
+                </div>
+              </div>
+
+              <div data-side-panel className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-2xl z-[45] border-r border-slate-200 shadow-2xl transition-all duration-500 ease-out transform ${isAccessoriesPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                <div className="h-full flex flex-col p-6 overflow-y-auto no-scrollbar space-y-8">
+                  <div className="flex items-center justify-between">
+                    <div><h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Accesorios</h2><p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none">Electrodomésticos</p></div>
+                    <button onClick={() => setIsAccessoriesPanelOpen(false)} className="p-2 bg-slate-100 rounded-xl text-slate-500 hover:text-red-500"><X size={20} /></button>
+                  </div>
+                  {listaElectro}
                 </div>
               </div>
 
@@ -4510,47 +4528,9 @@ export default function App() {
                   </Modal>
                 );
               })()}
-              <Modal isOpen={isWorkspaceModalOpen} onClose={() => setIsWorkspaceModalOpen(false)} onApply={addIsland} title="Configuración de Espacio">
+              <Modal isOpen={isWorkspaceModalOpen} onClose={() => setIsWorkspaceModalOpen(false)} onApply={() => { addIsland(); if (guiaEspacio.current) { guiaEspacio.current = false; setIsModulosModalOpen(true); } }} title="Configuración de Espacio">
                 <div className="space-y-8">
-                  {/* Colores y sistema: estructura por tipo de mueble, fachada, canto del frente y gola */}
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Colores y sistema</label>
-                    <div className={`grid ${cfg.hasUpper ? 'grid-cols-2 divide-x divide-slate-300' : 'grid-cols-1'}`}>
-                      {((cfg.hasUpper ? ['MA', 'MB'] : ['MB']) as ('MA' | 'MB')[]).map(n => (
-                        <div key={n} className={`space-y-4 min-w-0 ${cfg.hasUpper ? (n === 'MA' ? 'pr-4' : 'pl-4') : ''}`}>
-                          <div className="text-[11px] font-black text-indigo-700 uppercase pb-1 border-b border-indigo-100">{cfg.id === 'cocinas' ? (n === 'MA' ? 'Mueble aéreo' : 'Muebles base') : (n === 'MA' ? cfg.upperName : cfg.lowerName)}</div>
-                          {([['est', 'Estructura', CALIBRES.estructura, true], ['fach', 'Fachada', CALIBRES.fachada, true], ['fondo', 'Espaldares y fondos', CALIBRES.fondo, false]] as const).map(([k, t, cals, canto]) => (
-                            <CampoColor key={k} label={t} value={acabados[n][k].color} onChange={v => setTablero(n, k, { color: v })}
-                              calibres={cals as unknown as number[]} cal={acabados[n][k].cal} onCal={c => setTablero(n, k, { cal: c })}
-                              rh={acabados[n][k].rh} onRh={v => setTablero(n, k, { rh: v })}
-                              {...(canto ? { rigido: acabados[n][k].rigido, onRigido: (v: boolean) => setTablero(n, k, { rigido: v }) } : {})} />
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                    {(['MA', 'MB'] as const).some(n => esBlanco(acabados[n].est.color) && !esBlanco(acabados[n].fach.color)) && (
-                      <div className="p-3 bg-slate-50 rounded-2xl space-y-2">
-                        <div className="text-[11px] font-black text-slate-700">La estructura es blanca y la fachada es de color. ¿El canto del frente va del color de la fachada?</div>
-                        <div className="grid grid-cols-2 gap-2">
-                          {([[true, 'Sí, del color de la fachada'], [false, 'No, todo blanco']] as const).map(([v, t]) => (
-                            <button key={String(v)} type="button" onClick={() => setAcabados(a => ({ ...a, cantoFachada: v }))} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.cantoFachada === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
-                          ))}
-                        </div>
-                        {acabados.cantoFachada && <div className="text-[10px] font-bold text-slate-400">Laterales y entrepaños: 1L del color de la fachada y 2A blanco. Bases y tapas: 1L del color de la fachada.</div>}
-                      </div>
-                    )}
-                    {cfg.id === 'cocinas' && (
-                      <div className="space-y-1">
-                        <div className="text-[9px] font-black text-slate-400 uppercase px-1">Sistema gola</div>
-                        <div className="grid grid-cols-2 gap-2">
-                          {([['melamina', 'En melamina (puente en L)'], ['aluminio', 'En aluminio (perfil)']] as const).map(([v, t]) => (
-                            <button key={v} type="button" onClick={() => setAcabados(a => ({ ...a, gola: v }))} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.gola === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <div className="text-[10px] font-bold text-slate-400">En el diseño se ven tonos parecidos; el color real se ve en el render.</div>
-                  </div>
+                  <div className="flex items-baseline gap-2 pt-2 border-t border-slate-100"><span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center shrink-0">1</span><span className="text-[11px] font-black text-slate-700 uppercase tracking-widest">Forma y medidas</span><span className="text-[10px] font-bold text-slate-400">tipo, largo, alto y zócalo</span></div>
                   <div className="space-y-4">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Tipo de {cfg.singular}</label>
                     <div className="grid grid-cols-3 gap-3">
@@ -4572,7 +4552,7 @@ export default function App() {
                       </div>
                     )}
                   </div>
-                  
+
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2"><div className="flex items-center justify-between gap-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Largo Muro A (mm)</label><MeasureSketch kind="A" layout={layout} lArm={lArm} /></div><div className="relative group"><DeferredNumber  value={wallA} onCommit={n => setWallA(Math.max(500, n))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none" /><div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-300">MM</div></div></div>
@@ -4588,7 +4568,7 @@ export default function App() {
                       </div>
                     )}
                   </div>
-                  
+
                   {!isClosetSection && !isFitSection && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
@@ -4780,6 +4760,82 @@ export default function App() {
                     </div>
                   )}
 
+                  <div className="flex items-baseline gap-2 pt-2 border-t border-slate-100"><span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center shrink-0">2</span><span className="text-[11px] font-black text-slate-700 uppercase tracking-widest">Muros y columnas</span><span className="text-[10px] font-bold text-slate-400">paredes en los extremos y columnas atravesadas</span></div>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Muros Auxiliares</label>
+                        <p className="text-[9px] font-bold text-slate-500 mt-1">Paredes en extremos del perímetro</p>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                        <div>
+                          <label className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Muro Izquierdo</label>
+                          <p className="text-[9px] font-bold text-slate-500 mt-0.5">Inicio del perímetro</p>
+                        </div>
+                        <button onClick={() => setHasLeftClosure(!hasLeftClosure)} className={`w-10 h-5 rounded-full transition-all relative ${hasLeftClosure ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+                          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${hasLeftClosure ? 'left-5.5' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                      
+                      <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                        <div>
+                          <label className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Muro Derecho</label>
+                          <p className="text-[9px] font-bold text-slate-500 mt-0.5">Final del perímetro</p>
+                        </div>
+                        <button onClick={() => setHasRightClosure(!hasRightClosure)} className={`w-10 h-5 rounded-full transition-all relative ${hasRightClosure ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+                          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${hasRightClosure ? 'left-5.5' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Columnas o muros atravesados</label>
+                        <p className="text-[9px] font-bold text-slate-500 mt-1">Pegados a un muro, de la altura del techo. La modulación los respeta: ahí no van módulos</p>
+                      </div>
+                      <button
+                        onClick={() => setColumns(prev => [...prev, { id: Math.random().toString(36).substr(2, 6), wall: 'A', distance: 0, width: 300, depth: 300 }])}
+                        className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wide shrink-0"
+                      >+ Agregar</button>
+                    </div>
+                    {columns.map((c, idx) => (
+                      <div key={c.id} className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] font-black text-slate-700 uppercase">Columna {idx + 1}</p>
+                          <div className="flex items-center gap-2">
+                            <select value={c.wall} onChange={(e) => setColumns(prev => prev.map(x => (x.id === c.id ? { ...x, wall: e.target.value as 'A' | 'B' | 'C' } : x)))} className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-[11px] font-black text-slate-700 outline-none">
+                              <option value="A">Muro A</option>
+                              {(layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')) && <option value="B">Muro B</option>}
+                              {(layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')) && <option value="C">Muro C</option>}
+                            </select>
+                            <button onClick={() => setColumns(prev => prev.filter(x => x.id !== c.id))} className="p-1 rounded-lg bg-white text-slate-400 hover:text-red-500" title="Eliminar"><X size={14} /></button>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {([['distance', 'Desde la esquina'], ['width', 'Ancho'], ['depth', 'Profundidad']] as const).map(([key, label]) => (
+                            <div key={key} className="space-y-1">
+                              <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label} (mm)</label>
+                              <DeferredNumber value={c[key]} onCommit={n => setColumns(prev => prev.map(x => (x.id === c.id ? { ...x, [key]: Math.max(key === 'distance' ? 0 : 50, Math.round(n)) } : x)))} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {cfg.accessories.length > 0 && <>
+                  <div className="flex items-baseline gap-2 pt-2 border-t border-slate-100"><span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center shrink-0">3</span><span className="text-[11px] font-black text-slate-700 uppercase tracking-widest">Electrodomésticos</span><span className="text-[10px] font-bold text-slate-400">también se cambian después en Accesorios</span></div>
+                  {listaElectro}
+                  </>}
+
+                  {cfg.features.islands && <>
+                  <div className="flex items-baseline gap-2 pt-2 border-t border-slate-100"><span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center shrink-0">4</span><span className="text-[11px] font-black text-slate-700 uppercase tracking-widest">Isla o península</span><span className="text-[10px] font-bold text-slate-400"></span></div>
+                  </>}
                   {cfg.features.islands && (
                   <div className="space-y-4">
                     <div className="p-4 rounded-3xl border-2 border-slate-100 bg-white space-y-3">
@@ -4832,6 +4888,49 @@ export default function App() {
                     </div>
                   </div>
                   )}
+                </div>
+              </Modal>
+              <Modal isOpen={isModulosModalOpen} onClose={() => setIsModulosModalOpen(false)} title="Configuración de Módulos">
+                <div className="space-y-8">
+                  {/* Colores y sistema: estructura por tipo de mueble, fachada, canto del frente y gola */}
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Colores y sistema</label>
+                    <div className={`grid ${cfg.hasUpper ? 'grid-cols-2 divide-x divide-slate-300' : 'grid-cols-1'}`}>
+                      {((cfg.hasUpper ? ['MA', 'MB'] : ['MB']) as ('MA' | 'MB')[]).map(n => (
+                        <div key={n} className={`space-y-4 min-w-0 ${cfg.hasUpper ? (n === 'MA' ? 'pr-4' : 'pl-4') : ''}`}>
+                          <div className="text-[11px] font-black text-indigo-700 uppercase pb-1 border-b border-indigo-100">{cfg.id === 'cocinas' ? (n === 'MA' ? 'Mueble aéreo' : 'Muebles base') : (n === 'MA' ? cfg.upperName : cfg.lowerName)}</div>
+                          {([['est', 'Estructura', CALIBRES.estructura, true], ['fach', 'Fachada', CALIBRES.fachada, true], ['fondo', 'Espaldares y fondos', CALIBRES.fondo, false]] as const).map(([k, t, cals, canto]) => (
+                            <CampoColor key={k} label={t} value={acabados[n][k].color} onChange={v => setTablero(n, k, { color: v })}
+                              calibres={cals as unknown as number[]} cal={acabados[n][k].cal} onCal={c => setTablero(n, k, { cal: c })}
+                              rh={acabados[n][k].rh} onRh={v => setTablero(n, k, { rh: v })}
+                              {...(canto ? { rigido: acabados[n][k].rigido, onRigido: (v: boolean) => setTablero(n, k, { rigido: v }) } : {})} />
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                    {(['MA', 'MB'] as const).some(n => esBlanco(acabados[n].est.color) && !esBlanco(acabados[n].fach.color)) && (
+                      <div className="p-3 bg-slate-50 rounded-2xl space-y-2">
+                        <div className="text-[11px] font-black text-slate-700">La estructura es blanca y la fachada es de color. ¿El canto del frente va del color de la fachada?</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([[true, 'Sí, del color de la fachada'], [false, 'No, todo blanco']] as const).map(([v, t]) => (
+                            <button key={String(v)} type="button" onClick={() => setAcabados(a => ({ ...a, cantoFachada: v }))} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.cantoFachada === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
+                          ))}
+                        </div>
+                        {acabados.cantoFachada && <div className="text-[10px] font-bold text-slate-400">Laterales y entrepaños: 1L del color de la fachada y 2A blanco. Bases y tapas: 1L del color de la fachada.</div>}
+                      </div>
+                    )}
+                    {cfg.id === 'cocinas' && (
+                      <div className="space-y-1">
+                        <div className="text-[9px] font-black text-slate-400 uppercase px-1">Sistema gola</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([['melamina', 'En melamina (puente en L)'], ['aluminio', 'En aluminio (perfil)']] as const).map(([v, t]) => (
+                            <button key={v} type="button" onClick={() => setAcabados(a => ({ ...a, gola: v }))} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.gola === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="text-[10px] font-bold text-slate-400">En el diseño se ven tonos parecidos; el color real se ve en el render.</div>
+                  </div>
 
                   {cfg.features.counter && (
                   <div className="space-y-4">
@@ -4903,73 +5002,6 @@ export default function App() {
                     )}
                   </div>
                   )}
-
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Muros Auxiliares</label>
-                        <p className="text-[9px] font-bold text-slate-500 mt-1">Paredes en extremos del perímetro</p>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
-                        <div>
-                          <label className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Muro Izquierdo</label>
-                          <p className="text-[9px] font-bold text-slate-500 mt-0.5">Inicio del perímetro</p>
-                        </div>
-                        <button onClick={() => setHasLeftClosure(!hasLeftClosure)} className={`w-10 h-5 rounded-full transition-all relative ${hasLeftClosure ? 'bg-indigo-600' : 'bg-slate-200'}`}>
-                          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${hasLeftClosure ? 'left-5.5' : 'left-0.5'}`} />
-                        </button>
-                      </div>
-                      
-                      <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
-                        <div>
-                          <label className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Muro Derecho</label>
-                          <p className="text-[9px] font-bold text-slate-500 mt-0.5">Final del perímetro</p>
-                        </div>
-                        <button onClick={() => setHasRightClosure(!hasRightClosure)} className={`w-10 h-5 rounded-full transition-all relative ${hasRightClosure ? 'bg-indigo-600' : 'bg-slate-200'}`}>
-                          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${hasRightClosure ? 'left-5.5' : 'left-0.5'}`} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Columnas o muros atravesados</label>
-                        <p className="text-[9px] font-bold text-slate-500 mt-1">Pegados a un muro, de la altura del techo. La modulación los respeta: ahí no van módulos</p>
-                      </div>
-                      <button
-                        onClick={() => setColumns(prev => [...prev, { id: Math.random().toString(36).substr(2, 6), wall: 'A', distance: 0, width: 300, depth: 300 }])}
-                        className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wide shrink-0"
-                      >+ Agregar</button>
-                    </div>
-                    {columns.map((c, idx) => (
-                      <div key={c.id} className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-[10px] font-black text-slate-700 uppercase">Columna {idx + 1}</p>
-                          <div className="flex items-center gap-2">
-                            <select value={c.wall} onChange={(e) => setColumns(prev => prev.map(x => (x.id === c.id ? { ...x, wall: e.target.value as 'A' | 'B' | 'C' } : x)))} className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-[11px] font-black text-slate-700 outline-none">
-                              <option value="A">Muro A</option>
-                              {(layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')) && <option value="B">Muro B</option>}
-                              {(layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')) && <option value="C">Muro C</option>}
-                            </select>
-                            <button onClick={() => setColumns(prev => prev.filter(x => x.id !== c.id))} className="p-1 rounded-lg bg-white text-slate-400 hover:text-red-500" title="Eliminar"><X size={14} /></button>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2">
-                          {([['distance', 'Desde la esquina'], ['width', 'Ancho'], ['depth', 'Profundidad']] as const).map(([key, label]) => (
-                            <div key={key} className="space-y-1">
-                              <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">{label} (mm)</label>
-                              <DeferredNumber value={c[key]} onCommit={n => setColumns(prev => prev.map(x => (x.id === c.id ? { ...x, [key]: Math.max(key === 'distance' ? 0 : 50, Math.round(n)) } : x)))} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
 
                   <div className="p-4 bg-slate-50 rounded-2xl">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dilatación</label>
