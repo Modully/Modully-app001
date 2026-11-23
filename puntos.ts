@@ -20,7 +20,30 @@ export interface PuntoAdecuacion {
   wall: 'A' | 'B' | 'C';
   x: number; y: number; z: number;   // posición sobre la cara del muro
   electro: string;                   // de qué electrodoméstico es
+  centro: number;                    // centro del electrodoméstico a lo largo del muro (mm desde el 0): ahí va su cota
 }
+
+/** Nombre del electrodoméstico al que pertenece un punto (va junto a su cota) */
+export const NOMBRE_PUNTO: Record<string, string> = { fridge: 'Nevera', stove: 'Estufa', sink: 'Poceta', dishwasher: 'Lavavajillas', 'hood-under': 'Campana' };
+/**
+ * Cotas de un muro: una por electrodoméstico, en su centro (mm desde el 0), con su nombre y sus puntos al lado
+ * (los electrodomésticos con el mismo centro, como la estufa y su campana, comparten cota).
+ */
+export interface CotaElectro { x: number; nombre: string; puntos: PuntoAdecuacion[] }
+export function cotasPorElectro(puntos: PuntoAdecuacion[], wall: 'A' | 'B' | 'C'): CotaElectro[] {
+  const g = new Map<string, PuntoAdecuacion[]>();
+  puntos.filter(p => p.wall === wall).forEach(p => g.set(p.electro, [...(g.get(p.electro) ?? []), p]));
+  const lista = [...g.entries()].map(([e, ps]) => ({ x: Math.round(ps[0].centro), nombre: NOMBRE_PUNTO[e] ?? e, puntos: ps })).sort((a, b) => a.x - b.x);
+  const out: CotaElectro[] = [];
+  lista.forEach(c => {
+    const prev = out[out.length - 1];
+    if (prev && c.x - prev.x < 10) { prev.nombre = `${prev.nombre} / ${c.nombre}`; prev.puntos.push(...c.puntos); }
+    else out.push({ ...c, puntos: [...c.puntos] });
+  });
+  return out;
+}
+/** Sigla y altura en cm de un punto: "AF55" */
+export const siglaPunto = (p: PuntoAdecuacion) => `${PUNTO_INFO[p.tipo].sigla}${Math.round(p.z / 10)}`;
 
 export const PUNTO_INFO: Record<TipoPunto, { sigla: string; nombre: string; color: string }> = {
   'agua-fria': { sigla: 'AF', nombre: 'Agua fría', color: '#2563eb' },
@@ -61,7 +84,7 @@ export function puntosAdecuacion(appliances: Appliance[], modules: KitchenModule
     if (a.wall === 'Island') return;
     const wall = a.wall;
     const along = (wall === 'A' ? 0 : CORNER_BLIND_OFFSET) + alongRel;
-    out.push({ id: `${a.type}-${tipo}${sufijo}`, tipo, wall, ...lugar(wall, along), z, electro: a.type });
+    out.push({ id: `${a.type}-${tipo}${sufijo}`, tipo, wall, ...lugar(wall, along), z, electro: a.type, centro: (wall === 'A' ? 0 : CORNER_BLIND_OFFSET) + a.distance + a.width / 2 });
   };
   const h = ALTURAS_PUNTO;
   appliances.filter(a => a.active && a.wall !== 'Island').forEach(a => {

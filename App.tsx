@@ -31,7 +31,8 @@ import { Proyectos, DialogoAprobar, ProductoActivo } from './Proyectos';
 import { subirDocumentos, archivoDeDataURL, DocumentoNuevo, guardarDiseno, marcarAprobado, guardarEnBiblioteca, listarBiblioteca } from './nube';
 import { Biblioteca, huellaDiseno } from './Biblioteca';
 import { Precios } from './Precios';
-import { puntosAdecuacion, textoPuntos } from './puntos';
+import { PUNTO_INFO, puntosAdecuacion } from './puntos';
+import { MiniEspacio } from './MiniEspacio';
 import { htmlLaminas } from './PanelLaminas';
 import { htmlPlanos } from './PlanosEnsamble';
 import { resizeSymmetric, snapToNeighbors } from './moduleResize';
@@ -617,7 +618,7 @@ export default function App() {
   const [dilatationGap, setDilatationGap] = useState(DILATATION_GAP_DEFAULT);
   const [dilatationDepth, setDilatationDepth] = useState(DILATATION_DEPTH_DEFAULT);
   // Qué se ve en la escena (solo visual: no cambia el diseño, el despiece ni la exportación)
-  const [visibility, setVisibility] = useState({ isla: true, muros: true, upper: true, lower: true, counter: true, appliances: true, doors: true, shelves: true, cajonero: true, costado: true, dims: true, wallA: true, wallB: true, wallC: true, hoja: true, marco: true, tapaluz: true });
+  const [visibility, setVisibility] = useState({ puntos: true, isla: true, muros: true, upper: true, lower: true, counter: true, appliances: true, doors: true, shelves: true, cajonero: true, costado: true, dims: true, wallA: true, wallB: true, wallC: true, hoja: true, marco: true, tapaluz: true });
   const [hasLeftClosure, setHasLeftClosure] = useState(false);
   const [hasRightClosure, setHasRightClosure] = useState(false);
 
@@ -4193,88 +4194,57 @@ export default function App() {
   }, [labeledModules, lineType, faceColor, wallA, boxes]);
 
   // electrodomésticos: la misma lista en la ventana de Espacio (paso 3) y en el panel Accesorios
+  // electrodomésticos: la misma lista en la ventana de Espacio (paso 3) y en el panel Accesorios. Una línea por cada uno:
+  // icono, nombre, interruptor; activo: muro, ancho y posición en línea, sus puntos como etiquetas y lo propio de cada uno
+  const ICONO_ELECTRO: Partial<Record<ApplianceType, React.ReactNode>> = { fridge: <Refrigerator size={16} />, stove: <Flame size={16} />, sink: <Droplets size={16} />, 'hood-under': <Wind size={16} />, pantry: <Archive size={16} />, dishwasher: <WashingMachine size={16} /> };
+  const NOMBRE_ELECTRO: Partial<Record<ApplianceType, string>> = { fridge: 'Nevera', stove: 'Estufa', sink: 'Poceta', 'hood-under': 'Campana', pantry: 'Alacena alta', dishwasher: 'Lavavajillas' };
+  const chip = (on: boolean) => `px-2 py-1 rounded-lg text-[10px] font-black border ${on ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`;
+  const numMini = 'w-16 bg-white border border-slate-200 rounded-lg px-1.5 py-1 text-[11px] font-black text-slate-800 text-right outline-none focus:border-indigo-500';
   const listaElectro = (
-                  <div className="space-y-4">
-                    {cfg.accessories.length === 0 && (<div className="p-4 rounded-3xl bg-slate-50 border border-slate-100 text-[11px] font-bold text-slate-500">Aún no hay accesorios definidos para {cfg.name.toLowerCase()}. Cuando se definan sus reglas aparecen aquí.</div>)}
-                    {appliances.filter(ap => cfg.accessories.includes(ap.type)).map((app) => (
-                      <div key={app.type} className={`p-4 rounded-3xl border-2 transition-all space-y-4 ${app.active ? 'bg-indigo-50 border-indigo-600' : 'bg-white border-slate-100'}`}>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-xl ${app.active ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                              {app.type === 'fridge' && <Refrigerator size={20} />}
-                              {app.type === 'stove' && <Flame size={20} />}
-                              {app.type === 'sink' && <Droplets size={20} />}
-                              {app.type === 'hood-under' && <Wind size={20} />}
-                              {app.type === 'pantry' && <Archive size={20} />}
-                              {app.type === 'dishwasher' && <WashingMachine size={20} />}
-                            </div>
-                            <div>
-                              <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">
-                                {app.type === 'fridge' ? 'Nevera' : app.type === 'stove' ? 'Estufa' : app.type === 'sink' ? 'Poceta / Grifería' : app.type === 'pantry' ? 'Alacena Alta' : app.type === 'dishwasher' ? 'Lavavajillas' : 'Campana'}
-                              </p>
-                              <p className="text-[9px] font-bold text-slate-400 uppercase">{app.active ? 'Activo' : 'Desactivado'}</p>
-                            </div>
-                          </div>
-                          <button onClick={() => toggleAppliance(app.type)} className={`w-10 h-5 rounded-full transition-all relative ${app.active ? 'bg-indigo-600' : 'bg-slate-200'}`}><div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${app.active ? 'left-5.5' : 'left-0.5'}`} /></button>
+                  <div className="space-y-2">
+                    {cfg.accessories.length === 0 && (<div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 text-[11px] font-bold text-slate-500">Aún no hay accesorios definidos para {cfg.name.toLowerCase()}.</div>)}
+                    {appliances.filter(ap => cfg.accessories.includes(ap.type)).map((app) => {
+                      const sigue = app.type === 'dishwasher' ? 'poceta' : app.type === 'hood-under' ? 'estufa' : null; // va pegado a otro: sin muro ni posición propios
+                      const pts = app.active ? puntosAdecuacion([app], modules, wallA) : [];
+                      return (
+                      <div key={app.type} className={`px-3 py-2 rounded-2xl border transition-all space-y-1.5 ${app.active ? 'bg-indigo-50/60 border-indigo-300' : 'bg-white border-slate-100'}`}>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`p-1.5 rounded-lg ${app.active ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'}`}>{ICONO_ELECTRO[app.type]}</span>
+                          <span className="text-[11px] font-black text-slate-800 uppercase tracking-tight mr-auto">{NOMBRE_ELECTRO[app.type] ?? app.type}</span>
+                          {app.active && !sigue && (['A', 'B', 'C'] as WallName[]).filter(w => w === 'A' || (w === 'B' && armB) || (w === 'C' && armC)).length > 1 && (
+                            <span className="flex gap-0.5">{(['A', 'B', 'C'] as WallName[]).filter(w => w === 'A' || (w === 'B' && armB) || (w === 'C' && armC)).map(w => (
+                              <button key={w} type="button" title={`Muro ${w}`} onClick={() => moveAppliance(app.type, w, app.wall === w ? app.distance : 0)} className={chip(app.wall === w)}>{w}</button>
+                            ))}</span>
+                          )}
+                          {app.active && (
+                            <label className="flex items-center gap-1 text-[9px] font-black text-slate-400 uppercase" title="Ancho (mm)">An
+                              <input type="number" value={app.width} onFocus={e => e.currentTarget.select()} onChange={(e) => updateApplianceProp(app.type, 'width', parseInt(e.target.value) || 0)} className={numMini} /></label>
+                          )}
+                          {app.active && !sigue && (
+                            <label className="flex items-center gap-1 text-[9px] font-black text-slate-400 uppercase" title="Posición desde el inicio del muro (mm)">Pos
+                              <input type="number" value={app.distance} onFocus={e => e.currentTarget.select()} onChange={(e) => updateApplianceProp(app.type, 'distance', parseInt(e.target.value) || 0)} className={numMini} /></label>
+                          )}
+                          <button onClick={() => toggleAppliance(app.type)} aria-label={`${app.active ? 'Quitar' : 'Poner'} ${NOMBRE_ELECTRO[app.type] ?? ''}`} className={`w-9 h-5 rounded-full transition-all relative shrink-0 ${app.active ? 'bg-indigo-600' : 'bg-slate-200'}`}><div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${app.active ? 'left-[18px]' : 'left-0.5'}`} /></button>
                         </div>
-                        {app.active && textoPuntos(app) && <p className="text-[10px] font-bold text-slate-500 -mt-2">Puntos: {textoPuntos(app)}</p>}
-                        {app.active && app.type !== 'dishwasher' && app.type !== 'hood-under' && (
-                          <div className="space-y-1 animate-in fade-in slide-in-from-top-2 duration-300">
-                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Muro</label>
-                            <div className="flex gap-2">
-                              {(['A', 'B', 'C'] as WallName[]).filter(w => w === 'A' || (w === 'B' && armB) || (w === 'C' && armC)).map(w => (
-                                <button
-                                  key={w}
-                                  onClick={() => moveAppliance(app.type, w, app.wall === w ? app.distance : 0)}
-                                  className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${app.wall === w ? 'bg-indigo-600 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-500 hover:border-indigo-400'}`}
-                                  title={`Ubicar en el muro ${w}`}
-                                >
-                                  {w}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                         {app.active && (
-                          <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                            <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Ancho (mm)</label><input type="number" value={app.width} onChange={(e) => updateApplianceProp(app.type, 'width', parseInt(e.target.value) || 0)} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
-                            {app.type !== 'dishwasher' && app.type !== 'hood-under' && <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Posición (mm)</label><input type="number" value={app.distance} onChange={(e) => updateApplianceProp(app.type, 'distance', parseInt(e.target.value) || 0)} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>}
-                          </div>
-                        )}
-                        {/* campos propios: dispensador de la nevera, lado del lavavajillas y tipo de campana */}
-                        {app.active && app.type === 'fridge' && (
-                          <button type="button" onClick={() => updateApplianceProp('fridge', 'dispensador', !app.dispensador)} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border text-[10px] font-black uppercase ${app.dispensador ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-200'}`}>
-                            <span>Dispensador de agua</span><span>{app.dispensador ? 'Sí' : 'No'}</span>
-                          </button>
-                        )}
-                        {app.active && app.type === 'dishwasher' && (
-                          <div className="space-y-1">
-                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Al lado de la poceta</label>
-                            <div className="grid grid-cols-2 gap-2">{(['izq', 'der'] as const).map(l => (
-                              <button key={l} type="button" onClick={() => updateApplianceProp('dishwasher', 'lado', l)} className={`py-2 rounded-xl text-[10px] font-black uppercase border ${(app.lado ?? 'der') === l ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{l === 'izq' ? 'Izquierda' : 'Derecha'}</button>
-                            ))}</div>
-                            {!appliances.find(a => a.type === 'sink')?.active && <p className="text-[9px] font-bold text-amber-700">Activa la poceta: el lavavajillas va pegado a ella.</p>}
-                          </div>
-                        )}
-                        {app.active && app.type === 'hood-under' && (
-                          <div className="space-y-1">
-                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Tipo de campana · va sobre la estufa</label>
-                            <div className="grid grid-cols-2 gap-2">{([['convencional', 'Convencional', 'bajo un mueble'], ['libre', 'Tipo península', 'sin mueble arriba, 65 cm libres']] as const).map(([k, t, d]) => (
-                              <button key={k} type="button" onClick={() => updateApplianceProp('hood-under', 'campanaTipo', k)} className={`py-2 px-2 rounded-xl text-left border ${(app.campanaTipo ?? 'convencional') === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>
-                                <span className="block text-[10px] font-black uppercase">{t}</span><span className="block text-[9px] font-bold opacity-80">{d}</span>
-                              </button>
-                            ))}</div>
-                            <p className="text-[9px] font-bold text-slate-400">Al cambiar el tipo, vuelve a pulsar "Optimizar modulación" para rehacer los aéreos.</p>
+                          <div className="flex items-center gap-1 flex-wrap pl-9">
+                            {pts.map(pt => { const info = PUNTO_INFO[pt.tipo]; return <span key={pt.id} title={`${info.nombre} a ${Math.round(pt.z / 10)} cm del piso`} className="px-1.5 py-0.5 rounded-md text-[9px] font-black text-white" style={{ background: info.color }}>{info.sigla} {Math.round(pt.z / 10)}</span>; })}
+                            {sigue && <span className="text-[9px] font-bold text-slate-400">va con la {sigue}</span>}
+                            {app.type === 'fridge' && <button type="button" onClick={() => updateApplianceProp('fridge', 'dispensador', !app.dispensador)} className={chip(!!app.dispensador)}>Dispensador {app.dispensador ? 'sí' : 'no'}</button>}
+                            {app.type === 'dishwasher' && (['izq', 'der'] as const).map(l => <button key={l} type="button" onClick={() => updateApplianceProp('dishwasher', 'lado', l)} className={chip((app.lado ?? 'der') === l)}>{l === 'izq' ? 'Izquierda' : 'Derecha'}</button>)}
+                            {app.type === 'dishwasher' && !appliances.find(a => a.type === 'sink')?.active && <span className="text-[9px] font-bold text-amber-700">activa la poceta</span>}
+                            {app.type === 'hood-under' && ([['convencional', 'Convencional'], ['libre', 'Tipo península · 65 cm libres']] as const).map(([k, t]) => <button key={k} type="button" title={k === 'libre' ? 'Sin mueble arriba: los aéreos dejan 65 cm libres (vuelve a optimizar)' : 'Bajo un mueble'} onClick={() => updateApplianceProp('hood-under', 'campanaTipo', k)} className={chip((app.campanaTipo ?? 'convencional') === k)}>{t}</button>)}
                           </div>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                     {/* Campana de isla: va sobre la estufa de la isla o península; se activa y desactiva aquí o en la configuración de la isla */}
                     {cfg.accessories.includes('hood-under') && (() => {
                       const conEstufa = activeIslands.filter(i => i.stove);
                       const on = conEstufa.length > 0 && conEstufa.some(i => i.campana);
                       return (
-                        <div className={`p-4 rounded-3xl border-2 transition-all space-y-2 ${on ? 'bg-indigo-50 border-indigo-600' : 'bg-white border-slate-100'}`}>
+                        <div className={`px-3 py-2 rounded-2xl border transition-all space-y-1 ${on ? 'bg-indigo-50/60 border-indigo-300' : 'bg-white border-slate-100'}`}>
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
                               <div className={`p-2 rounded-xl ${on ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'}`}><Wind size={20} /></div>
@@ -4585,6 +4555,12 @@ export default function App() {
               })()}
               <Modal isOpen={isWorkspaceModalOpen} onClose={() => setIsWorkspaceModalOpen(false)} onApply={() => { addIsland(); if (guiaEspacio.current) { guiaEspacio.current = false; setIsModulosModalOpen(true); } }} title="Configuración de Espacio">
                 <div className="space-y-8">
+                  {!isFitSection && cfg.id !== 'puertas' && (
+                    <div className="sticky -top-8 z-20 -mx-8 px-8 pt-3 pb-3 bg-white/95 backdrop-blur border-b border-slate-100">
+                      <MiniEspacio wallA={wallA} wallB={wallB} wallC={wallC} armB={armB} armC={armC} izq={hasLeftClosure} der={hasRightClosure}
+                        appliances={appliances} modules={modules} columns={columns} islands={activeIslands} puntos={puntosAdecuacion(appliances, modules, wallA)} />
+                    </div>
+                  )}
                   <div className="flex items-baseline gap-2 pt-2 border-t border-slate-100"><span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center shrink-0">1</span><span className="text-[11px] font-black text-slate-700 uppercase tracking-widest">Forma y medidas</span><span className="text-[10px] font-bold text-slate-400">tipo, largo, alto y zócalo</span></div>
                   <div className="space-y-4">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Tipo de {cfg.singular}</label>
@@ -5522,7 +5498,7 @@ export default function App() {
                   )}
                   <div className="w-px h-6 bg-slate-200" />
                   <div className="flex gap-1">
-                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos'], ['isla', 'Isla', 'las islas y penínsulas'], ['muros', 'Muros', 'los muros'], ['doors', 'Puertas', 'las puertas corredizas'], ['shelves', 'Entrepaños', 'los entrepaños'], ['cajonero', 'Cajonero', 'el cajonero'], ['costado', 'Costado', 'el costado piso a techo'], ['hoja', 'Hoja', 'la hoja y la chapa'], ['marco', 'Marco', 'los marcos, batientes y dilatadas'], ['tapaluz', 'Tapaluz', 'el tapaluz'], ['dims', 'Dimensiones', 'las notas de dimensiones'], ['wallA', 'A', 'el muro A con sus cubos'], ['wallB', 'B', 'el muro B con sus cubos'], ['wallC', 'C', 'el muro C con sus cubos']] as const).filter(([key]) => (key !== 'isla' || (cfg.features.islands && islands.length > 0)) && (key !== 'muros' || cfg.id !== 'puertas') && ((key !== 'hoja' && key !== 'marco' && key !== 'tapaluz') || cfg.id === 'puertas') && (cfg.id !== 'puertas' || key === 'hoja' || key === 'marco' || key === 'tapaluz') && (key !== 'dims' || isFitSection) && (key !== 'wallA' || (isFitSection && layout !== 'STRAIGHT')) && (key !== 'wallB' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')))) && (key !== 'wallC' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')))) && ((key !== 'doors' && key !== 'shelves' && key !== 'cajonero' && key !== 'costado') || isClosetSection || (key as string) === 'dims' || (key as string).startsWith('wall')) && (key !== 'upper' || (cfg.hasUpper && !isClosetSection && !isFitSection)) && (key !== 'lower' || !(isClosetSection || isFitSection)) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
+                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos'], ['puntos', 'Puntos', 'los puntos de adecuación (agua, desagüe, energía y gas)'], ['isla', 'Isla', 'las islas y penínsulas'], ['muros', 'Muros', 'los muros'], ['doors', 'Puertas', 'las puertas corredizas'], ['shelves', 'Entrepaños', 'los entrepaños'], ['cajonero', 'Cajonero', 'el cajonero'], ['costado', 'Costado', 'el costado piso a techo'], ['hoja', 'Hoja', 'la hoja y la chapa'], ['marco', 'Marco', 'los marcos, batientes y dilatadas'], ['tapaluz', 'Tapaluz', 'el tapaluz'], ['dims', 'Dimensiones', 'las notas de dimensiones'], ['wallA', 'A', 'el muro A con sus cubos'], ['wallB', 'B', 'el muro B con sus cubos'], ['wallC', 'C', 'el muro C con sus cubos']] as const).filter(([key]) => (key !== 'puntos' || cfg.accessories.length > 0) && (key !== 'isla' || (cfg.features.islands && islands.length > 0)) && (key !== 'muros' || cfg.id !== 'puertas') && ((key !== 'hoja' && key !== 'marco' && key !== 'tapaluz') || cfg.id === 'puertas') && (cfg.id !== 'puertas' || key === 'hoja' || key === 'marco' || key === 'tapaluz') && (key !== 'dims' || isFitSection) && (key !== 'wallA' || (isFitSection && layout !== 'STRAIGHT')) && (key !== 'wallB' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')))) && (key !== 'wallC' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')))) && ((key !== 'doors' && key !== 'shelves' && key !== 'cajonero' && key !== 'costado') || isClosetSection || (key as string) === 'dims' || (key as string).startsWith('wall')) && (key !== 'upper' || (cfg.hasUpper && !isClosetSection && !isFitSection)) && (key !== 'lower' || !(isClosetSection || isFitSection)) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
                       <button
                         key={key}
                         onClick={() => setVisibility(v => ({ ...v, [key]: !v[key] }))}

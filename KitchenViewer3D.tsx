@@ -11,7 +11,7 @@ import type { ClosetConfig, ClosetFit, FitBodyCfg } from './types';
 import type { PuertaCfg } from './puertas';
 import { Box, findModuleBox, boxesBounds, applianceCenter, counterTopZ, CORNER_BLIND_OFFSET, WALL_THICKNESS } from './boxes';
 import { COLORS } from './constants';
-import { PUNTO_INFO, PuntoAdecuacion } from './puntos';
+import { PUNTO_INFO, PuntoAdecuacion, cotasPorElectro, siglaPunto } from './puntos';
 import { X, Plus, Ruler, ArrowUp, ArrowLeft, ArrowRight, ArrowDownLeft } from 'lucide-react';
 
 // Constantes de elevación y espaciado (en milímetros)
@@ -1260,7 +1260,7 @@ const JunctionControl3D: React.FC<JunctionControl3DProps> = ({ leftModule, right
       zIndexRange={[100, 0]}
     >
       <div
-        className={`w-16 h-16 rounded-full ${isResizing ? 'bg-green-200 border-green-600' : 'bg-purple-100 border-purple-600'} border-[3px] shadow-xl flex items-center justify-center backdrop-blur-sm cursor-ew-resize hover:bg-purple-200 hover:scale-110 transition-all`}
+        className={`w-8 h-8 rounded-full ${isResizing ? 'bg-green-200 border-green-600' : 'bg-purple-100 border-purple-600'} border-2 shadow-md flex items-center justify-center backdrop-blur-sm cursor-ew-resize hover:bg-purple-200 hover:scale-110 transition-all`}
         title="Arrastra para redimensionar"
         data-junction-pos={leftModule.positionX + leftModule.width}
         data-junction-wall={wall}
@@ -1275,11 +1275,11 @@ const JunctionControl3D: React.FC<JunctionControl3DProps> = ({ leftModule, right
         {/* En ortogonales la flecha gira para seguir el eje del muro en pantalla; en perspectiva el control ya está apoyado en la cara
             del módulo (su transformación 3D lo orienta), así que no se gira: la línea central queda paralela a la unión entre módulos */}
         <div className="flex items-center gap-0" style={{ transform: `rotate(${isOrtho ? arrowAngle : 0}deg)` }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
             <path d="M15 18L9 12L15 6" stroke="#7c3aed" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <div className="w-[3px] h-5 bg-purple-600 rounded"></div>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <div className="w-[2px] h-2.5 bg-purple-600 rounded"></div>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
             <path d="M9 18L15 12L9 6" stroke="#7c3aed" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
@@ -2377,7 +2377,7 @@ const ApplianceDragController: React.FC<{
 };
 
 const APPLIANCE_NAMES: Record<string, string> = {
-  fridge: 'Nevera', stove: 'Estufa', sink: 'Poceta', 'hood-under': 'Campana', 'hood-island': 'Campana', pantry: 'Alacena',
+  fridge: 'Nevera', stove: 'Estufa', sink: 'Poceta', 'hood-under': 'Campana', 'hood-island': 'Campana', pantry: 'Alacena', dishwasher: 'Lavavajillas',
 };
 
 // Separación de las cotas respecto al muro y entre filas (mm)
@@ -2898,7 +2898,7 @@ interface KitchenViewer3DProps {
   onResizeEdge?: (id: string, side: 'left' | 'right', deltaX: number, initialWidth: number, initialPositionX: number) => void;
   onMoveAppliance?: (type: ApplianceType, wall: WallName, distance: number) => void;
   colores?: { fachada: string; fachadaMA?: string; ma: string; mb: string; otros: string; fondo?: string; fondoMA?: string }; // tonos parecidos a los colores elegidos (catálogo)
-  visibility?: { upper: boolean; lower: boolean; counter: boolean; appliances: boolean; isla?: boolean; muros?: boolean; doors?: boolean; shelves?: boolean; cajonero?: boolean; costado?: boolean; dims?: boolean; wallA?: boolean; wallB?: boolean; wallC?: boolean; hoja?: boolean; marco?: boolean; tapaluz?: boolean };
+  visibility?: { upper: boolean; lower: boolean; counter: boolean; appliances: boolean; puntos?: boolean; isla?: boolean; muros?: boolean; doors?: boolean; shelves?: boolean; cajonero?: boolean; costado?: boolean; dims?: boolean; wallA?: boolean; wallB?: boolean; wallC?: boolean; hoja?: boolean; marco?: boolean; tapaluz?: boolean };
   collisions?: Box[]; // cajas que chocan: se marcan en rojo
   measureMode?: boolean; // cinta métrica activa: la escena solo se mira y se mide
   onResizeJunction?: (leftId: string, rightId: string, deltaX: number, initialLeftWidth: number, initialRightWidth: number, initialLeftPositionX: number, initialRightPositionX: number) => void;
@@ -3214,7 +3214,9 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   const dimExtra = viewMode === 'plan'
     ? (DIM_BASE_OFFSET + Math.max(1, dimensionRows(appliances.filter(a => a.active))) * DIM_ROW_SPACING + 450) / 1000 : 0;
   const planFrame: ViewFrame = { cx: planCx, cy: 0, cz: planCz, w: (bounds.maxX - bounds.minX) / 1000 + 0.8 + 2 * dimExtra, h: (bounds.maxY - bounds.minY) / 1000 + 0.8 + 2 * dimExtra };
-  const frontalFrame: ViewFrame = { cx: 0, cy: spaceHeight / 2000, cz: 0, w: baseWidth + 0.8, h: spaceHeight / 1000 + 0.6 };
+  // con cotas de puntos bajo el piso (muro A), el encuadre de la frontal baja para que se lean completas
+  const extraCotas = visibility?.puntos !== false && puntos.some(p => p.wall === 'A') ? 1.1 : 0;
+  const frontalFrame: ViewFrame = { cx: 0, cy: spaceHeight / 2000 - extraCotas / 2, cz: 0, w: baseWidth + 0.8, h: spaceHeight / 1000 + 0.6 + extraCotas };
 
   // Calcular junctions (uniones entre módulos adyacentes)
   // Formato: { leftModule, rightModule, leftId, rightId, wall }
@@ -3298,8 +3300,9 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           ? <OrthographicCamera makeDefault position={[0, 10, 0]} near={0.1} far={100} />
           : <PerspectiveCamera makeDefault position={[5, 4, 5]} fov={45} />}
         <ambientLight intensity={0.6} /><directionalLight position={[5, 10, 5]} intensity={1.5} castShadow shadow-mapSize={[1024, 1024]} /><Environment preset="apartment" /><CameraController viewMode={viewMode} plan={planFrame} frontal={frontalFrame} />
-        {viewMode === 'plan' && <WallDimensions layout={layout} lArm={lArm} appliances={appliances} wallA={wallA} wallB={wallB} wallC={wallC} offsetZ={offsetZ} onEditWall={onEditWall} />}
-        {viewMode === 'plan' && vis.appliances && <PlanDimensions appliances={appliances} wallA={wallA} offsetZ={offsetZ} onMoveAppliance={onMoveAppliance} />}
+        {/* Planta: con puntos de adecuación visibles, sus cotas desde el 0 (con el nombre del electrodoméstico) reemplazan las cotas
+            de los electrodomésticos y la del muro; sin puntos queda la cota del muro (editable con un clic) */}
+        {viewMode === 'plan' && !(vis.puntos !== false && puntos.length > 0) && <WallDimensions layout={layout} lArm={lArm} appliances={[]} wallA={wallA} wallB={wallB} wallC={wallC} offsetZ={offsetZ} onEditWall={onEditWall} />}
         <ApplianceDragController
           drag={dragApp} layout={layout} lArm={lArm} wallA={wallA} wallB={wallB} wallC={wallC} offsetZ={offsetZ} controlsRef={controlsRef}
           onMove={(type, wall, distance) => onMoveAppliance?.(type, wall, distance)}
@@ -3528,10 +3531,44 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           return (
             <>
               <MovableCota kind="h" from={toXw(x0)} to={toXw(x1)} at={(zTop + 120) / 1000} zf={zf} label={x1 - x0} ext={[zTop / 1000, 0]} controlsRef={controlsRef} />
-              <MovableCota kind="v" from={0} to={zTop / 1000} at={xl - 0.42} zf={zf} label={zTop} ext={[xl, 0]} controlsRef={controlsRef} />
-              {levels.length > 2 && levels.slice(0, -1).map((z, k) => (
-                <MovableCota key={`cad-${k}-${z}`} kind="v" from={z / 1000} to={levels[k + 1] / 1000} at={xl - 0.2} zf={zf} label={levels[k + 1] - z} ext={[xl, 0]} controlsRef={controlsRef} />
-              ))}
+              {/* alturas desde el punto 0 (el piso): una marca por cada nivel con su altura acumulada, como las cotas de los puntos;
+                  la de arriba, el alto general, en azul */}
+              {(() => {
+                const xT = xl - 0.3, gris = '#334155';
+                // arriba de todo, el alto del muro (techo); la última altura de los muebles es su alto total
+                const muro = Math.round(spaceHeight);
+                const alturas = muro > levels[levels.length - 1] + 1 ? [...levels, muro] : levels;
+                const iMuebles = levels.length - 1, iMuro = alturas.length - 1;
+                // alturas muy juntas (base, mesón, salpicadero, muebles y techo): cada número sube lo justo para no taparse con el de abajo
+                const ys: number[] = [];
+                alturas.forEach((z, k) => { ys.push(Math.max(z / 1000, k ? ys[k - 1] + 0.075 : -Infinity)); });
+                return (
+                  <group>
+                    {/* punto 0: una sola diana (anillo, punto y cruz) en la esquina del muro A con el piso; de ahí salen las alturas y
+                        las cotas de los puntos */}
+                    <group position={[toXw(0), 0, zf + 0.002]}>
+                      <mesh raycast={() => null} renderOrder={23}><ringGeometry args={[0.032, 0.042, 32]} /><meshBasicMaterial color="#0f172a" depthTest={false} transparent /></mesh>
+                      <mesh raycast={() => null} renderOrder={23}><circleGeometry args={[0.012, 20]} /><meshBasicMaterial color="#0f172a" depthTest={false} transparent /></mesh>
+                      <Line points={[[-0.06, 0, 0], [0.06, 0, 0]]} color="#0f172a" lineWidth={1} depthTest={false} renderOrder={23} raycast={() => null} />
+                      <Line points={[[0, -0.06, 0], [0, 0.06, 0]]} color="#0f172a" lineWidth={1} depthTest={false} renderOrder={23} raycast={() => null} />
+                    </group>
+                    {alturas.map((z, k) => {
+                      const total = k === iMuebles || k === iMuro;
+                      const texto = k === iMuro && iMuro !== iMuebles ? `${z} muro` : k === iMuebles ? `${z} muebles` : `${z}`;
+                      return (
+                        <group key={`alt-${z}`}>
+                          <Line points={[[xl, z / 1000, zf], [xT - 0.04, z / 1000, zf]]} color={gris} lineWidth={0.8} dashed={k > 0 && !total} dashSize={0.04} gapSize={0.03} depthTest={false} renderOrder={20} raycast={() => null} />
+                          <Line points={[[xT - 0.03, z / 1000 - 0.03, zf], [xT + 0.03, z / 1000 + 0.03, zf]]} color={gris} lineWidth={2} depthTest={false} renderOrder={20} raycast={() => null} />
+                          {ys[k] - z / 1000 > 0.01 && <Line points={[[xT - 0.04, z / 1000, zf], [xT - 0.09, ys[k], zf]]} color={gris} lineWidth={0.8} depthTest={false} renderOrder={20} raycast={() => null} />}
+                          <Html position={[xT - 0.1, ys[k], zf]} zIndexRange={[60, 0]} style={{ pointerEvents: 'none' }}>
+                            <div style={{ transform: 'translate(-100%, -50%)', font: '800 11px system-ui', color: k === iMuro && iMuro !== iMuebles ? '#0f172a' : total ? '#4338ca' : '#0f172a', whiteSpace: 'nowrap' }}>{texto}</div>
+                          </Html>
+                        </group>
+                      );
+                    })}
+                  </group>
+                );
+              })()}
             </>
           );
         })()}
@@ -4291,7 +4328,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           );
         })}
         {/* Puntos de adecuación: un círculo de color sobre la cara del muro con su sigla y altura (AF, AC, D, E, G) */}
-        {vis.appliances && (() => {
+        {vis.puntos !== false && viewMode !== 'plan' && (() => {
           // etiquetas sin encimarse: cada una sube lo justo para no tapar a las de los puntos cercanos del mismo muro
           const along = (q: PuntoAdecuacion) => (q.wall === 'A' ? q.x : q.y);
           const ys: number[] = [];
@@ -4314,13 +4351,96 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               <group key={pt.id} position={[x, pt.z / 1000, z]} rotation={rot}>
                 <mesh raycast={() => null} renderOrder={20}><circleGeometry args={[0.035, 24]} /><meshBasicMaterial color={info.color} depthTest={false} transparent /></mesh>
                 <mesh position={[0, 0, 0.001]} raycast={() => null} renderOrder={21}><ringGeometry args={[0.035, 0.042, 24]} /><meshBasicMaterial color="#ffffff" depthTest={false} transparent /></mesh>
+                {!(viewMode === 'frontal' && pt.wall === 'A') && <>
                 {dy > 0.09 && <Line points={[[0, 0.042, 0.002], [0, dy - 0.015, 0.002]]} color={info.color} lineWidth={1} depthTest={false} renderOrder={20} raycast={() => null} />}
                 <Html center position={[0, dy, 0.01]} zIndexRange={[60, 0]} style={{ pointerEvents: 'none' }}>
                   <div title={`${info.nombre} a ${Math.round(pt.z / 10)} cm del piso`} style={{ background: info.color, color: '#fff', font: '800 10px system-ui', padding: '1px 5px', borderRadius: 6, whiteSpace: 'nowrap', boxShadow: '0 1px 3px rgba(0,0,0,.3)' }}>{info.sigla} {Math.round(pt.z / 10)}</div>
                 </Html>
+                </>}
               </group>
             );
           });
+        })()}
+
+        {/* Cotas de los puntos de adecuación desde el punto 0 (mm): una por electrodoméstico, en su centro, con su nombre y sus puntos
+            al lado (sigla y altura en cm), y al final la cota total del muro. Línea punteada, marca a 45° y el texto en diagonal.
+            En la vista frontal van bajo el piso (muro A); en planta, por fuera de cada muro, con los puntos como círculos sobre su cara */}
+        {vis.puntos !== false && (viewMode === 'frontal' || viewMode === 'plan') && puntos.length > 0 && (() => {
+          const gris = '#334155';
+          // marcas de un muro: el 0, una por electrodoméstico y la total del muro
+          type Marca = { x: number; texto: string; puntos?: PuntoAdecuacion[]; total?: boolean };
+          const marcas = (wall: 'A' | 'B' | 'C', largo: number): Marca[] => [
+            { x: 0, texto: '0' },
+            ...cotasPorElectro(puntos, wall).map(c => ({ x: c.x, texto: `${c.x} ${c.nombre}`, puntos: c.puntos })),
+            { x: Math.round(largo), texto: `${Math.round(largo)}`, total: true },
+          ];
+          // texto en diagonal: "arriba" sube a 45° desde la marca; "abajo" baja a 45°; "lado" queda horizontal (muros B y C en planta)
+          const etiqueta = (m: Marca, modo: 'arriba' | 'abajo' | 'izq' | 'der') => (
+            <div style={{
+              transformOrigin: modo === 'arriba' ? '0 100%' : '0 0',
+              transform: modo === 'arriba' ? 'translateY(-100%) rotate(-45deg)' : modo === 'abajo' ? 'rotate(45deg)' : modo === 'izq' ? 'translate(-100%, -50%)' : 'translate(0, -50%)',
+              font: '800 11px system-ui', color: m.total ? '#4338ca' : '#0f172a', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 3,
+            }}>
+              <span>{m.texto}</span>
+              {m.puntos?.map(p => <span key={p.id} title={`${PUNTO_INFO[p.tipo].nombre} a ${Math.round(p.z / 10)} cm del piso`} style={{ background: PUNTO_INFO[p.tipo].color, color: '#fff', font: '800 9px system-ui', padding: '1px 3px', borderRadius: 4 }}>{siglaPunto(p)}</span>)}
+            </div>
+          );
+          if (viewMode === 'frontal') {
+            if (!puntos.some(p => p.wall === 'A')) return null;
+            const zFace = toWorldXZ(0, 6)[1], yLinea = -0.42;
+            const X = (mm: number) => toWorldXZ(mm, 0)[0];
+            return (
+              <group>
+                {marcas('A', wallA).map(m => {
+                  const x = m.x;
+                  const zTop = m.puntos ? Math.min(...m.puntos.map(p => p.z)) / 1000 - 0.05 : 0;
+                  return (
+                    <group key={`${x}-${m.total ? 't' : ''}`}>
+                      <Line points={[[X(x), zTop, zFace], [X(x), yLinea - 0.04, zFace]]} color={gris} lineWidth={0.8} dashed={!!m.puntos} dashSize={0.04} gapSize={0.03} depthTest={false} renderOrder={20} raycast={() => null} />
+                      <Line points={[[X(x) - 0.03, yLinea - 0.03, zFace], [X(x) + 0.03, yLinea + 0.03, zFace]]} color={gris} lineWidth={2} depthTest={false} renderOrder={20} raycast={() => null} />
+                      <Html position={[X(x), yLinea - 0.06, zFace]} zIndexRange={[60, 0]} style={{ pointerEvents: 'none' }}>{etiqueta(m, 'abajo')}</Html>
+                    </group>
+                  );
+                })}
+              </group>
+            );
+          }
+          // planta
+          const T = WALL_THICKNESS, lift = 0.05;
+          const W = (X: number, Y: number): [number, number, number] => [(X - wallA / 2) / 1000, lift, offsetZ + Y / 1000];
+          const fuera = (wall: 'A' | 'B' | 'C', along: number, across: number) => (wall === 'A' ? W(along, -T - across) : wall === 'B' ? W(-T - across, along) : W(wallA + T + across, along));
+          const plano = [-Math.PI / 2, 0, 0] as [number, number, number];
+          const off = DIM_BASE_OFFSET;
+          return (
+            <group>
+              {puntos.map(p => (
+                <mesh key={`pl-${p.id}`} position={p.wall === 'A' ? W(p.x, 4) : p.wall === 'B' ? W(4, p.y) : W(wallA - 4, p.y)} rotation={plano} raycast={() => null} renderOrder={22}>
+                  <circleGeometry args={[0.04, 24]} /><meshBasicMaterial color={PUNTO_INFO[p.tipo].color} depthTest={false} transparent />
+                </mesh>
+              ))}
+              {(['A', 'B', 'C'] as const).map(wall => {
+                if (!puntos.some(p => p.wall === wall)) return null;
+                const cero = wall === 'C' ? W(wallA, 0) : W(0, 0);
+                return (
+                  <group key={`cotas-${wall}`}>
+                    <mesh position={cero} rotation={plano} raycast={() => null} renderOrder={22}><ringGeometry args={[0.035, 0.06, 24]} /><meshBasicMaterial color="#7c3aed" depthTest={false} transparent /></mesh>
+                    {marcas(wall, wall === 'A' ? wallA : wall === 'B' ? wallB : wallC).map(m => {
+                      const x = m.x;
+                      return (
+                        <group key={`${x}-${m.total ? 't' : ''}`}>
+                          <Line points={[fuera(wall, x, -T), fuera(wall, x, off + 40)]} color={gris} lineWidth={0.8} dashed={!!m.puntos} dashSize={0.04} gapSize={0.03} depthTest={false} renderOrder={20} raycast={() => null} />
+                          <Line points={[fuera(wall, x - 30, off - 30), fuera(wall, x + 30, off + 30)]} color={gris} lineWidth={2} depthTest={false} renderOrder={20} raycast={() => null} />
+                          <Html position={fuera(wall, x, off + 70)} zIndexRange={[60, 0]} style={{ pointerEvents: 'none' }}>
+                            {etiqueta(m, wall === 'A' ? 'arriba' : wall === 'B' ? 'izq' : 'der')}
+                          </Html>
+                        </group>
+                      );
+                    })}
+                  </group>
+                );
+              })}
+            </group>
+          );
         })()}
 
         {/* Lavavajillas: cuerpo bajo el mesón con su frente de acero */}
