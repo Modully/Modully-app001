@@ -2,7 +2,7 @@
 export type ModuleType = 'UPPER' | 'LOWER' | 'TALL' | 'APPLIANCE';
 export type LayoutType = 'STRAIGHT' | 'L_SHAPE' | 'U_SHAPE';
 export type WallName = 'A' | 'B' | 'C';
-export type ApplianceType = 'fridge' | 'stove' | 'sink' | 'hood-under' | 'hood-island' | 'pantry';
+export type ApplianceType = 'fridge' | 'stove' | 'sink' | 'hood-under' | 'hood-island' | 'pantry' | 'dishwasher';
 export type UnitType = 'mm' | 'cm' | 'm';
 export type DoorType = 'vertical' | 'horizontal';
 export type ConfigType = 'doors' | 'drawers' | 'u-drawer' | 'internal-drawer';
@@ -135,6 +135,9 @@ export interface Appliance {
   active: boolean;
   faucetHeight?: number; // Specific for sinks
   space?: number;        // nevera: ancho del espacio que se le deja (el hueco entre muebles); sin valor = ancho de la nevera + 5 cm por lado
+  dispensador?: boolean; // nevera: lleva dispensador de agua (punto de agua a 30 cm)
+  lado?: 'izq' | 'der';  // lavavajillas: a qué lado de la poceta va (visto desde el frente)
+  campanaTipo?: 'convencional' | 'libre'; // campana: bajo un mueble, o tipo península (sin mueble arriba, 65 cm libres)
 }
 
 export interface Material {

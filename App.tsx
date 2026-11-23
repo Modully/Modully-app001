@@ -4,7 +4,7 @@ import {
   Box, Settings, Layout, ShoppingCart, Trash2, Plus, Settings2, Palette,
   Sparkles, Printer, Save, RefreshCcw, Loader2, Wand2, Pencil,
   Square, Frame, BoxSelect, Globe, Eye, ChevronLeft, ChevronRight, Menu,
-  Flame, Droplets, Refrigerator, Wind, Component, X, List, Layers, Info,
+  Flame, Droplets, Refrigerator, Wind, Component, X, List, Layers, Info, WashingMachine,
   ZoomIn, ZoomOut, Zap, Maximize, Ruler, ArrowRight, MoveHorizontal, Move,
   TowerControl as Tower, AlertCircle, CheckCircle2, ChevronDown, Puzzle, Shirt, DoorOpen, Bath, Tv, Warehouse, ToggleLeft as Toggle,
   Construction, Minus, Utensils, Target, ZapIcon, Layers2, Archive, Download, Table, Undo2, Redo2, Home, LayoutGrid, FolderOpen, FileText, Image as ImageIcon
@@ -31,6 +31,7 @@ import { Proyectos, DialogoAprobar, ProductoActivo } from './Proyectos';
 import { subirDocumentos, archivoDeDataURL, DocumentoNuevo, guardarDiseno, marcarAprobado, guardarEnBiblioteca, listarBiblioteca } from './nube';
 import { Biblioteca, huellaDiseno } from './Biblioteca';
 import { Precios } from './Precios';
+import { puntosAdecuacion, textoPuntos } from './puntos';
 import { htmlLaminas } from './PanelLaminas';
 import { htmlPlanos } from './PlanosEnsamble';
 import { resizeSymmetric, snapToNeighbors } from './moduleResize';
@@ -647,8 +648,9 @@ export default function App() {
   const [appliances, setAppliances] = useState<Appliance[]>([
     { type: 'fridge', wall: 'A', width: 700, height: 1800, depth: 800, distance: 0, active: false },
     { type: 'stove', wall: 'A', width: 600, height: 850, depth: 500, distance: 1000, active: false },
+    { type: 'hood-under', wall: 'A', width: 600, height: 120, depth: 450, distance: 1000, active: false, campanaTipo: 'convencional' },
     { type: 'sink', wall: 'A', width: 550, height: 850, depth: 450, distance: 2000, active: false, faucetHeight: 400 },
-    { type: 'hood-under', wall: 'A', width: 600, height: 120, depth: 450, distance: 1000, active: false },
+    { type: 'dishwasher', wall: 'A', width: 630, height: 850, depth: 570, distance: 2600, active: false, lado: 'der' },
   ]);
 
   // REGLAS TÉCNICAS DE ALTURA
@@ -791,7 +793,7 @@ export default function App() {
     setZocaloDepth(snap.zocaloDepth); setHasCounter(snap.hasCounter); setCounterThickness(snap.counterThickness);
     setCounterOverhang(snap.counterOverhang); setHasSplash(snap.hasSplash); setSplashHeight(snap.splashHeight); setCounterExtras(snap.counterExtras); setIslands(snap.islands); setColumns(snap.columns ?? []); setFit({ ...DEFAULT_FIT, ...(snap.fit ?? {}) }); setCloset({ ...DEFAULT_CLOSET, ...(snap.closet ?? {}) }); setLArm(snap.lArm); setHasLeftClosure(snap.hasLeftClosure); setHasRightClosure(snap.hasRightClosure);
     setHasDilatation(snap.hasDilatation); setDilatationGap(snap.dilatationGap); setDilatationDepth(snap.dilatationDepth);
-    setModules(snap.modules); setSpecialModules(snap.specialModules); setAppliances(snap.appliances);
+    setModules(snap.modules); setSpecialModules(snap.specialModules); setAppliances(prev => [...snap.appliances, ...prev.filter(p => !snap.appliances.some((a: Appliance) => a.type === p.type)).map(p => ({ ...p, active: false }))]);
     setHasIsland(snap.hasIsland); setLineType(snap.lineType); setFaceColor(snap.faceColor); setAcabados(completarAcabados(snap.acabados));
   };
 
@@ -1319,6 +1321,10 @@ export default function App() {
       const stove = currentAppliances.find(a => a.type === 'stove' && a.active && a.wall === currentWall);
       const sink = currentAppliances.find(a => a.type === 'sink' && a.active && a.wall === currentWall);
       const hood = currentAppliances.find(a => a.type === 'hood-under' && a.active && a.wall === currentWall);
+      // campana tipo península: no lleva mueble encima; en los aéreos queda un espacio libre de 65 cm centrado en la estufa
+      const hoodLibre = hood?.campanaTipo === 'libre';
+      const LIBRE_CAMPANA = 650;
+      const dishwasher = currentAppliances.find(a => a.type === 'dishwasher' && a.active && a.wall === currentWall);
 
       // Sobrenevera: cubre la nevera y sobresale FRIDGE_CLEARANCE por cada lado (ancho de la nevera + 10cm), centrada sobre ella,
       // sin salirse del muro. Si la nevera está en un extremo, se corre hacia adentro.
@@ -1410,8 +1416,8 @@ export default function App() {
         }
       }
 
-      // Módulo Obligatorio: MUEBLE SOBRE CAMPANA (8cm más corto)
-      if (hood) {
+      // Módulo Obligatorio: MUEBLE SOBRE CAMPANA (8cm más corto); la campana tipo península no lleva mueble
+      if (hood && !hoodLibre) {
         const hoodTemplate = MODULE_TEMPLATES.find(t => t.type === 'UPPER' && t.width === 600) || MODULE_TEMPLATES.find(t => t.type === 'UPPER')!;
         newModules.push({
           ...hoodTemplate,
@@ -1446,6 +1452,7 @@ export default function App() {
               // Nevera con FRIDGE_CLEARANCE libres a cada lado (sin salirse del inicio del muro)
               ...(fridge ? [{ distance: overFridgeX, width: overFridgeWidth }] : []),
               ...(stove ? [{ distance: stove.distance, width: stove.width }] : []),
+              ...(dishwasher ? [{ distance: dishwasher.distance, width: dishwasher.width }] : []),
               ...columnObstacles,
               ...(sink ? [{ distance: sink.space ? sink.distance - (sink.space - sink.width) / 2 : sink.distance, width: sink.space ?? Math.max(600, sink.width) }] : []),
               ...specialModulesActiveForWall.map(m => ({ distance: m.positionX, width: m.width })),
@@ -1457,7 +1464,7 @@ export default function App() {
             ]
           : [
               ...(fridge ? [{ distance: overFridgeX, width: overFridgeWidth }] : []),
-              ...(hood ? [{ distance: hood.distance, width: hood.width }] : []),
+              ...(hood ? [hoodLibre ? { distance: Math.max(0, hood.distance + hood.width / 2 - LIBRE_CAMPANA / 2), width: LIBRE_CAMPANA } : { distance: hood.distance, width: hood.width }] : []),
               ...columnObstacles,
               ...(sink && !(cortesAltos && currentWall === 'A') ? [{ distance: sink.space ? sink.distance - (sink.space - sink.width) / 2 : sink.distance, width: sink.space ?? Math.max(600, sink.width) }] : []),
               ...currentAppliances.filter(a => a.active && a.wall === currentWall && (a.type === 'pantry')),
@@ -3940,9 +3947,29 @@ export default function App() {
 
   const toggleAppliance = (type: ApplianceType) => {
     setAppliances(prev => {
-      return prev.map(a => a.type === type ? { ...a, active: !a.active } : a);
+      const est = prev.find(a => a.type === 'stove');
+      const encenderCampana = type === 'stove' && est && !est.active;
+      return prev.map(a => (a.type === type ? { ...a, active: !a.active }
+        : encenderCampana && a.type === 'hood-under' ? { ...a, active: true, wall: est!.wall, distance: est!.distance, width: est!.width } : a));
     });
   };
+  // La campana sigue a la estufa y el lavavajillas va pegado a la poceta, del lado que se pidió
+  useEffect(() => {
+    setAppliances(prev => {
+      const est = prev.find(a => a.type === 'stove' && a.active), poc = prev.find(a => a.type === 'sink' && a.active);
+      let cambio = false;
+      const next = prev.map(a => {
+        if (a.type === 'hood-under' && a.active && est && (a.wall !== est.wall || a.distance !== est.distance || a.width !== est.width)) { cambio = true; return { ...a, wall: est.wall, distance: est.distance, width: est.width }; }
+        if (a.type === 'dishwasher' && a.active && poc && poc.wall !== 'Island') {
+          const ini = poc.space ? poc.distance - (poc.space - poc.width) / 2 : poc.distance, ancho = poc.space ?? Math.max(600, poc.width);
+          const d = Math.max(0, (a.lado ?? 'der') === 'der' ? ini + ancho : ini - a.width);
+          if (a.wall !== poc.wall || a.distance !== d) { cambio = true; return { ...a, wall: poc.wall, distance: d }; }
+        }
+        return a;
+      });
+      return cambio ? next : prev;
+    });
+  }, [appliances]);
 
   // Isla o península: se pide la medida general y se crea a 1 m del punto 0 en ambas cotas (después se editan)
   const addIsland = () => {
@@ -4179,17 +4206,19 @@ export default function App() {
                               {app.type === 'sink' && <Droplets size={20} />}
                               {app.type === 'hood-under' && <Wind size={20} />}
                               {app.type === 'pantry' && <Archive size={20} />}
+                              {app.type === 'dishwasher' && <WashingMachine size={20} />}
                             </div>
                             <div>
                               <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">
-                                {app.type === 'fridge' ? 'Nevera' : app.type === 'stove' ? 'Estufa' : app.type === 'sink' ? 'Poceta / Grifería' : app.type === 'pantry' ? 'Alacena Alta' : 'Campana'}
+                                {app.type === 'fridge' ? 'Nevera' : app.type === 'stove' ? 'Estufa' : app.type === 'sink' ? 'Poceta / Grifería' : app.type === 'pantry' ? 'Alacena Alta' : app.type === 'dishwasher' ? 'Lavavajillas' : 'Campana'}
                               </p>
                               <p className="text-[9px] font-bold text-slate-400 uppercase">{app.active ? 'Activo' : 'Desactivado'}</p>
                             </div>
                           </div>
                           <button onClick={() => toggleAppliance(app.type)} className={`w-10 h-5 rounded-full transition-all relative ${app.active ? 'bg-indigo-600' : 'bg-slate-200'}`}><div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${app.active ? 'left-5.5' : 'left-0.5'}`} /></button>
                         </div>
-                        {app.active && (
+                        {app.active && textoPuntos(app) && <p className="text-[10px] font-bold text-slate-500 -mt-2">Puntos: {textoPuntos(app)}</p>}
+                        {app.active && app.type !== 'dishwasher' && app.type !== 'hood-under' && (
                           <div className="space-y-1 animate-in fade-in slide-in-from-top-2 duration-300">
                             <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Muro</label>
                             <div className="flex gap-2">
@@ -4209,7 +4238,33 @@ export default function App() {
                         {app.active && (
                           <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
                             <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Ancho (mm)</label><input type="number" value={app.width} onChange={(e) => updateApplianceProp(app.type, 'width', parseInt(e.target.value) || 0)} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
-                            <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Posición (mm)</label><input type="number" value={app.distance} onChange={(e) => updateApplianceProp(app.type, 'distance', parseInt(e.target.value) || 0)} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>
+                            {app.type !== 'dishwasher' && app.type !== 'hood-under' && <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Posición (mm)</label><input type="number" value={app.distance} onChange={(e) => updateApplianceProp(app.type, 'distance', parseInt(e.target.value) || 0)} className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500"/></div>}
+                          </div>
+                        )}
+                        {/* campos propios: dispensador de la nevera, lado del lavavajillas y tipo de campana */}
+                        {app.active && app.type === 'fridge' && (
+                          <button type="button" onClick={() => updateApplianceProp('fridge', 'dispensador', !app.dispensador)} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border text-[10px] font-black uppercase ${app.dispensador ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-200'}`}>
+                            <span>Dispensador de agua</span><span>{app.dispensador ? 'Sí' : 'No'}</span>
+                          </button>
+                        )}
+                        {app.active && app.type === 'dishwasher' && (
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Al lado de la poceta</label>
+                            <div className="grid grid-cols-2 gap-2">{(['izq', 'der'] as const).map(l => (
+                              <button key={l} type="button" onClick={() => updateApplianceProp('dishwasher', 'lado', l)} className={`py-2 rounded-xl text-[10px] font-black uppercase border ${(app.lado ?? 'der') === l ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{l === 'izq' ? 'Izquierda' : 'Derecha'}</button>
+                            ))}</div>
+                            {!appliances.find(a => a.type === 'sink')?.active && <p className="text-[9px] font-bold text-amber-700">Activa la poceta: el lavavajillas va pegado a ella.</p>}
+                          </div>
+                        )}
+                        {app.active && app.type === 'hood-under' && (
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Tipo de campana · va sobre la estufa</label>
+                            <div className="grid grid-cols-2 gap-2">{([['convencional', 'Convencional', 'bajo un mueble'], ['libre', 'Tipo península', 'sin mueble arriba, 65 cm libres']] as const).map(([k, t, d]) => (
+                              <button key={k} type="button" onClick={() => updateApplianceProp('hood-under', 'campanaTipo', k)} className={`py-2 px-2 rounded-xl text-left border ${(app.campanaTipo ?? 'convencional') === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>
+                                <span className="block text-[10px] font-black uppercase">{t}</span><span className="block text-[9px] font-bold opacity-80">{d}</span>
+                              </button>
+                            ))}</div>
+                            <p className="text-[9px] font-bold text-slate-400">Al cambiar el tipo, vuelve a pulsar "Optimizar modulación" para rehacer los aéreos.</p>
                           </div>
                         )}
                       </div>
@@ -4829,7 +4884,7 @@ export default function App() {
                   </div>
 
                   {cfg.accessories.length > 0 && <>
-                  <div className="flex items-baseline gap-2 pt-2 border-t border-slate-100"><span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center shrink-0">3</span><span className="text-[11px] font-black text-slate-700 uppercase tracking-widest">Electrodomésticos</span><span className="text-[10px] font-bold text-slate-400">también se cambian después en Accesorios</span></div>
+                  <div className="flex items-baseline gap-2 pt-2 border-t border-slate-100"><span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center shrink-0">3</span><span className="text-[11px] font-black text-slate-700 uppercase tracking-widest">Puntos de adecuación</span><span className="text-[10px] font-bold text-slate-400">agua, energía y gas de cada electrodoméstico</span></div>
                   {listaElectro}
                   </>}
 
@@ -5013,6 +5068,7 @@ export default function App() {
               {/* Las 4 vistas (planta, frontal, isométrica y 3D) son cámaras de la misma escena 3D */}
               {(
                 <KitchenViewer3D
+                  puntos={puntosAdecuacion(appliances, modules, wallA)}
                   colores={{ fachada: hexDe(acabados.MB.fach.color), fachadaMA: hexDe(acabados.MA.fach.color), ma: hexDe(acabados.MA.est.color, '#f4f4f1'), mb: hexDe(acabados.MB.est.color, '#f4f4f1'), otros: hexDe(acabados.MB.est.color, '#f4f4f1'), fondo: hexDe(acabados.MB.fondo.color, '#e5e7eb'), fondoMA: hexDe(acabados.MA.fondo.color, '#e5e7eb') }}
                   wallThickMm={cfg.id === 'puertas' ? puerta.espesor : undefined}
                   puertaApi={cfg.id === 'puertas' ? { cfg: puerta, onChange: setPuerta, onOpenForm: () => setPuertaHidden(false) } : undefined}

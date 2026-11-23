@@ -252,9 +252,10 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     const plinthSegments = (wall: WallName, start: number, end: number): Array<[number, number]> => {
       const armStart = wall === 'A' ? 0 : CORNER_BLIND_OFFSET;
       // hueco de la nevera: su espacio (si se dio) o su ancho más FRIDGE_CLEARANCE por lado, centrado en ella
+      // el lavavajillas también se apoya en el piso: su hueco es su propio ancho (ya trae su holgura)
       const holes = appliances
-        .filter(a => a.active && a.type === 'fridge' && a.wall === wall)
-        .map(a => { const hueco = Math.max(a.space ?? 0, a.width + 2 * FRIDGE_CLEARANCE), h0 = armStart + a.distance - (hueco - a.width) / 2; return [h0, h0 + hueco] as [number, number]; })
+        .filter(a => a.active && (a.type === 'fridge' || a.type === 'dishwasher') && a.wall === wall)
+        .map(a => { const hueco = a.type === 'dishwasher' ? a.width : Math.max(a.space ?? 0, a.width + 2 * FRIDGE_CLEARANCE), h0 = armStart + a.distance - (hueco - a.width) / 2; return [h0, h0 + hueco] as [number, number]; })
         .sort((x, y) => x[0] - y[0]);
       // regla del carpintero: el zócalo nunca es más largo que los muebles; en el lado libre (junto a la nevera) queda 5 cm más corto
       const LIBRE = 50;
@@ -663,6 +664,25 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     });
   });
 
+  // --- Lavavajillas: del piso hasta la cara de arriba de los bajos, bajo el mesón (el mesón pasa por encima) ---
+  appliances.filter(a => a.active && a.type === 'dishwasher' && a.wall !== 'Island').forEach(app => {
+    const wall = app.wall as WallName;
+    const p = placeOnWall(wall, app.distance, app.width, LOWER_DEPTH);
+    const bajos = boxes.filter(b => b.kind === 'lower' && b.wall === wall && !b.islandId);
+    const tope = bajos.length ? Math.max(...bajos.map(b => b.z + b.sz)) : zh + 800;
+    boxes.push({ id: `appliance-dishwasher-${wall}`, name: 'Lavavajillas', kind: 'appliance', wall, x: p.x, y: p.y, z: 0, sx: p.sx, sy: p.sy, sz: tope, facing: p.facing, applianceType: 'dishwasher' });
+  });
+  // --- Campana tipo península: sin mueble arriba (65 cm libres en los aéreos); la campana cuelga del muro y su chimenea
+  // sube al techo, a la misma altura sobre el mesón que la de la isla ---
+  appliances.filter(a => a.active && a.type === 'hood-under' && a.campanaTipo === 'libre' && a.wall !== 'Island').forEach(app => {
+    const wall = app.wall as WallName;
+    const bajos = boxes.filter(b => b.kind === 'lower' && b.wall === wall && !b.islandId);
+    const tope = (bajos.length ? Math.max(...bajos.map(b => b.z + b.sz)) : zh + 800) + (hasCounter ? counterThickness : 0);
+    const z0 = tope + ISLAND_HOOD_GAP, fondo = 500;
+    const p = placeOnWall(wall, app.distance, app.width, fondo);
+    boxes.push({ id: `campana-pared-${wall}`, name: 'Campana', kind: 'appliance', applianceType: 'hood-island', wall, x: p.x, y: p.y, z: z0, sx: p.sx, sy: p.sy, sz: Math.max(200, spaceHeight - z0), facing: null });
+  });
+
   // --- Canto del mesón (frentero o reengruese): lados pedidos, uniones a 45° entre piezas y con el mesón (frentero) ---
   type EdgeCode = 'x-' | 'x+' | 'y-' | 'y+';
   const planEdge = (counterId: string, wall: WallName, island: boolean, blocked: EdgeCode[]) => {
@@ -723,7 +743,8 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   // --- Mesón: una losa por tramo continuo de módulos bajos de cada muro, con aberturas para poceta y estufa ---
   if (hasCounter && counterThickness > 0) {
     (['A', 'B', 'C'] as WallName[]).forEach(wall => {
-      const lowers = boxes.filter(b => b.kind === 'lower' && b.wall === wall && !b.islandId);
+      // el lavavajillas va bajo el mesón: cuenta como parte del tramo (no lo corta)
+      const lowers = boxes.filter(b => (b.kind === 'lower' || b.applianceType === 'dishwasher') && b.wall === wall && !b.islandId);
       if (lowers.length === 0) return;
       const range = (b: Box) => (wall === 'A' ? { start: b.x, end: b.x + b.sx } : { start: b.y, end: b.y + b.sy });
       const sorted = [...lowers].sort((a, b) => range(a).start - range(b).start);

@@ -11,6 +11,7 @@ import type { ClosetConfig, ClosetFit, FitBodyCfg } from './types';
 import type { PuertaCfg } from './puertas';
 import { Box, findModuleBox, boxesBounds, applianceCenter, counterTopZ, CORNER_BLIND_OFFSET, WALL_THICKNESS } from './boxes';
 import { COLORS } from './constants';
+import { PUNTO_INFO, PuntoAdecuacion } from './puntos';
 import { X, Plus, Ruler, ArrowUp, ArrowLeft, ArrowRight, ArrowDownLeft } from 'lucide-react';
 
 // Constantes de elevación y espaciado (en milímetros)
@@ -2861,6 +2862,7 @@ interface KitchenViewer3DProps {
   modules: KitchenModule[];
   boxes: Box[]; // lista única de cajas: fuente de verdad de la geometría
   appliances: Appliance[];
+  puntos?: PuntoAdecuacion[]; // puntos de adecuación (agua, desagüe, energía, gas) en el muro
   hasIsland: boolean;
   island: { length: number; width: number; height: number; dx: number; dy: number };
   islands?: IslandItem[];
@@ -2904,7 +2906,7 @@ interface KitchenViewer3DProps {
 
 export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   wallThickMm, puertaApi, colores,
-  layout, lArm, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules: modulesIn, boxes: boxesIn, appliances, onAbrirIsla, hasIsland, island, islands = [], onEditIsland, onEditWall, closetForm, fitApi, onDeleteIsland, viewMode, hasZocalo, zocaloHeight = 100,
+  layout, lArm, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules: modulesIn, boxes: boxesIn, appliances, puntos = [], onAbrirIsla, hasIsland, island, islands = [], onEditIsland, onEditWall, closetForm, fitApi, onDeleteIsland, viewMode, hasZocalo, zocaloHeight = 100,
   hasLeftClosure, hasRightClosure, counterExtras, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSetModuleFronts, onSplitHorizontal, onSplitDepth, onExtendFace, onJoinCorner, onSplitCorner, onEditCornerArm, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
 }) => {
   const controlsRef = useRef<any>(null);
@@ -4288,7 +4290,49 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             </group>
           );
         })}
-        {vis.appliances && appliances.filter(a => a.active).map((app, idx) => {
+        {/* Puntos de adecuación: un círculo de color sobre la cara del muro con su sigla y altura (AF, AC, D, E, G) */}
+        {vis.appliances && (() => {
+          // etiquetas sin encimarse: cada una sube lo justo para no tapar a las de los puntos cercanos del mismo muro
+          const along = (q: PuntoAdecuacion) => (q.wall === 'A' ? q.x : q.y);
+          const ys: number[] = [];
+          puntos.forEach((pt, i) => {
+            let y = pt.z / 1000 + 0.075, movio = true;
+            while (movio) {
+              movio = false;
+              for (let j = 0; j < i; j++) {
+                const q = puntos[j];
+                if (q.wall === pt.wall && Math.abs(along(q) - along(pt)) < 300 && Math.abs(ys[j] - y) < 0.169 && ys[j] + 0.17 > y + 1e-6) { y = ys[j] + 0.17; movio = true; } // solo sube: así termina siempre
+              }
+            }
+            ys.push(y);
+          });
+          return puntos.map((pt, i) => {
+            const [x, z] = toWorldXZ(pt.x, pt.y), info = PUNTO_INFO[pt.tipo];
+            const rot: [number, number, number] = pt.wall === 'A' ? [0, 0, 0] : pt.wall === 'B' ? [0, Math.PI / 2, 0] : [0, -Math.PI / 2, 0];
+            const dy = ys[i] - pt.z / 1000;
+            return (
+              <group key={pt.id} position={[x, pt.z / 1000, z]} rotation={rot}>
+                <mesh raycast={() => null} renderOrder={20}><circleGeometry args={[0.035, 24]} /><meshBasicMaterial color={info.color} depthTest={false} transparent /></mesh>
+                <mesh position={[0, 0, 0.001]} raycast={() => null} renderOrder={21}><ringGeometry args={[0.035, 0.042, 24]} /><meshBasicMaterial color="#ffffff" depthTest={false} transparent /></mesh>
+                {dy > 0.09 && <Line points={[[0, 0.042, 0.002], [0, dy - 0.015, 0.002]]} color={info.color} lineWidth={1} depthTest={false} renderOrder={20} raycast={() => null} />}
+                <Html center position={[0, dy, 0.01]} zIndexRange={[60, 0]} style={{ pointerEvents: 'none' }}>
+                  <div title={`${info.nombre} a ${Math.round(pt.z / 10)} cm del piso`} style={{ background: info.color, color: '#fff', font: '800 10px system-ui', padding: '1px 5px', borderRadius: 6, whiteSpace: 'nowrap', boxShadow: '0 1px 3px rgba(0,0,0,.3)' }}>{info.sigla} {Math.round(pt.z / 10)}</div>
+                </Html>
+              </group>
+            );
+          });
+        })()}
+
+        {/* Lavavajillas: cuerpo bajo el mesón con su frente de acero */}
+        {vis.appliances && boxes.filter(b => b.applianceType === 'dishwasher').map(b => (
+          <mesh key={b.id} position={boxCenter(b)} castShadow receiveShadow>
+            <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
+            <meshStandardMaterial color="#c9ccd1" metalness={0.6} roughness={0.35} />
+            <Edges color="#4b5563" />
+          </mesh>
+        ))}
+
+        {vis.appliances && appliances.filter(a => a.active && a.type !== 'dishwasher' && !(a.type === 'hood-under' && a.campanaTipo === 'libre')).map((app, idx) => {
           // Cara superior del mesón (o de los módulos bajos si no hay mesón)
           const counterTop = counterTopZ(boxes, zh * 1000 + COUNTER_HEIGHT) / 1000;
           const counterThickness = (boxes.find(bx => bx.kind === 'counter')?.sz ?? 20) / 1000;
