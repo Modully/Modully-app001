@@ -1,4 +1,5 @@
 import React from 'react';
+import { hexConVeta } from './colores';
 
 /**
  * Esquema en perspectiva (isométrica) de un mueble base con su aéreo, para Configuración de módulos.
@@ -15,6 +16,8 @@ export interface PropsEsquema {
   zocaloAluminio: boolean;
   colorEst: string; // tono de la estructura
   colorFach: string; // tono de la fachada
+  colorEstAereo?: string; // el aéreo puede llevar otros colores que los bajos
+  colorFachAereo?: string;
   foco: Foco;
   puente?: boolean; // doble módulo superior (diseño en puente): un módulo más alto y más profundo sobre el aéreo
 }
@@ -43,16 +46,30 @@ const Caja: React.FC<{ x0: number; y0: number; z0: number; w: number; d: number;
   );
 };
 
-export const EsquemaModulos: React.FC<PropsEsquema> = ({ aereoAbre, gola, zocaloAluminio, colorEst, colorFach, foco, puente }) => {
+export const EsquemaModulos: React.FC<PropsEsquema> = ({ aereoAbre, gola, zocaloAluminio, colorEst, colorFach, colorEstAereo, colorFachAereo, foco, puente }) => {
+  const eA = colorEstAereo ?? colorEst, fA = colorFachAereo ?? colorFach;
   const W = 1200, DB = 560, ZOC = 100, HB = 720, MES = 30, DA = 320, HA = 700;
   const zBaseTop = ZOC + HB; // 820
   const zAer0 = zBaseTop + MES + 600; // 1450
-  const puerta = (x0: number, x1: number, z0: number, z1: number, y: number) => <polygon points={fr(x0 + 3, x1 - 3, z0, z1, y)} fill={colorFach} stroke="#475569" strokeWidth={0.5} />;
+  // veta de madera en las fachadas de color de madera (patrón del esquema)
+  const idVeta = (c: string) => `veta-${c.replace('#', '')}`;
+  const relleno = (c: string) => (hexConVeta(c) ? `url(#${idVeta(c)})` : c);
+  const puerta = (x0: number, x1: number, z0: number, z1: number, y: number, c: string = colorFach) => <polygon points={fr(x0 + 3, x1 - 3, z0, z1, y)} fill={relleno(c)} stroke="#475569" strokeWidth={0.5} />;
   const marca = (puntos: string) => <polygon points={puntos} fill="rgba(99,102,241,.12)" stroke="#4f46e5" strokeWidth={1.6} strokeDasharray="4 3" strokeLinejoin="round" />;
   const yFrente = DB;
 
   return (
     <svg viewBox={`0 0 220 ${puente ? 450 : 395}`} className="w-full h-auto" role="img" aria-label="Esquema en perspectiva del mueble base y el aéreo">
+      <defs>
+        {[...new Set([colorFach, fA])].filter(hexConVeta).map(c => (
+          <pattern key={c} id={idVeta(c)} width={14} height={40} patternUnits="userSpaceOnUse">
+            <rect width={14} height={40} fill={c} />
+            <path d="M2 0 Q2.8 10 2 20 T2 40" stroke="rgba(0,0,0,.16)" strokeWidth={0.7} fill="none" />
+            <path d="M7 0 Q6.2 12 7 22 T7 40" stroke="rgba(255,255,255,.2)" strokeWidth={0.6} fill="none" />
+            <path d="M11 0 Q11.8 9 11 19 T11 40" stroke="rgba(0,0,0,.16)" strokeWidth={0.9} fill="none" />
+          </pattern>
+        ))}
+      </defs>
       <g transform={puente ? 'translate(0,55)' : undefined}>
       {/* muro y piso de referencia */}
       <polygon points={fr(-80, W + 80, 0, 2300, 0)} fill="#f1f5f9" />
@@ -83,19 +100,19 @@ export const EsquemaModulos: React.FC<PropsEsquema> = ({ aereoAbre, gola, zocalo
       <Caja x0={0} y0={0} z0={zBaseTop} w={W} d={DB + 30} h={MES} color="#d6d3d1" />
 
       {/* aéreo */}
-      <Caja x0={0} y0={0} z0={zAer0} w={W} d={DA} h={HA} color={colorEst} />
+      <Caja x0={0} y0={0} z0={zAer0} w={W} d={DA} h={HA} color={eA} />
       {aereoAbre === 'pestana' ? (
         <g>
-          {puerta(0, W / 2, zAer0 - 28, zAer0 + HA - 5, DA)}
-          {puerta(W / 2, W, zAer0 - 28, zAer0 + HA - 5, DA)}
+          {puerta(0, W / 2, zAer0 - 28, zAer0 + HA - 5, DA, fA)}
+          {puerta(W / 2, W, zAer0 - 28, zAer0 + HA - 5, DA, fA)}
           {/* la pestaña: el borde de abajo de la puerta, que sobresale para agarrarla */}
-          <polygon points={fr(3, W - 3, zAer0 - 28, zAer0 - 6, DA)} fill={sombra(colorFach, 0.82)} stroke="#475569" strokeWidth={0.5} />
-          <polygon points={pts([P(3, DA, zAer0 - 28), P(W - 3, DA, zAer0 - 28), P(W - 3, DA + 22, zAer0 - 28), P(3, DA + 22, zAer0 - 28)])} fill={sombra(colorFach, 0.7)} />
+          <polygon points={fr(3, W - 3, zAer0 - 28, zAer0 - 6, DA)} fill={sombra(fA, 0.82)} stroke="#475569" strokeWidth={0.5} />
+          <polygon points={pts([P(3, DA, zAer0 - 28), P(W - 3, DA, zAer0 - 28), P(W - 3, DA + 22, zAer0 - 28), P(3, DA + 22, zAer0 - 28)])} fill={sombra(fA, 0.7)} />
         </g>
       ) : (
         <g>
-          {puerta(0, W / 2, zAer0, zAer0 + HA - 3, DA)}
-          {puerta(W / 2, W, zAer0, zAer0 + HA - 3, DA)}
+          {puerta(0, W / 2, zAer0, zAer0 + HA - 3, DA, fA)}
+          {puerta(W / 2, W, zAer0, zAer0 + HA - 3, DA, fA)}
           {/* al ras: sin pestaña, la puerta termina en el borde del mueble y se abre con tirador */}
           <polygon points={fr(W / 2 - 40, W / 2 - 18, zAer0 + 40, zAer0 + 190, DA + 8)} fill="#64748b" />
           <polygon points={fr(W / 2 + 18, W / 2 + 40, zAer0 + 40, zAer0 + 190, DA + 8)} fill="#64748b" />
@@ -104,9 +121,9 @@ export const EsquemaModulos: React.FC<PropsEsquema> = ({ aereoAbre, gola, zocalo
 
       {puente && (
         <g>
-          <Caja x0={0} y0={0} z0={zAer0 + HA} w={W} d={450} h={450} color={colorEst} />
-          {puerta(0, W / 2, zAer0 + HA + 5, zAer0 + HA + 445, 450)}
-          {puerta(W / 2, W, zAer0 + HA + 5, zAer0 + HA + 445, 450)}
+          <Caja x0={0} y0={0} z0={zAer0 + HA} w={W} d={450} h={450} color={eA} />
+          {puerta(0, W / 2, zAer0 + HA + 5, zAer0 + HA + 445, 450, fA)}
+          {puerta(W / 2, W, zAer0 + HA + 5, zAer0 + HA + 445, 450, fA)}
         </g>
       )}
 

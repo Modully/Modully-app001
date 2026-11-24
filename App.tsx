@@ -4962,7 +4962,8 @@ export default function App() {
                     <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Así queda</div>
                     <div className="rounded-2xl bg-slate-50 border border-slate-100 p-2">
                       <EsquemaModulos aereoAbre={acabados.aereoAbre} gola={acabados.gola} zocaloAluminio={acabados.herrajes.zocaloAluminio}
-                        colorEst={hexDe(acabados.MB.est.color)} colorFach={hexDe(acabados.MB.fach.color || acabados.MB.est.color)} foco={focoEsquema} puente={puenteAlto > 0} />
+                        colorEst={hexDe(acabados.MB.est.color)} colorFach={hexDe(acabados.MB.fach.color || acabados.MB.est.color)}
+                        colorEstAereo={hexDe(acabados.MA.est.color)} colorFachAereo={hexDe(acabados.MA.fach.color || acabados.MB.fach.color || acabados.MA.est.color)} foco={focoEsquema} puente={puenteAlto > 0} />
                     </div>
                     <div className="text-[10px] font-bold text-slate-400">{focoEsquema === 'aereo' ? (acabados.aereoAbre === 'pestana' ? 'Pestaña inferior: el borde de abajo de la puerta sobresale para agarrarla.' : 'Al ras: la puerta queda pareja con el mueble y abre con tirador.')
                       : focoEsquema === 'gola' ? (acabados.gola === 'aluminio' ? 'Gola en perfil de aluminio sobre el frente del mueble base.' : 'Gola en melamina: puente en L en la parte de arriba del mueble base.')

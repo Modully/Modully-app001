@@ -39,6 +39,13 @@ export const CATALOGO: ColorCatalogo[] = [
   { nombre: 'Nívola', hex: '#f1f0ec', grupo: 'Sólidos' },
 ].filter((c, i, l) => l.findIndex(x => x.nombre === c.nombre) === i);
 
+/** Colores del catálogo con veta de madera: las tendencias, las rústicas y algunos atemporales. El modelo 3D les dibuja la veta. */
+const NOMBRES_CON_VETA = new Set(['Nuez', 'Capuccino', 'Vienés', 'Mitte', 'Söder']);
+export const tieneVeta = (c: ColorCatalogo): boolean => c.grupo === 'Tendencias' || c.grupo === 'Rústicas' || NOMBRES_CON_VETA.has(c.nombre);
+const HEX_CON_VETA = new Set(CATALOGO.filter(tieneVeta).map(c => c.hex.toLowerCase()));
+/** El tono (hex) pertenece a un color de madera con veta */
+export const hexConVeta = (hex?: string): boolean => !!hex && HEX_CON_VETA.has(hex.toLowerCase());
+
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
 /** Color del catálogo por nombre (sin importar tildes ni mayúsculas; acepta nombres parciales como "cinza") */
