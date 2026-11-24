@@ -503,6 +503,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         piece('Tapa base', inner, D - 100, E, E, 0, H - E);          // techo del mueble superior
         // puentes de 70 atrás: amarran los laterales donde no hay espaldar (detrás del cajón y de cada equipo)
         ([E, zHorno, zMicro, zArriba - E - 70] as number[]).forEach(w0 => piece('Puente', inner, E, 70, E, D - E, w0));
+        piece('Puente L torre', inner, GOLA_WIDTH, E, E, 0, zHorno - 2 * E);   // puente en L al frente, sobre el cajón (plano de la torre: 570 × 65, 1L)
         piece('Espaldar', inner, E, H - E - zArriba, E, D - 100 - E, zArriba);
         piece('Entrepaño', inner, D - 120, E, E, 0, zArriba + Math.round((H - E - zArriba) / 2));
         cajon('', E + 20, 180, 0); // cajón de abajo

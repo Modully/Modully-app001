@@ -22,6 +22,8 @@ export interface ProductoLeido {
   muroA: number | null; muroB: number | null; muroC: number | null; alto: number | null; fondo: number | null; // mm
   desague: { muro: 'A' | 'B' | 'C'; dist: number } | null;
   gas: { muro: 'A' | 'B' | 'C'; dist: number } | null;
+  agua: { muro: 'A' | 'B' | 'C'; dist: number } | null;                  // punto de agua (suministro)
+  electricidad: { muro: 'A' | 'B' | 'C'; dist: number }[];                // tomas o puntos eléctricos acotados
   nevera: 'no' | 'inicio' | 'final' | null;
   neveraEspacio: number | null; // ancho del espacio que se deja para la nevera (mm), si está acotado
   muroIzq: boolean | null; // hay un muro (sombreado) pegado al lado izquierdo del mueble
@@ -55,6 +57,8 @@ Reglas:
 - filaBaja y filaAlta (cocinas y muebles con módulos): cuenta los módulos DIBUJADOS, de izquierda a derecha. Abajo sin el espacio de la nevera; arriba sin el mueble que va sobre la nevera. Un módulo es cada caja separada por una línea vertical de arriba a abajo; dos puertas en X dentro de la misma caja son UN módulo de dos puertas. La estufa con su horno y su cajón debajo es UN solo módulo (frente = estufa); la campana dibujada en la parte de abajo de un mueble alto es parte de ESE módulo (frente = campana). Revisa que el módulo de la poceta quede sobre el desagüe y el de la estufa sobre el gas, si están acotados. Para cada uno: frente = poceta (donde está el lavaplatos o el grifo), estufa (donde están los quemadores o el horno), campana (arriba, encima de la estufa), platero (si lo dice), cajones (rectángulos horizontales apilados), abierto (sin puertas) o puertas (X, diagonales o manijas verticales); ancho = la cota en mm si está escrita sobre ese módulo, si no null; cuadros = cuántos cuadritos de la hoja mide de ancho (aproximado, con decimales si hace falta).
 - muroA y alto casi siempre están en el dibujo: muroA es la cota de ancho total (si no hay, la suma de "modulos") y alto la cota vertical más larga. Solo van en null si de verdad no aparecen.
 - modulos: SOLO cotas escritas a mano en el boceto, nunca anchos calculados ni estimados (para eso está "cuadros"). Si el dibujo acota el ancho de cada módulo (por ejemplo 70, 60, 60, 60), devuélvelos de izquierda a derecha en mm. Si no, lista vacía.
+- Puntos de adecuación (solo cocinas), todos como distancia en mm desde el extremo IZQUIERDO del muro hasta el centro del punto: agua = el punto de agua (suministro, fría o caliente), electricidad = una lista con cada toma o punto eléctrico dibujado (tomas, símbolo de enchufe, "luz"), vacía si no hay. No los confundas con el desagüe ni con el gas.
+- Si junto a la vista de frente hay una vista superior (planta) de una cocina en L o en U, úsala para forma, brazo, muroB y muroC.
 - Solo en cocinas: desague = dónde está la poceta o el desagüe; gas = dónde está la estufa o el punto de gas. dist = mm desde el extremo IZQUIERDO del muro hasta el centro del punto. Si no están acotados pero se ve en qué módulo van, calcula el centro de ese módulo con los anchos de "modulos" y anótalo en dudas. nevera: inicio, final, no, o null.
 - detalle: describe en español sencillo lo que se ve dibujado por dentro: cuántas puertas, cajones y entrepaños, qué va arriba y abajo, alturas acotadas (por ejemplo "bajos de 80, espacio de 60, aéreos arriba, platero sobre la poceta").
 - No inventes medidas. Lo que no esté va en null y se anota en "dudas", igual que lo que tuviste que suponer.
@@ -75,7 +79,8 @@ const ESQUEMA = {
           brazo: { type: Type.STRING, nullable: true, enum: ['left', 'right'] },
           muroA: { type: Type.NUMBER, nullable: true }, muroB: { type: Type.NUMBER, nullable: true }, muroC: { type: Type.NUMBER, nullable: true },
           alto: { type: Type.NUMBER, nullable: true }, fondo: { type: Type.NUMBER, nullable: true },
-          desague: punto, gas: punto,
+          desague: punto, gas: punto, agua: punto,
+          electricidad: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { muro: { type: Type.STRING, enum: ['A', 'B', 'C'] }, dist: { type: Type.NUMBER } }, required: ['muro', 'dist'] } },
           nevera: { type: Type.STRING, nullable: true, enum: ['no', 'inicio', 'final'] },
           neveraEspacio: { type: Type.NUMBER, nullable: true },
           muroIzq: { type: Type.BOOLEAN, nullable: true }, muroDer: { type: Type.BOOLEAN, nullable: true },
@@ -115,7 +120,7 @@ export async function leerBoceto(imagen: string): Promise<LecturaBoceto> {
       const productos: ProductoLeido[] = (Array.isArray(j.productos) ? j.productos : []).map((q: any) => ({
         producto: q.producto ?? null, nombre: String(q.nombre ?? 'Mueble'), forma: q.forma ?? null, brazo: q.brazo ?? null,
         muroA: n(q.muroA), muroB: n(q.muroB), muroC: n(q.muroC), alto: n(q.alto), fondo: n(q.fondo),
-        desague: p(q.desague), gas: p(q.gas), nevera: q.nevera ?? null,
+        desague: p(q.desague), gas: p(q.gas), agua: p(q.agua), electricidad: (Array.isArray(q.electricidad) ? q.electricidad : []).map(p).filter((v: { muro: 'A' | 'B' | 'C'; dist: number } | null): v is { muro: 'A' | 'B' | 'C'; dist: number } => v !== null), nevera: q.nevera ?? null,
         neveraEspacio: n(q.neveraEspacio),
         muroIzq: typeof q.muroIzq === 'boolean' ? q.muroIzq : null, muroDer: typeof q.muroDer === 'boolean' ? q.muroDer : null,
         techo: typeof q.techo === 'boolean' ? q.techo : null, piso: typeof q.piso === 'boolean' ? q.piso : null,

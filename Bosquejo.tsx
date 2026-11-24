@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { SECTIONS, SectionId } from './sections';
 import type { LayoutType } from './types';
 import { LecturaBoceto, ModuloDibujado, ProductoLeido, leerBoceto } from './bocetoIA';
+import { GuiaBoceto } from './GuiaBoceto';
 
 /**
  * Fase 5 · Bosquejo.
@@ -114,28 +115,67 @@ const FRENTE: Record<string, string> = { puertas: 'puertas', cajones: 'cajones',
 const conB = (d: DatosBosquejo) => d.forma === 'U_SHAPE' || (d.forma === 'L_SHAPE' && d.brazo === 'left');
 const conC = (d: DatosBosquejo) => d.forma === 'U_SHAPE' || (d.forma === 'L_SHAPE' && d.brazo === 'right');
 
-/** Lo que se entendió, en frases cortas */
-function frases(d: DatosBosquejo): string[] {
-  const out: string[] = [];
-  // los tres muros con que trabaja la app: A (el principal, de frente), B (a la izquierda) y C (a la derecha)
-  const lados = d.muroIzq && d.muroDer ? 'entre dos muros (uno a cada lado)' : d.muroIzq ? 'contra un muro a la izquierda' : d.muroDer ? 'contra un muro a la derecha' : 'sin muros a los lados';
-  if (d.producto === 'puertas') out.push(`El muro mide ${fmt(d.A)} mm de largo y ${fmt(d.alto)} mm de alto.`);
-  else if (d.forma === 'STRAIGHT') out.push(`Va en el muro A (el de frente), de ${fmt(d.A)} mm de ancho, ${lados}. Del piso al techo hay ${fmt(d.alto)} mm.`);
-  else out.push(`${d.forma === 'L_SHAPE' ? 'En L' : 'En U'}: muro A (de frente) de ${fmt(d.A)} mm${conB(d) ? `, muro B (izquierda) de ${fmt(d.B)} mm` : ''}${conC(d) ? `, muro C (derecha) de ${fmt(d.C)} mm` : ''}. Del piso al techo hay ${fmt(d.alto)} mm.`);
-  if (d.producto === 'cocinas') {
-    const [t0, t1] = tramoModulos(d);
-    if (d.modulos.length) out.push(`Módulos de izquierda a derecha: ${d.modulos.map(fmt).join(' + ')} mm.`);
-    else {
-      if (d.bajos?.length) { const w = anchosFila(d.bajos, t1 - t0); out.push(`Abajo, ${d.bajos.length} módulos: ${d.bajos.map((m, i) => `${FRENTE[m.frente]} de ${fmt(w[i])}`).join(', ')}.`); }
-      if (d.altos?.length) { const w = anchosFila(d.altos, t1 - t0); out.push(`Arriba, ${d.altos.length} módulos: ${d.altos.map((m, i) => `${FRENTE[m.frente]} de ${fmt(w[i])}`).join(', ')}.`); }
-    }
-    if (d.muroIzq || d.muroDer) out.push(`Dilatada de 7 cm contra ${d.muroIzq && d.muroDer ? 'los dos muros' : d.muroIzq ? 'el muro izquierdo' : 'el muro derecho'} (${HOLGURA_MURO} mm de holgura).`);
-    out.push(d.nevera === 'no' ? 'No lleva nevera.' : `Nevera a la ${d.nevera === 'inicio' ? 'izquierda' : 'derecha'} del muro A${d.neveraEspacio ? `, en un espacio de ${fmt(d.neveraEspacio)} mm` : ''}.`);
-    out.push(d.desague ? `Desagüe (poceta) a ${fmt(d.desague.dist)} mm del extremo izquierdo del muro ${d.desague.muro}.` : 'No se ve el desagüe.');
-    out.push(d.gas ? `Gas (estufa) a ${fmt(d.gas.dist)} mm del extremo izquierdo del muro ${d.gas.muro}.` : 'No se ve el punto de gas.');
+type EstadoDato = 'ok' | 'falta' | 'revisar' | 'opcional';
+interface DatoLeido { titulo: string; estado: EstadoDato; valor: string }
+
+/** Lista de chequeo de lo que trae el boceto: qué se leyó, qué falta y qué hay que revisar */
+function checklist(d: DatosBosquejo, q?: ProductoLeido): DatoLeido[] {
+  const out: DatoLeido[] = [];
+  const cocina = d.producto === 'cocinas', puerta = d.producto === 'puertas';
+  const dato = (titulo: string, estado: EstadoDato, valor: string) => out.push({ titulo, estado, valor });
+  const punto = (p: { muro: string; dist: number } | null | undefined) => (p ? `muro ${p.muro} a ${fmt(p.dist)} mm` : '');
+  dato(puerta ? 'Largo del muro' : 'Medida total del muro', q?.muroA ? 'ok' : 'falta', q?.muroA ? `${fmt(d.A)} mm` : `no se vio · se usa ${fmt(d.A)} mm`);
+  dato('Altura del piso al techo', q?.alto ? 'ok' : 'falta', q?.alto ? `${fmt(d.alto)} mm` : `no se vio · se usa ${fmt(d.alto)} mm`);
+  if (!puerta) dato('Forma', q?.forma ? 'ok' : 'revisar', `${FORMAS[d.forma]}${q?.forma ? '' : ' (supuesto)'}`);
+  if (!puerta && d.forma !== 'STRAIGHT') {
+    const completa = (!conB(d) || !!q?.muroB) && (!conC(d) || !!q?.muroC);
+    dato('Vista superior (muros B y C)', completa ? 'ok' : 'falta', completa ? `A ${fmt(d.A)}${conB(d) ? ` · B ${fmt(d.B)}` : ''}${conC(d) ? ` · C ${fmt(d.C)}` : ''} mm` : 'dibuja la planta con el muro B o C acotado');
+  } else if (!puerta) {
+    dato('Muros a los lados', 'ok', d.muroIzq && d.muroDer ? 'entre dos muros (dilatada de 7 cm en los dos)' : d.muroIzq ? 'a la izquierda (dilatada de 7 cm)' : d.muroDer ? 'a la derecha (dilatada de 7 cm)' : 'no hay');
   }
+  if (cocina) {
+    const fila = (m: ModuloDibujado[]) => m.map(x => x.frente).join(', ');
+    dato('Módulos de abajo', d.bajos?.length ? 'ok' : 'falta', d.bajos?.length ? `${d.bajos.length}: ${fila(d.bajos)}` : 'no se vieron los frentes dibujados');
+    dato('Módulos de arriba', d.altos?.length ? 'ok' : 'falta', d.altos?.length ? `${d.altos.length}: ${fila(d.altos)}` : 'no se vieron los frentes dibujados');
+    const suma = (q?.modulos ?? []).reduce((a, w) => a + w, 0);
+    dato('Ancho de cada módulo', !q?.modulos.length ? 'falta' : suma !== d.A ? 'revisar' : 'ok', !q?.modulos.length ? 'sin cotas por módulo: la app los reparte' : `${q.modulos.map(fmt).join(' + ')}${suma !== d.A ? ` = ${fmt(suma)} y el muro mide ${fmt(d.A)}` : ''}`);
+    dato('Espacio de la nevera', d.nevera === 'no' ? 'opcional' : d.neveraEspacio ? 'ok' : 'revisar', d.nevera === 'no' ? 'sin nevera' : `a la ${d.nevera === 'inicio' ? 'izquierda' : 'derecha'}${d.neveraEspacio ? ` · espacio de ${fmt(d.neveraEspacio)} mm` : ' · falta acotar el espacio'}`);
+    dato('Agua', q?.agua ? 'ok' : 'falta', q?.agua ? punto(q.agua) : 'no se ve el punto de agua');
+    dato('Desagüe (poceta)', d.desague ? 'ok' : 'falta', d.desague ? punto(d.desague) : 'no se ve el desagüe');
+    dato('Electricidad', q?.electricidad.length ? 'ok' : 'falta', q?.electricidad.length ? q.electricidad.map(punto).join(' · ') : 'no se ven tomas ni puntos eléctricos');
+    dato('Gas (estufa)', d.gas ? 'ok' : 'falta', d.gas ? punto(d.gas) : 'no se ve el punto de gas');
+  }
+  if (!puerta) dato('Fondo', q?.fondo ? 'ok' : 'opcional', q?.fondo ? `${fmt(q.fondo)} mm` : 'el normal del producto');
   return out;
 }
+
+const ICONO: Record<EstadoDato, { ico: string; caja: string }> = {
+  ok: { ico: '✓', caja: 'bg-emerald-100 text-emerald-700' },
+  falta: { ico: '✕', caja: 'bg-rose-100 text-rose-700' },
+  revisar: { ico: '!', caja: 'bg-amber-100 text-amber-700' },
+  opcional: { ico: '–', caja: 'bg-slate-100 text-slate-400' },
+};
+
+const ListaChequeo: React.FC<{ items: DatoLeido[] }> = ({ items }) => {
+  const cuenta = items.filter(i => i.estado !== 'opcional');
+  const leidos = cuenta.filter(i => i.estado === 'ok').length;
+  return (
+    <div className="space-y-2">
+      <div className="text-[10px] font-black text-slate-400 uppercase">Lo que trae el boceto · {leidos} de {cuenta.length} datos leídos</div>
+      <ul className="grid sm:grid-cols-2 gap-x-4 gap-y-1.5">
+        {items.map((it, i) => (
+          <li key={i} className="flex items-start gap-2">
+            <span className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center text-[11px] font-black mt-0.5 ${ICONO[it.estado].caja}`}>{ICONO[it.estado].ico}</span>
+            <span className="min-w-0">
+              <span className="block text-xs font-black text-slate-800">{it.titulo}</span>
+              <span className={`block text-[11px] font-bold ${it.estado === 'falta' ? 'text-rose-600' : it.estado === 'revisar' ? 'text-amber-700' : 'text-slate-500'}`}>{it.valor}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
 
 /** Avisos antes de aceptar: si bloquean, no deja crear el diseño */
 function avisosDe(d: DatosBosquejo): { texto: string; bloquea: boolean }[] {
@@ -260,6 +300,7 @@ export const Bosquejo: React.FC<{ actual: SectionId; onCrear: (d: DatosBosquejo,
 
   return (
     <div className="space-y-4 max-w-4xl">
+      <GuiaBoceto abierta={!foto} />
       {/* 1 · la foto del boceto */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4">
         {!foto ? (
@@ -295,8 +336,8 @@ export const Bosquejo: React.FC<{ actual: SectionId; onCrear: (d: DatosBosquejo,
               <span className="text-sm font-black text-slate-800 uppercase tracking-tight">{q?.nombre ?? 'Mueble'}</span>
               <span className="text-[11px] font-black text-indigo-600">{SECTIONS[d.producto].name}{q && !q.producto ? ' · no se identificó, revísalo' : ''}</span>
             </div>
-            <ul className="space-y-1">{frases(d).map((t, i) => <li key={i} className="text-sm font-bold text-slate-700">• {t}</li>)}</ul>
-            {q?.detalle && <div className="text-[11px] font-bold text-slate-400">Se ve dibujado: {q.detalle}</div>}
+            <ListaChequeo items={checklist(d, q)} />
+            {q?.detalle && <details className="text-[11px] font-bold text-slate-400"><summary className="cursor-pointer text-indigo-700 font-black">Ver lo que se leyó dentro de los muebles</summary><div className="pt-1">{q.detalle}</div></details>}
             {q && q.dudas.length > 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 space-y-0.5">
                 <div className="text-[10px] font-black text-amber-700 uppercase">Revisa esto</div>
