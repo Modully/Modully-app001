@@ -145,6 +145,19 @@ function checklist(d: DatosBosquejo, q?: ProductoLeido): DatoLeido[] {
     dato('Electricidad', q?.electricidad.length ? 'ok' : 'falta', q?.electricidad.length ? q.electricidad.map(punto).join(' · ') : 'no se ven tomas ni puntos eléctricos');
     dato('Gas (estufa)', d.gas ? 'ok' : 'falta', d.gas ? punto(d.gas) : 'no se ve el punto de gas');
   }
+  const detalleLeido = !!q?.detalle && q.detalle.trim().length > 8;
+  if (d.producto === 'closets' || d.producto === 'closetfit' || d.producto === 'walking') {
+    dato('Ancho de cada cuerpo', q?.modulos.length ? 'ok' : 'falta', q?.modulos.length ? q.modulos.map(fmt).join(' + ') + ' mm' : 'sin cotas por cuerpo: la app los reparte');
+    dato('Qué lleva cada cuerpo', detalleLeido ? 'ok' : 'falta', detalleLeido ? 'tubos, entrepaños y cajones leídos (ver detalle)' : 'no se leyeron tubos, entrepaños ni cajones');
+  } else if (d.producto === 'tv') {
+    dato('Ancho de cada parte', q?.modulos.length ? 'ok' : 'falta', q?.modulos.length ? q.modulos.map(fmt).join(' + ') + ' mm' : 'sin cotas por parte');
+    dato('Qué lleva el mueble', detalleLeido ? 'ok' : 'falta', detalleLeido ? 'leído (ver detalle)' : 'no se leyeron puertas, cajones ni repisas');
+    dato('Electricidad y datos', q?.electricidad.length ? 'ok' : 'falta', q?.electricidad.length ? q.electricidad.map(punto).join(' · ') : 'no se ven la toma del TV ni los datos');
+  } else if (d.producto === 'bano') {
+    dato('Agua', q?.agua ? 'ok' : 'falta', q?.agua ? punto(q.agua) : 'no se ve el punto de agua');
+    dato('Desagüe', q?.desague ? 'ok' : 'falta', q?.desague ? punto(q.desague) : 'no se ve el desagüe');
+    dato('Qué lleva el mueble', detalleLeido ? 'ok' : 'falta', detalleLeido ? 'puertas y cajones leídos (ver detalle)' : 'no se leyeron puertas ni cajones');
+  }
   if (!puerta) dato('Fondo', q?.fondo ? 'ok' : 'opcional', q?.fondo ? `${fmt(q.fondo)} mm` : 'el normal del producto');
   return out;
 }
@@ -270,6 +283,8 @@ export const Bosquejo: React.FC<{ actual: SectionId; onCrear: (d: DatosBosquejo,
   const [lectura, setLectura] = useState<{ estado: 'nada' | 'leyendo' | 'lista' | 'error'; r?: LecturaBoceto; error?: string }>({ estado: 'nada' });
   const [datos, setDatos] = useState<DatosBosquejo[]>([]);
   const [corrigiendo, setCorrigiendo] = useState<number | null>(null);
+  const [verGuia, setVerGuia] = useState(false); // normas y ejemplos del boceto: contraídos, al final de la página
+  const abrirGuia = () => { setVerGuia(true); setTimeout(() => document.getElementById('guia-boceto')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); };
 
   const leer = async (img: string) => {
     setLectura({ estado: 'leyendo' }); setDatos([]); setCorrigiendo(null);
@@ -300,16 +315,18 @@ export const Bosquejo: React.FC<{ actual: SectionId; onCrear: (d: DatosBosquejo,
 
   return (
     <div className="space-y-4 max-w-4xl">
-      <GuiaBoceto abierta={!foto} />
       {/* 1 · la foto del boceto */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4">
         {!foto ? (
+          <div className="space-y-2">
           <label className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 px-6 py-12 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/40">
             <span className="text-sm font-black text-slate-800">Adjunta la foto del boceto</span>
             <span className="text-[11px] font-bold text-slate-400 max-w-md">Una hoja con el dibujo a mano y sus medidas; puede traer varios muebles. La foto se envía al servicio de Gemini (Google) para leerla.</span>
             <span className="mt-2 rounded-xl px-4 py-2 text-xs font-black bg-indigo-600 text-white">Elegir foto</span>
             {entrada}
           </label>
+          <button onClick={abrirGuia} className="w-full text-center text-[11px] font-black text-indigo-700">¿Cómo dibujar el boceto? Ver ejemplo y normas</button>
+          </div>
         ) : (
           <div className="flex flex-wrap items-start gap-4">
             <img src={foto} alt="Boceto adjunto" className="w-full sm:w-64 max-h-72 object-contain rounded-xl border border-slate-200 bg-slate-50" />
@@ -368,6 +385,7 @@ export const Bosquejo: React.FC<{ actual: SectionId; onCrear: (d: DatosBosquejo,
           </div>
         );
       })}
+      <GuiaBoceto abierta={verGuia} onCambiar={setVerGuia} producto={datos[0]?.producto ?? actual} />
     </div>
   );
 };
