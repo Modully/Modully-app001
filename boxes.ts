@@ -164,7 +164,9 @@ export interface BuildBoxesInput {
   modules: KitchenModule[];
   appliances: Appliance[];
   corredera?: { tipo: 'full' | 'oculta'; menos10?: boolean; fondo15?: boolean }; // corredera de los cajones (por defecto full extensión)
+  aereoAbre?: 'pestana' | 'alras'; // aéreos: la puerta cuelga una pestaña (por defecto) o queda al ras del mueble (sin pestaña)
   calEstructura?: { MA: number; MB: number; otros: number }; // calibre de la estructura (15 o 18) de aéreos, bajos y demás
+  laminaLargo?: number; // largo de la lámina del proveedor (por defecto 2400): el puente L corrido no la supera
   costadosCortos?: boolean; // opción del carpintero: puente L corrido entre varios bajos y costados internos 80 mm más cortos (no se les hace la caja)
   hasLeftClosure?: boolean;
   hasRightClosure?: boolean;
@@ -326,14 +328,28 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
   };
 
   // --- Puente L corrido (opción "costados cortos"): un solo puente en L por cada tramo de bajos pegados, de lateral extremo a lateral extremo ---
+  // junto: para cada bajo de un puente corrido, si comparte el puente con el vecino de inicio / de fin (ahí el costado va más corto)
+  const junto = new Map<string, { inicio: boolean; fin: boolean }>();
+  const laminaGola = input.laminaLargo ?? 2400;
   if (input.costadosCortos) {
     (['A', 'B', 'C'] as WallName[]).forEach(w => {
       const bajos = modules.filter(m => m.wall === w && m.type === 'LOWER' && m.detailed && !!m.frontsLayout && !m.cornerArm && m.depth >= 60).sort((a, b) => a.positionX - b.positionX);
       const tramos: KitchenModule[][] = [];
       bajos.forEach(m => { const t = tramos[tramos.length - 1]; const u = t?.[t.length - 1]; if (u && Math.abs(u.positionX + u.width - m.positionX) < 2) t.push(m); else tramos.push([m]); });
-      tramos.filter(t => t.length >= 2).forEach((t, ti) => {
+      // un puente más largo que la lámina se corta en el costado de un módulo y sigue otro puente hasta donde se necesite
+      const segmentos: KitchenModule[][] = [];
+      tramos.forEach(t => {
+        let cur: KitchenModule[] = [t[0]];
+        t.slice(1).forEach(m => {
+          if ((m.positionX + m.width - PANEL_THICKNESS) - (cur[0].positionX + PANEL_THICKNESS) <= laminaGola) cur.push(m);
+          else { segmentos.push(cur); cur = [m]; }
+        });
+        segmentos.push(cur);
+      });
+      segmentos.filter(t => t.length >= 2).forEach((t, ti) => {
+        t.forEach((m, i) => junto.set(m.uniqueId, { inicio: i > 0, fin: i < t.length - 1 }));
         const E = PANEL_THICKNESS, ini = t[0].positionX + E, fin = t[t.length - 1].positionX + t[t.length - 1].width - E, H = t[0].height, D = t[0].depth;
-        const partes = Math.ceil((fin - ini) / 2400), largo = (fin - ini) / partes; // un puente más largo que la lámina se parte en tramos iguales
+        const partes = 1, largo = fin - ini;
         for (let k = 0; k < partes; k++) {
           const pp = placeOnWall(w, ini + k * largo, largo, D, armOrigin(w, false), 0);
           ([['Puente L corrido horizontal', GOLA_WIDTH, E, 0, H - GOLA_WIDTH - E], ['Puente L corrido vertical', E, GOLA_WIDTH, E, H - GOLA_WIDTH]] as const).forEach(([name, dv, dw, ov, ow], q) => {
@@ -407,7 +423,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     // Vecinos del mismo nivel pegados a cada lado (para los costados internos cortos y el puente L corrido)
     const vecino = (lado: 'inicio' | 'fin') => !isl && mod.type === 'LOWER' && modules.some(o => o !== mod && o.wall === mod.wall && o.type === 'LOWER' && o.detailed && !!o.frontsLayout && !o.cornerArm
       && Math.abs(lado === 'inicio' ? o.positionX + o.width - mod.positionX : o.positionX - (mod.positionX + mod.width)) < 2);
-    const corrido = !!input.costadosCortos && convertido && mod.type === 'LOWER' && (vecino('inicio') || vecino('fin'));
+    const corrido = !!input.costadosCortos && convertido && mod.type === 'LOWER' && junto.has(mod.uniqueId);
     // Esquinero recto: el bajo del muro A que llega al rincón queda tapado en parte por el tramo del otro muro. Lleva puerta falsa
     // (lo que tapa el otro tramo), dilatadas en la esquina y una puerta que abre en lo que queda libre; su lateral del rincón es 80 mm más corto
     const armDepth = LOWER_DEPTH;
@@ -481,7 +497,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         cajon('', E + 20, 180, 0); // cajón de abajo
       } else {
       // costados internos 80 mm más cortos (opción): el puente L corrido pasa por encima sin hacerles la caja; en el esquinero, el lateral del rincón
-      const corto = (lado: 'inicio' | 'fin') => (corrido && vecino(lado)) || esquinero === lado;
+      const corto = (lado: 'inicio' | 'fin') => (corrido && !!junto.get(mod.uniqueId)?.[lado]) || esquinero === lado;
       piece(esquinero === 'inicio' ? 'Lateral rincón' : 'Lateral izquierdo', E, D, corto('inicio') ? H - 80 : H, 0, 0, 0);
       piece(esquinero === 'fin' ? 'Lateral rincón' : 'Lateral derecho', E, D, corto('fin') ? H - 80 : H, W - E, 0, 0);
       if (mod.type === 'LOWER') {
@@ -531,6 +547,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     }
     // Módulo convertido: sus puertas o frentes de cajón (afuera de la cara frontal)
     if (mod.detailed && mod.frontsLayout) {
+      const tabPuerta = input.aereoAbre === 'alras' ? 0 : UPPER_DOOR_TAB; // al ras: la puerta del aéreo no cuelga
       const T = FRONT_THICKNESS, G = FRONT_SIDE_GAP;
       type Fr = { name: string; a0: number; a1: number; z0: number; h: number };
       const fronts: Fr[] = [];
@@ -559,16 +576,16 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         const h = (full - FRONT_DRAWER_GAP) / 2;
         fronts.push({ name: 'Frente inferior', a0: G1, a1: W - G1, z0: 0, h }, { name: 'Frente superior', a0: G1, a1: W - G1, z0: h + FRONT_DRAWER_GAP, h });
       } else if (mod.frontsLayout === 'upper-door1') {
-        fronts.push({ name: 'Puerta', a0: G1, a1: W - G1, z0: -UPPER_DOOR_TAB, h: H + UPPER_DOOR_TAB });
+        fronts.push({ name: 'Puerta', a0: G1, a1: W - G1, z0: -tabPuerta, h: H + tabPuerta });
       } else if (mod.frontsLayout === 'upper-door2-v') {
         const w = W / 2 - 1;
-        fronts.push({ name: 'Puerta izquierda', a0: G2, a1: G2 + w, z0: -UPPER_DOOR_TAB, h: H + UPPER_DOOR_TAB }, { name: 'Puerta derecha', a0: W / 2 + G2, a1: W / 2 + G2 + w, z0: -UPPER_DOOR_TAB, h: H + UPPER_DOOR_TAB });
+        fronts.push({ name: 'Puerta izquierda', a0: G2, a1: G2 + w, z0: -tabPuerta, h: H + tabPuerta }, { name: 'Puerta derecha', a0: W / 2 + G2, a1: W / 2 + G2 + w, z0: -tabPuerta, h: H + tabPuerta });
       } else if (mod.frontsLayout === 'upper-door2-h') {
-        const h = (H + UPPER_DOOR_TAB - G) / 2;
-        fronts.push({ name: 'Puerta inferior', a0: G1, a1: W - G1, z0: -UPPER_DOOR_TAB, h }, { name: 'Puerta superior', a0: G1, a1: W - G1, z0: -UPPER_DOOR_TAB + h + G, h });
+        const h = (H + tabPuerta - G) / 2;
+        fronts.push({ name: 'Puerta inferior', a0: G1, a1: W - G1, z0: -tabPuerta, h }, { name: 'Puerta superior', a0: G1, a1: W - G1, z0: -tabPuerta + h + G, h });
       } else if (mod.frontsLayout === 'hood-h') {
         // Campana con puertas horizontales: la de arriba copia la altura de la del aéreo vecino (HOOD_CUT más alto); la de abajo absorbe el resto
-        const hSup = (H + HOOD_CUT + UPPER_DOOR_TAB - G) / 2;
+        const hSup = (H + HOOD_CUT + tabPuerta - G) / 2;
         const hInf = (H - HOOD_DOOR_GAP) - hSup - G;
         fronts.push({ name: 'Puerta inferior', a0: G1, a1: W - G1, z0: HOOD_DOOR_GAP, h: hInf }, { name: 'Puerta superior', a0: G1, a1: W - G1, z0: HOOD_DOOR_GAP + hInf + G, h: hSup });
       } else if (mod.frontsLayout === 'hood') {

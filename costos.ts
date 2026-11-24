@@ -1,5 +1,5 @@
 import type { Box } from './boxes';
-import { ContextoPiezas, ListaPiezas, Pieza, bordesDeCanto, listaDePiezas, moduloDe } from './piezas';
+import { ContextoPiezas, ListaPiezas, Pieza, bordesDeCanto, herrajesGlobales, listaDePiezas, moduloDe } from './piezas';
 import { OPCIONES_LAMINA, OpcionesLamina, materialDe, optimizarListado } from './optimizador';
 import { esBlanco } from './colores';
 
@@ -19,7 +19,7 @@ import { esBlanco } from './colores';
 
 export interface PrecioLamina { id: string; nombre: string; cal: number; largo: number; ancho: number; precio: number }
 export interface PrecioCanto { id: string; tipo: 'Blanco' | 'Color'; rigido: boolean; precioMetro: number }
-export type ClaveHerraje = 'bisagra' | 'corredera' | 'manija' | 'piston' | 'soporte' | 'tubo' | 'gola';
+export type ClaveHerraje = 'bisagra' | 'corredera' | 'manija' | 'piston' | 'soporte' | 'tubo' | 'gola' | 'correderaOculta' | 'zocaloAl' | 'pata' | 'platillero' | 'condimentero' | 'basurera' | 'esquinaMagica';
 export interface TablaCostos {
   laminas: PrecioLamina[];
   cantos: PrecioCanto[];
@@ -41,6 +41,13 @@ export const NOMBRES_HERRAJE: Record<ClaveHerraje, { nombre: string; unidad: str
   soporte: { nombre: 'Soporte de entrepaño', unidad: 'unidad' },
   tubo: { nombre: 'Tubo de closet', unidad: 'metro' },
   gola: { nombre: 'Perfil gola de aluminio', unidad: 'metro' },
+  correderaOculta: { nombre: 'Corredera oculta, riel bajo el cajón (par)', unidad: 'par' },
+  zocaloAl: { nombre: 'Perfil de zócalo en aluminio', unidad: 'metro' },
+  pata: { nombre: 'Pata plástica de mueble base', unidad: 'unidad' },
+  platillero: { nombre: 'Platillero', unidad: 'unidad' },
+  condimentero: { nombre: 'Condimentero', unidad: 'unidad' },
+  basurera: { nombre: 'Basurera', unidad: 'unidad' },
+  esquinaMagica: { nombre: 'Esquina mágica', unidad: 'unidad' },
 };
 
 /** Los precios del Excel del carpintero; lo que el Excel no traía queda en 0 y la app avisa que falta */
@@ -59,7 +66,7 @@ export const COSTOS_INICIALES: TablaCostos = {
     { id: 'c3', tipo: 'Blanco', rigido: true, precioMetro: 0 },
     { id: 'c4', tipo: 'Color', rigido: true, precioMetro: 0 },
   ],
-  herrajes: { bisagra: 3500, corredera: 30000, manija: 2500, piston: 4000, soporte: 100, tubo: 0, gola: 0 },
+  herrajes: { bisagra: 3500, corredera: 30000, manija: 2500, piston: 4000, soporte: 100, tubo: 0, gola: 0, correderaOculta: 0, zocaloAl: 0, pata: 0, platillero: 0, condimentero: 0, basurera: 0, esquinaMagica: 0 },
   mesonMl: 370000,
   corteLamina: 0,
   fabricacion: { MA: 0, MB: 0, alto: 0, otro: 0 },
@@ -140,24 +147,32 @@ export interface Costeo {
 export interface ModuloCosteo { uniqueId: string; label?: string; type: string; width: number; height: number; depth: number; name?: string }
 
 /** Herrajes de un grupo de cajas (un módulo o el resto): se cuentan por las piezas reales */
-function herrajesDe(cajas: Box[], lista: ListaPiezas, esAereo: boolean): Record<ClaveHerraje, number> {
-  const h: Record<ClaveHerraje, number> = { bisagra: 0, corredera: 0, manija: 0, piston: 0, soporte: 0, tubo: 0, gola: 0 };
+function herrajesDe(cajas: Box[], lista: ListaPiezas, esAereo: boolean, ctx: ContextoPiezas): Record<ClaveHerraje, number> {
+  const h: Record<ClaveHerraje, number> = { bisagra: 0, corredera: 0, manija: 0, piston: 0, soporte: 0, tubo: 0, gola: 0, correderaOculta: 0, zocaloAl: 0, pata: 0, platillero: 0, condimentero: 0, basurera: 0, esquinaMagica: 0 };
+  const alras = esAereo && ctx.acabados?.aereoAbre === 'alras'; // sin pestaña, la puerta del aéreo abre con tirador
   const conGola = cajas.some(b => /^gola/i.test(b.name));
   cajas.filter(b => b.kind === 'front').forEach(b => {
     const n = norm(b.name);
-    if (/^frente/.test(n)) { h.corredera += 1; if (!conGola) h.manija += 1; return; }
+    if (/^frente/.test(n)) { if (ctx.corredera === 'oculta') h.correderaOculta += 1; else h.corredera += 1; if (!conGola) h.manija += 1; return; }
     if (!/^puerta/.test(n) || /falsa/.test(n)) return;
     const alto = b.sz;
     if (esAereo && /superior|inferior/.test(n)) { h.bisagra += 2; h.piston += 1; } // abatible: dos bisagras y un pistón
     else h.bisagra += alto <= 900 ? 2 : alto <= 1600 ? 3 : 4;
     // los aéreos abren con la pestaña de la puerta y los bajos con la gola: manija solo donde no hay ninguna de las dos
     if (!esAereo && !conGola) h.manija += 1;
+    if (alras) h.manija += 1;
   });
   cajas.filter(b => /^entrepa/i.test(norm(b.name))).forEach(() => { h.soporte += 4; });
   lista.herrajes.forEach(x => {
     const m = parseFloat(x.medida ?? '0') / 1000 * x.cant;
     if (/^tubo/i.test(x.nombre)) h.tubo += m;
     else if (/gola/i.test(x.nombre)) h.gola += m;
+    else if (/^perfil z/i.test(x.nombre)) h.zocaloAl += m;
+    else if (/^pata/i.test(x.nombre)) h.pata += x.cant;
+    else if (/^platillero/i.test(x.nombre)) h.platillero += x.cant;
+    else if (/^condimentero/i.test(x.nombre)) h.condimentero += x.cant;
+    else if (/^basurera/i.test(x.nombre)) h.basurera += x.cant;
+    else if (/^esquina m/i.test(x.nombre)) h.esquinaMagica += x.cant;
   });
   return h;
 }
@@ -219,9 +234,10 @@ export function costear(boxes: Box[], ctx: ContextoPiezas, listaTotal: ListaPiez
     const cajas = porGrupo.get(id)!;
     const mod = modulos.find(m => m.uniqueId === id);
     const tipo: CostoGrupo['tipo'] = !mod ? 'otro' : mod.type === 'UPPER' ? 'MA' : mod.type === 'LOWER' ? 'MB' : mod.type === 'TALL' ? 'alto' : 'otro';
-    const lista = listaDePiezas(cajas, { ...ctx, puerta: id === '__resto' ? ctx.puerta : undefined });
+    const lista = listaDePiezas(cajas, { ...ctx, puerta: id === '__resto' ? ctx.puerta : undefined, parcial: true });
+    if (id === '__resto') lista.herrajes.push(...herrajesGlobales(ctx, cajas)); // platillero, condimentero, basurera y esquina mágica van una vez, en lo general
     const piezas = lista.piezas.map(costoPieza);
-    const cant = herrajesDe(cajas, lista, tipo === 'MA');
+    const cant = herrajesDe(cajas, lista, tipo === 'MA', ctx);
     const herrajes: LineaHerraje[] = (Object.keys(cant) as ClaveHerraje[]).filter(k => cant[k] > 0).map(k => {
       if (!t.herrajes[k]) faltan.add(NOMBRES_HERRAJE[k].nombre);
       return { clave: k, cant: cant[k], precio: t.herrajes[k], total: cant[k] * t.herrajes[k] };
@@ -233,7 +249,7 @@ export function costear(boxes: Box[], ctx: ContextoPiezas, listaTotal: ListaPiez
     const herraje = herrajes.reduce((a, c) => a + c.total, 0), meson = ml * t.mesonMl;
     const fabricacion = mod ? t.fabricacion[tipo] : 0, instalacion = mod ? t.instalacion[tipo] : 0;
     const costo = material + canto + herraje + meson + fabricacion + instalacion;
-    const nombre = mod ? `${tipo === 'MA' ? 'Aéreo' : tipo === 'MB' ? 'Bajo' : tipo === 'alto' ? 'Alto' : 'Módulo'} ${mod.label ?? ''}`.trim() : nombreResto;
+    const nombre = mod ? `${tipo === 'MA' ? (mod.name?.startsWith('Puente') ? 'Puente' : 'Aéreo') : tipo === 'MB' ? 'Bajo' : tipo === 'alto' ? 'Alto' : 'Módulo'} ${mod.label ?? ''}`.trim() : nombreResto;
     const detalle = mod ? `${Math.round(mod.width)} × ${Math.round(mod.height)} × ${Math.round(mod.depth)} mm` : (ml > 0 ? `incluye ${ml.toFixed(2).replace('.', ',')} m de mesón` : '');
     return { id, nombre, detalle, tipo, piezas, herrajes, material, canto, herraje, meson, fabricacion, instalacion, costo, precio: 0, ancho: mod?.width ?? 0, mesonMl: ml };
   });

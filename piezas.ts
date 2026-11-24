@@ -2,7 +2,7 @@ import * as XLSX from 'xlsx';
 import type { Box } from './boxes';
 import type { BOMPiece } from './types';
 import { PuertaCfg, puertaDespiece } from './puertas';
-import { Acabados, calTexto, esBlanco, nivelDe } from './colores';
+import { Acabados, PATAS_POR_MUEBLE, calTexto, esBlanco, nivelDe } from './colores';
 
 /**
  * Fase 0 · Lista de piezas única.
@@ -111,6 +111,9 @@ export interface ContextoPiezas {
   faceColor: string;  // color de fachada del cliente
   puerta?: PuertaCfg; // sección Puertas: la puerta se despieza con su propia regla
   acabados?: Acabados; // colores de estructura por tipo de mueble, canto del frente y sistema gola (si no se dan, manda la línea)
+  corredera?: 'full' | 'oculta'; // correderas de los cajones (para el costeo)
+  conZocalo?: boolean; // la cocina lleva zócalo (con zócalo en aluminio, cada mueble base lleva patas)
+  parcial?: boolean;   // lista de un módulo suelto (costeo): sin los herrajes globales de la cocina
   abiertos?: string[]; // módulos abiertos (sin puertas): todas sus piezas van en el material de la fachada, también el fondo
 }
 
@@ -206,7 +209,12 @@ export function listaDePiezas(boxes: Box[], ctx: ContextoPiezas): ListaPiezas {
     // zócalo de cocina: la caja es el volumen; la pieza es una tira de 15 del alto del zócalo, en Blanco RH (va aparte de los laterales)
     if (b.kind === 'zocalo' && cal > 36) {
       // un zócalo más largo que la lámina se parte en tramos iguales (máximo 2400)
-      const largoZ = Math.round(Math.max(b.sx, b.sy)), tramos = Math.ceil(largoZ / 2400);
+      const largoZ = Math.round(Math.max(b.sx, b.sy)), tramos = Math.ceil(largoZ / (ctx.acabados?.laminaLargo ?? 2400));
+      if (ctx.acabados?.herrajes?.zocaloAluminio) { // zócalo en aluminio: perfil por su largo, no la tira de melamina
+        const medida = `${largoZ} mm`, k = `Perfil zócalo aluminio|${medida}`, h = herr.get(k);
+        if (h) h.cant++; else herr.set(k, { nombre: 'Perfil zócalo aluminio', cant: 1, medida });
+        return;
+      }
       push({ name: 'Zócalo', quantity: tramos, length: Math.round(largoZ / tramos), width: Math.round(b.sz), thickness: 15, color: 'Blanco RH', edgeType: '1L', papel: 'estructura', modulos: [] }, moduloDe(b));
       return;
     }
@@ -263,7 +271,26 @@ export function listaDePiezas(boxes: Box[], ctx: ContextoPiezas): ListaPiezas {
   const piezas = [...grupos.values()]
     .sort((a, c) => (a.papel === 'meson' ? 1 : 0) - (c.papel === 'meson' ? 1 : 0) || a.thickness - c.thickness || a.color.localeCompare(c.color) || oc(a.edgeType) - oc(c.edgeType) || a.name.localeCompare(c.name) || c.length - a.length)
     .map((p, i) => ({ ...p, item: i + 1 }));
+  // herrajes de las respuestas de Configuración de módulos
+  const hc = ctx.acabados?.herrajes;
+  if (hc?.zocaloAluminio && ctx.conZocalo !== false) {
+    const bajos = new Set(boxes.filter(b => b.kind === 'lower' && b.moduleId).map(b => b.moduleId as string));
+    if (bajos.size) herr.set('Pata plástica', { nombre: 'Pata plástica', cant: bajos.size * PATAS_POR_MUEBLE });
+  }
+  if (!ctx.parcial) herrajesGlobales(ctx, boxes).forEach(h => herr.set(h.nombre, h));
   return { piezas, herrajes: [...herr.values()], omitidas };
+}
+
+/** Herrajes de toda la cocina marcados en Configuración de módulos (platillero, condimentero, basurera, esquina mágica) */
+export function herrajesGlobales(ctx: ContextoPiezas, boxes: Box[]): Herraje[] {
+  const hc = ctx.acabados?.herrajes;
+  if (!hc) return [];
+  const out: Herraje[] = [];
+  if (hc.platillero) out.push({ nombre: 'Platillero', cant: 1 });
+  if (hc.condimentero) out.push({ nombre: 'Condimentero', cant: 1 });
+  if (hc.basurera) out.push({ nombre: 'Basurera', cant: 1 });
+  if (hc.esquinaMagica) out.push({ nombre: 'Esquina mágica', cant: 1 });
+  return out;
 }
 
 /** Canto de cada borde de una pieza, para el optimizador: L1 y L2 son los dos largos, a1 y a2 los dos anchos. "Fl" = flexible, "RG" = rígido */

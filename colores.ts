@@ -61,14 +61,22 @@ export interface Acabados {
   MB: AcabadosNivel;
   cantoFachada: boolean; // estructura blanca con fachada de color: el canto del frente va en el color de la fachada
   gola: 'melamina' | 'aluminio'; // sistema gola: puente en L de melamina o perfil de aluminio
+  golaCorrida: boolean; // gola en melamina: puente en L corrido entre bajos pegados y costados internos 80 mm más cortos (sin cortes en la instalación)
+  laminaLargo: number; // largo de la lámina del proveedor (2400 o 2800): el puente corrido se corta en el costado de un módulo si lo supera
+  aereoAbre: 'pestana' | 'alras'; // aéreos: la puerta abre con pestaña inferior o queda al ras del mueble
+  herrajes: HerrajesCocina; // herrajería especial que lleva la cocina
 }
+/** Herrajería de la cocina (casillas de Configuración de módulos). Con zócalo en aluminio, cada mueble base lleva 4 patas plásticas. */
+export interface HerrajesCocina { platillero: boolean; condimentero: boolean; basurera: boolean; esquinaMagica: boolean; zocaloAluminio: boolean }
+export const HERRAJES_COCINA: HerrajesCocina = { platillero: false, condimentero: false, basurera: false, esquinaMagica: false, zocaloAluminio: false };
+export const PATAS_POR_MUEBLE = 4;
 const nivel = (): AcabadosNivel => ({
   est: { color: 'Blanco', cal: 15, rh: true, rigido: false },   // regla del carpintero: estructura RH con canto flexible
   fach: { color: 'Blanco', cal: 15, rh: false, rigido: true },  // fachada de 15 con 4LR
   fondo: { color: 'Blanco', cal: 5.5, rh: false, rigido: false }, // fondo de 5,5 (se pide de 6), sin canto
 });
 // la fachada de MA nace vacía: sigue la de MB hasta que se elija otra
-export const ACABADOS: Acabados = { MA: { ...nivel(), fach: { ...nivel().fach, color: '' } }, MB: nivel(), cantoFachada: true, gola: 'melamina' };
+export const ACABADOS: Acabados = { MA: { ...nivel(), fach: { ...nivel().fach, color: '' } }, MB: nivel(), cantoFachada: true, gola: 'melamina', golaCorrida: false, laminaLargo: 2400, aereoAbre: 'pestana', herrajes: HERRAJES_COCINA };
 export const CALIBRES = { estructura: [15, 18], fachada: [15, 18], fondo: [2.5, 4, 5.5] };
 /** Calibre como se escribe en la lista: 5,5 / 2,5 */
 export const calTexto = (n: number) => String(n).replace('.', ',');
@@ -81,12 +89,13 @@ export function completarAcabados(v?: unknown): Acabados {
   const base = ACABADOS;
   const tab = (t: any, d: Tablero): Tablero => ({ ...d, ...(t && typeof t === 'object' ? t : {}) });
   const niv = (n: any, d: AcabadosNivel): AcabadosNivel => ({ est: tab(n?.est, d.est), fach: tab(n?.fach, d.fach), fondo: tab(n?.fondo, d.fondo) });
-  if (a.MA || a.MB) return { ...base, ...a, MA: niv(a.MA, base.MA), MB: niv(a.MB, base.MB) } as Acabados;
+  const herr = { ...HERRAJES_COCINA, ...(a.herrajes && typeof a.herrajes === 'object' ? a.herrajes : {}) };
+  if (a.MA || a.MB) return { ...base, ...a, MA: niv(a.MA, base.MA), MB: niv(a.MB, base.MB), herrajes: herr } as Acabados;
   // formato anterior: un campo por tipo de estructura y uno solo de fondo y fachada
   const viejo = (k: 'estMA' | 'estMB'): AcabadosNivel => ({
     est: { color: a[k] ?? 'Blanco', cal: a.cal?.[k] ?? 15, rh: a.rh?.[k] ?? true, rigido: a.rigido?.[k] ?? false },
     fach: { color: '', cal: a.cal?.fachada ?? 15, rh: a.rh?.fachada ?? false, rigido: a.rigido?.fachada ?? true },
     fondo: { color: a.fondo ?? 'Blanco', cal: a.cal?.fondo ?? 5.5, rh: a.rh?.fondo ?? false, rigido: false },
   });
-  return { MA: viejo('estMA'), MB: viejo('estMB'), cantoFachada: a.cantoFachada ?? true, gola: a.gola ?? 'melamina' };
+  return { MA: viejo('estMA'), MB: viejo('estMB'), cantoFachada: a.cantoFachada ?? true, gola: a.gola ?? 'melamina', golaCorrida: false, laminaLargo: 2400, aereoAbre: a.aereoAbre ?? 'pestana', herrajes: herr };
 }

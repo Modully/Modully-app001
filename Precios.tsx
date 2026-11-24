@@ -188,7 +188,7 @@ const VistaCosteo: React.FC<{ costeo: ReturnType<typeof costear>; ganancia: numb
                     ))}
                     {g.herrajes.map(h => (
                       <tr key={h.clave} className="border-t border-slate-100 font-bold text-sky-800">
-                        <td className="py-1" colSpan={2}>{NOMBRES_HERRAJE[h.clave].nombre}</td><td className="text-right">{h.clave === 'tubo' || h.clave === 'gola' ? `${h.cant.toFixed(2).replace('.', ',')} m` : h.cant}</td>
+                        <td className="py-1" colSpan={2}>{NOMBRES_HERRAJE[h.clave].nombre}</td><td className="text-right">{h.clave === 'tubo' || h.clave === 'gola' || h.clave === 'zocaloAl' ? `${h.cant.toFixed(2).replace('.', ',')} m` : h.cant}</td>
                         <td colSpan={3} className="text-slate-400">{pesos(h.precio)} c/u</td><td /><td className="text-right">{pesos(h.total)}</td>
                       </tr>
                     ))}</tbody>

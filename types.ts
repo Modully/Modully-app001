@@ -52,6 +52,8 @@ export interface KitchenModule extends ModuleTemplate {
   dilatThickness?: number;
   dilatDepth?: number;
   dilatHeight?: number;
+  esPuente?: boolean; // módulo superior del diseño en puente: va encima de un aéreo y se genera solo
+  puenteDe?: string;  // uniqueId del aéreo sobre el que va
   topGap?: number; // aéreos: separación (mm) entre su borde superior y el techo (0: cuelgan del techo)
   heightLocked?: boolean; // el usuario fijó el alto a mano: no se recalcula al cambiar el muro o el zócalo
   // Coordenadas 3D en el espacio (milímetros)

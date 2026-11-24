@@ -43,6 +43,10 @@ Se guarda en la cuenta, en la tabla `perfil_costos` de Supabase (una fila por us
   | Soporte de entrepaño | unidad |
   | Tubo de closet | metro |
   | Perfil gola de aluminio | metro |
+  | Corredera oculta (riel bajo el cajón) | par |
+  | Perfil de zócalo en aluminio | metro |
+  | Pata plástica de mueble base | unidad |
+  | Platillero, condimentero, basurera, esquina mágica | unidad |
 
 - **Mesón** por metro lineal, con su salpicadero incluido.
 - **Corte por lámina**, si el proveedor lo cobra aparte.
@@ -74,8 +78,10 @@ Lo que el Excel no traía queda en 0 y resaltado en amarillo: lámina de color 1
      - hasta 900 mm de alto lleva 2 bisagras, hasta 1600 lleva 3 y más alta lleva 4;
      - abatible del aéreo (puerta superior o inferior): 2 bisagras y 1 pistón;
      - "Puerta falsa": nada.
-   - **Frente de cajón:** 1 par de correderas.
-   - **Manija:** solo donde no hay gola ni pestaña. Los bajos abren con la gola y los aéreos con la pestaña de la puerta.
+   - **Frente de cajón:** 1 par de correderas, full extensión u oculta según lo elegido en Configuración de módulos.
+   - **Manija:** solo donde no hay gola ni pestaña. Los bajos abren con la gola y los aéreos con la pestaña de la puerta. Con aéreos "al ras" (sin pestaña) cada puerta del aéreo lleva una manija.
+   - **Zócalo en aluminio:** perfil por metro y 4 patas plásticas por cada mueble base (la tira de melamina del zócalo deja de salir en el listado).
+   - **Platillero, condimentero, basurera y esquina mágica:** 1 de cada uno si la casilla está marcada; van una vez, en el grupo "Zócalo, rellenos y mesón".
    - **Entrepaño:** 4 soportes.
    - **Tubo de closet y perfil gola de aluminio:** por metro.
 4. **Mesón.** Metros lineales de la losa más las cascadas (su alto) × precio por metro.

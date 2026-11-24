@@ -25,7 +25,9 @@ import { PlanosEnsamble } from './PlanosEnsamble';
 import { RenderVista } from './RenderVista';
 import { Bosquejo, DatosBosquejo, tramoModulos, anchosFila, HOLGURA_MURO } from './Bosquejo';
 import { Inicio } from './Inicio';
-import { ACABADOS, Acabados, AcabadosNivel, CALIBRES, CATALOGO, Tablero, calTexto, colorDeCatalogo, completarAcabados, esBlanco, hexDe } from './colores';
+import { EsquemaModulos, EsquemaCorredera, Foco } from './EsquemaModulos';
+import { VistaLateral, TramoAltura } from './VistaLateral';
+import { ACABADOS, Acabados, AcabadosNivel, CALIBRES, PATAS_POR_MUEBLE, CATALOGO, Tablero, calTexto, colorDeCatalogo, completarAcabados, esBlanco, hexDe } from './colores';
 import { PlanoLimpio } from './PlanoLimpio';
 import { Proyectos, DialogoAprobar, ProductoActivo } from './Proyectos';
 import { subirDocumentos, archivoDeDataURL, DocumentoNuevo, guardarDiseno, marcarAprobado, guardarEnBiblioteca, listarBiblioteca } from './nube';
@@ -426,11 +428,11 @@ const LoadingOverlay: React.FC<{ message: string }> = ({ message }) => (
   </div>
 );
 
-const Modal: React.FC<{ isOpen: boolean; onClose: () => void; onApply?: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, onApply, title, children }) => {
+const Modal: React.FC<{ isOpen: boolean; onClose: () => void; onApply?: () => void; title: string; children: React.ReactNode; ancho?: string }> = ({ isOpen, onClose, onApply, title, children, ancho = 'max-w-lg' }) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden flex flex-col modal-content animate-in zoom-in-95 duration-300">
+      <div className={`bg-white rounded-[2.5rem] shadow-2xl w-full ${ancho} overflow-hidden flex flex-col modal-content animate-in zoom-in-95 duration-300`}>
         <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">{title}</h3>
           <button onClick={onClose} className="p-2 bg-white rounded-xl shadow-sm text-slate-400 hover:text-red-500 transition-colors">
@@ -562,6 +564,8 @@ export default function App() {
   const [isAccessoriesPanelOpen, setIsAccessoriesPanelOpen] = useState(false);
   const [isSpecialModulesPanelOpen, setIsSpecialModulesPanelOpen] = useState(false);
   const [isWorkspaceModalOpen, setIsWorkspaceModalOpen] = useState(false);
+  const [tramoLateral, setTramoLateral] = useState<TramoAltura>(null);
+  const [focoEsquema, setFocoEsquema] = useState<Foco>(null); // zona del esquema que se está configurando en Configuración de módulos
   const [isModulosModalOpen, setIsModulosModalOpen] = useState(false); // Configuración de módulos: colores y sistema, mesón, dilatación
   const guiaEspacio = useRef(false); // diseño nuevo: Espacio se abrió solo y al aplicarlo sigue Configuración de módulos
   const [isOptMenuOpen, setIsOptMenuOpen] = useState(false);
@@ -662,9 +666,16 @@ export default function App() {
   const [section, setSection] = useState<SectionId>('cocinas');
   const [isSectionMenuOpen, setIsSectionMenuOpen] = useState(false);
   const cfg = SECTIONS[section];
-  const counterHeight = useMemo(() => (hasZocalo ? zocaloHeight : 0) + cfg.baseModuleHeight + (hasCounter ? counterThickness : 0), [hasZocalo, zocaloHeight, hasCounter, counterThickness, cfg.baseModuleHeight]);
-  const currentBaseModuleHeight = cfg.baseModuleHeight;
-  const currentUpperModuleHeight = useMemo(() => spaceHeight - counterHeight - cfg.upperGap - TOP_MARGIN, [spaceHeight, counterHeight, cfg.upperGap]);
+  // alturas editables en Configuración de módulos (vista lateral): null = la medida de la sección
+  // diseño en puente (cocinas rectas): doble módulo superior; el de arriba es más profundo y se genera solo encima de cada aéreo
+  const [puente, setPuente] = useState<{ on: boolean; alto: number; fondo: number }>({ on: false, alto: 450, fondo: 450 });
+  const puenteAlto = puente.on && layout === 'STRAIGHT' && cfg.hasUpper ? puente.alto : 0;
+  const [alturaBase, setAlturaBase] = useState<number | null>(null);
+  const [huecoAereo, setHuecoAereo] = useState<number | null>(null);
+  const currentBaseModuleHeight = alturaBase ?? cfg.baseModuleHeight;
+  const currentUpperGap = huecoAereo ?? cfg.upperGap;
+  const counterHeight = useMemo(() => (hasZocalo ? zocaloHeight : 0) + currentBaseModuleHeight + (hasCounter ? counterThickness : 0), [hasZocalo, zocaloHeight, hasCounter, counterThickness, currentBaseModuleHeight]);
+  const currentUpperModuleHeight = useMemo(() => spaceHeight - counterHeight - currentUpperGap - TOP_MARGIN, [spaceHeight, counterHeight, currentUpperGap]);
 
   // En cualquier campo numérico, al entrar se selecciona todo el valor: así lo que se escribe lo reemplaza y no se queda pegado el cero
   useEffect(() => {
@@ -687,13 +698,35 @@ export default function App() {
   useEffect(() => {
     setModules(prev => prev.map(m => {
       if (m.heightLocked) return m; // alto editado a mano en el panel
+      if (m.esPuente) return { ...m, height: puente.alto, topGap: 0, depth: puente.fondo };
       if (m.type === 'LOWER' && !m.isStoveCabinet) return { ...m, height: currentBaseModuleHeight };
-      if (m.type === 'UPPER' && !m.isFridgeCabinet && !m.isHood) return { ...m, height: currentUpperModuleHeight };
+      if (m.type === 'UPPER' && !m.isFridgeCabinet && !m.isHood) return { ...m, height: currentUpperModuleHeight - puenteAlto, topGap: puenteAlto };
       if (m.type === 'UPPER' && m.isHood) return { ...m, height: currentUpperModuleHeight - HOOD_SHORTEN };
       if (m.type === 'TALL') return { ...m, height: spaceHeight - TOP_MARGIN };
       return m;
     }));
-  }, [currentBaseModuleHeight, currentUpperModuleHeight, spaceHeight]);
+  }, [currentBaseModuleHeight, currentUpperModuleHeight, spaceHeight, puenteAlto, puente.alto, puente.fondo]);
+
+  // Diseño en puente: cada aéreo del muro A lleva encima su módulo superior (mismo ancho y posición); al apagarlo se quitan
+  useEffect(() => {
+    setModules(prev => {
+      const base = prev.filter(m => !m.esPuente);
+      if (!puenteAlto) return base.length === prev.length ? prev : base;
+      const next: KitchenModule[] = [];
+      base.forEach(orig => {
+        const elegible = orig.type === 'UPPER' && orig.wall === 'A' && !orig.isHood && !orig.isFridgeCabinet && !orig.cornerArm;
+        // un aéreo recién modulado nace con el alto completo: se acorta lo del módulo de arriba
+        const m = elegible && !orig.heightLocked && (orig.height !== currentUpperModuleHeight - puenteAlto || (orig.topGap ?? 0) !== puenteAlto) ? { ...orig, height: currentUpperModuleHeight - puenteAlto, topGap: puenteAlto } : orig;
+        next.push(m);
+        if (!elegible) return;
+        const ant = prev.find(p => p.puenteDe === m.uniqueId);
+        const nuevo = { ...(ant ?? { ...m, uniqueId: Math.random().toString(36).substr(2, 9), esPuente: true, puenteDe: m.uniqueId, isSinkCabinet: false, hasPlateRack: false, heightLocked: false, label: undefined }), name: `Puente ${Math.round(m.width)}mm`, wall: m.wall, positionX: m.positionX, width: m.width, height: puente.alto, topGap: 0, depth: puente.fondo } as KitchenModule;
+        next.push(nuevo);
+      });
+      const igual = next.length === prev.length && next.every((m, i) => { const p = prev[i]; return p === m || (p.uniqueId === m.uniqueId && p.positionX === m.positionX && p.width === m.width && p.height === m.height && p.depth === m.depth && p.topGap === m.topGap && p.name === m.name); });
+      return igual ? prev : next;
+    });
+  }, [modules, puenteAlto, puente.alto, puente.fondo, currentUpperModuleHeight]);
 
   const [hasIsland, setHasIsland] = useState(false);
   const [island] = useState({ length: 1800, width: 900, height: 900, dx: 1500, dy: 1000 });
@@ -722,9 +755,9 @@ export default function App() {
   const designSnapshot = useMemo(() => ({
     layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
     hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, closet, fit, puerta, lArm, hasLeftClosure, hasRightClosure,
-    hasDilatation, dilatationGap, dilatationDepth,
+    hasDilatation, dilatationGap, dilatationDepth, alturaBase, huecoAereo, puente,
     modules, specialModules, appliances, hasIsland, lineType, faceColor, acabados,
-  }), [acabados, puerta, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
+  }), [acabados, alturaBase, huecoAereo, puente, puerta, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
     hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands, columns, closet, fit, lArm, hasLeftClosure, hasRightClosure,
     hasDilatation, dilatationGap, dilatationDepth,
     modules, specialModules, appliances, hasIsland, lineType, faceColor]);
@@ -793,7 +826,7 @@ export default function App() {
     setSpaceHeight(snap.spaceHeight); setHasZocalo(snap.hasZocalo); setZocaloHeight(snap.zocaloHeight);
     setZocaloDepth(snap.zocaloDepth); setHasCounter(snap.hasCounter); setCounterThickness(snap.counterThickness);
     setCounterOverhang(snap.counterOverhang); setHasSplash(snap.hasSplash); setSplashHeight(snap.splashHeight); setCounterExtras(snap.counterExtras); setIslands(snap.islands); setColumns(snap.columns ?? []); setFit({ ...DEFAULT_FIT, ...(snap.fit ?? {}) }); setCloset({ ...DEFAULT_CLOSET, ...(snap.closet ?? {}) }); setLArm(snap.lArm); setHasLeftClosure(snap.hasLeftClosure); setHasRightClosure(snap.hasRightClosure);
-    setHasDilatation(snap.hasDilatation); setDilatationGap(snap.dilatationGap); setDilatationDepth(snap.dilatationDepth);
+    setHasDilatation(snap.hasDilatation); setDilatationGap(snap.dilatationGap); setDilatationDepth(snap.dilatationDepth); setAlturaBase(snap.alturaBase ?? null); setHuecoAereo(snap.huecoAereo ?? null); setPuente(snap.puente ?? { on: false, alto: 450, fondo: 450 });
     setModules(snap.modules); setSpecialModules(snap.specialModules); setAppliances(prev => [...snap.appliances, ...prev.filter(p => !snap.appliances.some((a: Appliance) => a.type === p.type)).map(p => ({ ...p, active: false }))]);
     setHasIsland(snap.hasIsland); setLineType(snap.lineType); setFaceColor(snap.faceColor); setAcabados(completarAcabados(snap.acabados));
   };
@@ -1069,17 +1102,18 @@ export default function App() {
 
   // Lista única de cajas: la escena 3D, el BOM y la exportación a Fusion leen la geometría de aquí
   // Opción del carpintero (no se guarda con el diseño): puente L corrido entre los bajos y costados internos 80 mm más cortos
-  const [costadosCortos, setCostadosCortos] = useState(false);
+  // gola en melamina corrida entre bajos (puente L continuo, costados internos 80 mm más cortos): se pide en Configuración de módulos
+  const costadosCortos = acabados.golaCorrida && acabados.gola === 'melamina' && cfg.id === 'cocinas';
   const [corredera, setCorredera] = useState<{ tipo: 'full' | 'oculta'; menos10?: boolean; fondo15?: boolean }>({ tipo: 'full' });
   const boxes = useMemo(() => buildBoxes({
     puerta: cfg.id === 'puertas' ? puerta : undefined, wallThickness: cfg.id === 'puertas' ? puerta.espesor : undefined, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth,
     modules: labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, islands: activeIslands, columns, closet: closetInput, fit: fitInput, lArm, hasLeftClosure, hasRightClosure,
-    hasDilatation, dilatationGap, dilatationDepth, costadosCortos, corredera,
+    hasDilatation, dilatationGap, dilatationDepth, costadosCortos, laminaLargo: acabados.laminaLargo, corredera, aereoAbre: acabados.aereoAbre,
     calEstructura: { MA: acabados.MA.est.cal, MB: acabados.MB.est.cal, otros: acabados.MB.est.cal },
-  }), [acabados.MA.est.cal, acabados.MB.est.cal, costadosCortos, corredera, cfg.id, puerta, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, closetInput, fitInput, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
+  }), [acabados.MA.est.cal, acabados.MB.est.cal, acabados.aereoAbre, acabados.laminaLargo, costadosCortos, corredera, cfg.id, puerta, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, closetInput, fitInput, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
 
   // Fase 0: lista de piezas única, sacada de las mismas cajas que se dibujan
-  const ctxPiezas = useMemo(() => ({ lineType, faceColor: colorDeCatalogo(faceColor)?.nombre ?? faceColor, acabados, puerta: cfg.id === 'puertas' ? puerta : undefined, abiertos: modules.filter(m => m.frontsLayout === 'open').map(m => m.uniqueId) }), [lineType, faceColor, acabados, cfg.id, puerta, modules]);
+  const ctxPiezas = useMemo(() => ({ lineType, faceColor: colorDeCatalogo(faceColor)?.nombre ?? faceColor, acabados, corredera: corredera.tipo, conZocalo: hasZocalo, puerta: cfg.id === 'puertas' ? puerta : undefined, abiertos: modules.filter(m => m.frontsLayout === 'open').map(m => m.uniqueId) }), [lineType, faceColor, acabados, corredera.tipo, hasZocalo, cfg.id, puerta, modules]);
   const lista = useMemo(() => listaDePiezas(boxes, ctxPiezas), [boxes, ctxPiezas]);
   // Regla: ningún módulo puede ocupar el mismo espacio que un electrodoméstico (ni otro módulo)
   const collisions = useMemo(() => findCollisions(boxes), [boxes]);
@@ -4921,7 +4955,21 @@ export default function App() {
                   )}
                 </div>
               </Modal>
-              <Modal isOpen={isModulosModalOpen} onClose={() => setIsModulosModalOpen(false)} title="Configuración de Módulos">
+              <Modal isOpen={isModulosModalOpen} onClose={() => { setIsModulosModalOpen(false); setFocoEsquema(null); }} title="Configuración de Módulos" ancho={cfg.id === 'cocinas' ? 'max-w-4xl' : 'max-w-lg'}>
+                <div className={cfg.id === 'cocinas' ? 'grid md:grid-cols-[250px_1fr] gap-8 items-start' : ''}>
+                {cfg.id === 'cocinas' && (
+                  <div className="md:sticky md:top-0 space-y-2">
+                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Así queda</div>
+                    <div className="rounded-2xl bg-slate-50 border border-slate-100 p-2">
+                      <EsquemaModulos aereoAbre={acabados.aereoAbre} gola={acabados.gola} zocaloAluminio={acabados.herrajes.zocaloAluminio}
+                        colorEst={hexDe(acabados.MB.est.color)} colorFach={hexDe(acabados.MB.fach.color || acabados.MB.est.color)} foco={focoEsquema} puente={puenteAlto > 0} />
+                    </div>
+                    <div className="text-[10px] font-bold text-slate-400">{focoEsquema === 'aereo' ? (acabados.aereoAbre === 'pestana' ? 'Pestaña inferior: el borde de abajo de la puerta sobresale para agarrarla.' : 'Al ras: la puerta queda pareja con el mueble y abre con tirador.')
+                      : focoEsquema === 'gola' ? (acabados.gola === 'aluminio' ? 'Gola en perfil de aluminio sobre el frente del mueble base.' : 'Gola en melamina: puente en L en la parte de arriba del mueble base.')
+                      : focoEsquema === 'zocalo' ? (acabados.herrajes.zocaloAluminio ? 'Zócalo en aluminio: cada mueble base lleva 4 patas de plástico.' : 'Zócalo corrido en melamina.')
+                      : focoEsquema === 'herrajes' ? 'Los herrajes marcados van dentro de los muebles base.' : focoEsquema === 'puente' ? 'Diseño en puente: un módulo más alto y más profundo encima de cada aéreo.' : focoEsquema === 'cajon' ? 'Corte del cajón: así queda la corredera.' : 'Toca una opción y se marca aquí lo que cambia.'}</div>
+                  </div>
+                )}
                 <div className="space-y-8">
                   {/* Colores y sistema: estructura por tipo de mueble, fachada, canto del frente y gola */}
                   <div className="space-y-3">
@@ -4951,17 +4999,143 @@ export default function App() {
                       </div>
                     )}
                     {cfg.id === 'cocinas' && (
-                      <div className="space-y-1">
-                        <div className="text-[9px] font-black text-slate-400 uppercase px-1">Sistema gola</div>
-                        <div className="grid grid-cols-2 gap-2">
-                          {([['melamina', 'En melamina (puente en L)'], ['aluminio', 'En aluminio (perfil)']] as const).map(([v, t]) => (
-                            <button key={v} type="button" onClick={() => setAcabados(a => ({ ...a, gola: v }))} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.gola === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
-                          ))}
+                      <div className="space-y-4">
+                        {cfg.hasUpper && (
+                          <div className="space-y-1">
+                            <div className="text-[11px] font-black text-slate-700 px-1">Muebles aéreos: ¿cómo abre la puerta?</div>
+                            <div className="grid grid-cols-2 gap-2">
+                              {([['pestana', 'Con pestaña inferior'], ['alras', 'Al ras del mueble']] as const).map(([v, t]) => (
+                                <button key={v} type="button" onClick={() => { setAcabados(a => ({ ...a, aereoAbre: v })); setFocoEsquema('aereo'); }} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.aereoAbre === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <div className="space-y-1">
+                          <div className="text-[11px] font-black text-slate-700 px-1">Muebles base: ¿la gola va en aluminio o en melamina?</div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {([['melamina', 'En melamina (puente en L)'], ['aluminio', 'En aluminio (perfil)']] as const).map(([v, t]) => (
+                              <button key={v} type="button" onClick={() => { setAcabados(a => ({ ...a, gola: v })); setFocoEsquema('gola'); }} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.gola === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
+                            ))}
+                          </div>
+                        </div>
+                        {acabados.gola === 'melamina' && (
+                          <div className="space-y-2">
+                            <div className="text-[11px] font-black text-slate-700 px-1">Gola en melamina: ¿corrida entre módulos, sin cortes al instalar?</div>
+                            <div className="grid grid-cols-2 gap-2">
+                              {([[true, 'Sí, corrida'], [false, 'No, una por módulo']] as const).map(([v, t]) => (
+                                <button key={String(v)} type="button" onClick={() => { setAcabados(a => ({ ...a, golaCorrida: v })); setFocoEsquema('gola'); }} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.golaCorrida === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
+                              ))}
+                            </div>
+                            {acabados.golaCorrida && (
+                              <div className="space-y-2">
+                                <div className="text-[10px] font-bold text-slate-500 px-1">El puente en L (65 + 15 = 80 mm) pasa de un módulo a otro y los costados internos bajan 80 mm. Si supera la lámina, se corta en el costado de un módulo y sigue otro puente.</div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {([2400, 2800] as const).map(v => (
+                                    <button key={v} type="button" onClick={() => setAcabados(a => ({ ...a, laminaLargo: v }))} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.laminaLargo === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Lámina de {v} mm</button>
+                                  ))}
+                                </div>
+                                {(() => {
+                                  const tr = boxes.filter(b => /^panel-lower-corrido-.*-0$/.test(b.id)).map(b => Math.round(Math.max(b.sx, b.sy)));
+                                  return tr.length > 0 ? <div className="text-[10px] font-black text-indigo-700 px-1">Puentes corridos: {tr.map(n => `${n} mm`).join(' · ')}</div> : <div className="text-[10px] font-bold text-slate-400 px-1">Se arman al convertir a módulos, cuando hay bajos pegados.</div>;
+                                })()}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className="space-y-1">
+                          <div className="text-[11px] font-black text-slate-700 px-1">Cajones: ¿correderas full extensión o riel oculto (montaje bajo)?</div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {([['full', 'Full extensión'], ['oculta', 'Riel oculto']] as const).map(([v, t]) => (
+                              <button key={v} type="button" onClick={() => { setCorredera(c => ({ ...c, tipo: v })); setFocoEsquema('cajon'); }} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${corredera.tipo === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
+                            ))}
+                          </div>
+                          {corredera.tipo === 'oculta' && (
+                            <div className="grid grid-cols-2 gap-2 pt-1">
+                              {([['menos10', 'Descontar 10 mm al largo'], ['fondo15', 'Fondo de 15']] as const).map(([k, t]) => (
+                                <label key={k} className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 cursor-pointer text-[10px] font-black ${corredera[k] ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600'}`}>
+                                  <input type="checkbox" className="accent-indigo-600 w-4 h-4" checked={!!corredera[k]} onChange={e => { const v = e.target.checked; setCorredera(c => ({ ...c, [k]: v })); }} />{t}
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                          <div className="rounded-xl bg-slate-50 border border-slate-100 p-1 max-w-[260px] mx-auto"><EsquemaCorredera tipo={corredera.tipo} colorEst={hexDe(acabados.MB.est.color)} colorFach={hexDe(acabados.MB.fach.color || acabados.MB.est.color)} /></div>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="text-[11px] font-black text-slate-700 px-1">Herrajería de la cocina</div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {([['platillero', 'Platillero'], ['condimentero', 'Condimentero'], ['basurera', 'Basurera'], ['esquinaMagica', 'Esquina mágica'], ['zocaloAluminio', 'Zócalo en aluminio']] as const).map(([k, t]) => (
+                              <label key={k} className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 cursor-pointer text-[11px] font-black ${acabados.herrajes[k] ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600'} ${k === 'zocaloAluminio' ? 'col-span-2' : ''}`}>
+                                <input type="checkbox" className="accent-indigo-600 w-4 h-4" checked={acabados.herrajes[k]}
+                                  onChange={e => { const v = e.target.checked; setAcabados(a => ({ ...a, herrajes: { ...a.herrajes, [k]: v } })); setFocoEsquema(k === 'zocaloAluminio' ? 'zocalo' : 'herrajes'); }} />
+                                <span>{t}{k === 'zocaloAluminio' && <span className="block text-[9px] font-bold text-slate-400 normal-case">Cada mueble base lleva {PATAS_POR_MUEBLE} patas de plástico</span>}</span>
+                              </label>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     )}
                     <div className="text-[10px] font-bold text-slate-400">En el diseño se ven tonos parecidos; el color real se ve en el render.</div>
                   </div>
+
+                  {cfg.id === 'cocinas' && cfg.hasUpper && (() => {
+                    const zoc = hasZocalo ? zocaloHeight : 0, mes = hasCounter ? counterThickness : 0;
+                    const campo = (id: Exclude<TramoAltura, null>, t: string, v: number, onC: (n: number) => void, nota?: string) => (
+                      <div key={id} onFocusCapture={() => setTramoLateral(id)} className="space-y-0.5">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">{t} (mm)</label>
+                        <DeferredNumber value={v} onCommit={onC} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                        {nota && <div className="text-[9px] font-bold text-slate-400 px-1">{nota}</div>}
+                      </div>
+                    );
+                    const resto = spaceHeight - zoc - currentBaseModuleHeight - mes - TOP_MARGIN; // para hueco + aéreo
+                    return (
+                      <div className="space-y-3">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Alturas de los muebles · vista lateral</label>
+                        <div className="grid grid-cols-[210px_1fr] gap-4 items-start">
+                          <div className="rounded-2xl bg-slate-50 border border-slate-100 p-1">
+                            <VistaLateral techo={spaceHeight} zocalo={zoc} base={currentBaseModuleHeight} meson={mes} hueco={currentUpperGap} aereo={currentUpperModuleHeight - puenteAlto} margen={TOP_MARGIN} fondoBase={LOWER_DEPTH} fondoAereo={UPPER_DEPTH} resaltado={tramoLateral} puente={puenteAlto ? { alto: puente.alto, fondo: puente.fondo } : undefined} />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {campo('base', 'Mueble base', currentBaseModuleHeight, n => setAlturaBase(Math.max(300, Math.min(1200, Math.round(n)))), 'Sin zócalo ni mesón')}
+                            {campo('hueco', 'Hueco al aéreo', currentUpperGap, n => setHuecoAereo(Math.max(0, Math.min(resto - 200, Math.round(n)))), 'Desde la cara del mesón')}
+                            {campo('aereo', 'Alto del aéreo', currentUpperModuleHeight - puenteAlto, n => setHuecoAereo(Math.max(0, Math.min(resto - 200, resto - puenteAlto - Math.max(200, Math.round(n))))), puenteAlto ? 'Debajo del módulo en puente' : 'Cuelga del techo')}
+                            <div className="text-[10px] font-bold text-slate-500 self-center px-1">Zócalo {zoc} y mesón {mes} se editan en Espacio y arriba. Techo {spaceHeight}.</div>
+                          </div>
+                        </div>
+                        {(alturaBase !== null || huecoAereo !== null) && <button type="button" onClick={() => { setAlturaBase(null); setHuecoAereo(null); }} className="text-[10px] font-black text-indigo-600 uppercase px-1">Volver a las alturas de siempre ({cfg.baseModuleHeight} y {cfg.upperGap})</button>}
+                      </div>
+                    );
+                  })()}
+
+                  {cfg.id === 'cocinas' && cfg.hasUpper && (
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Diseño en puente</label>
+                      {layout !== 'STRAIGHT' ? (
+                        <div className="p-3 bg-slate-50 rounded-2xl text-[11px] font-bold text-slate-500">El diseño en puente se pide en cocinas rectas. Cambia la forma en Espacio para usarlo.</div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="text-[11px] font-black text-slate-700 px-1">¿Lleva doble módulo superior, un módulo más alto y más profundo sobre el aéreo?</div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {([[true, 'Sí, con doble módulo'], [false, 'No']] as const).map(([v, t]) => (
+                              <button key={String(v)} type="button" onClick={() => { setPuente(p => ({ ...p, on: v })); setFocoEsquema(v ? 'puente' : null); setTramoLateral(v ? 'puente' : null); }} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${puente.on === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
+                            ))}
+                          </div>
+                          {puente.on && (
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-0.5">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Alto del módulo de arriba (mm)</label>
+                                <DeferredNumber value={puente.alto} onCommit={n => setPuente(p => ({ ...p, alto: Math.max(200, Math.min(900, Math.round(n))) }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                              </div>
+                              <div className="space-y-0.5">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Fondo (mm)</label>
+                                <DeferredNumber value={puente.fondo} onCommit={n => setPuente(p => ({ ...p, fondo: Math.max(250, Math.min(700, Math.round(n))) }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500" />
+                              </div>
+                              <div className="col-span-2 text-[10px] font-bold text-slate-400 px-1">Cada aéreo lleva encima su módulo de {puente.alto} mm; el aéreo se acorta lo mismo y la altura total no cambia. La campana y el módulo sobre la nevera quedan como están.</div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {cfg.features.counter && (
                   <div className="space-y-4">
@@ -5038,6 +5212,7 @@ export default function App() {
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dilatación</label>
                     <p className="text-[9px] font-bold text-slate-500 mt-1">Se pide por módulo: doble clic sobre el módulo, sección "Dilatada" (lado, espesor, fondo y altura)</p>
                   </div>
+                </div>
                 </div>
               </Modal>
 
@@ -5764,7 +5939,8 @@ export default function App() {
           <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24">
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-1">Inicio</h2>
             <p className="text-xs font-bold text-slate-400 mb-6">Elige el producto y la fase en la que quieres trabajar.</p>
-            <Inicio section={section} icons={SECTION_ICONS} piezas={lista.piezas.length} onProducto={id => switchSection(id)} onFase={f => setActiveTab(f)} />
+            <Inicio section={section} icons={SECTION_ICONS} onProducto={id => switchSection(id)} onFase={f => setActiveTab(f)}
+              avance={{ producto: productoActivo?.nombre ?? null, cliente: productoActivo?.cliente ?? null, bosquejo: bosquejoListo, modulos: labeledModules.length, piezas: lista.piezas.length, aprobado: aprobadoKey !== null && aprobadoKey === snapshotKey }} />
           </div>
         )}
         {activeTab === 'bosquejo' && (
@@ -5803,7 +5979,7 @@ export default function App() {
               onGuardar={productoActivo ? async (url, tipo) => { await subirDocumentos(productoActivo.id, [{ tipo, nombre: `${tipo === 'render' ? 'Render' : 'Foto_IA'}_${productoActivo.nombre.replace(/\s+/g, '_')}.png`, archivo: archivoDeDataURL(url) }], false); } : undefined} />
           </div>
         )}
-        {activeTab === 'config' && (<div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button><h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-4">Ajustes</h2><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Largo Muro A (mm)</span><input type="number" value={wallA} onChange={e => setWallA(parseInt(e.target.value))} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Línea de Producto</span><select value={lineType} onChange={e => setLineType(e.target.value as any)} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800"><option>Básica</option><option>Media</option><option>Alta</option></select></label><div className="mb-4 bg-white border rounded-2xl p-4 space-y-2"><div className="text-sm font-black text-slate-800">Corredera de los cajones</div><div className="flex flex-wrap gap-2"><button onClick={() => setCorredera({ tipo: 'full' })} className={`rounded-xl px-3 py-2 text-xs font-black border ${corredera.tipo === 'full' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Full extensión</button><button onClick={() => setCorredera(c => ({ ...c, tipo: 'oculta' }))} className={`rounded-xl px-3 py-2 text-xs font-black border ${corredera.tipo === 'oculta' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Oculta</button>{corredera.tipo === 'oculta' && <><button onClick={() => setCorredera(c => ({ ...c, menos10: !c.menos10 }))} className={`rounded-xl px-3 py-2 text-xs font-black border ${!!corredera.menos10 ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Descontar 10 mm al largo</button><button onClick={() => setCorredera(c => ({ ...c, fondo15: !c.fondo15 }))} className={`rounded-xl px-3 py-2 text-xs font-black border ${!!corredera.fondo15 ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Fondo de 15</button></>}</div><div className="text-[11px] font-bold text-slate-400">Full extensión: 13 mm de luz por lado. Oculta: 6 mm por lado y lateral en medidas de 50 en 50; algunas marcas piden 10 mm menos de largo.</div></div><div className="mb-4 flex items-center justify-between gap-4 bg-white border rounded-2xl p-4"><div><div className="text-sm font-black text-slate-800">Costados internos más cortos</div><div className="text-[11px] font-bold text-slate-400">Con puente en L de melamina corrido entre varios bajos: los costados internos van 80 mm más cortos y no se les hace la caja.</div></div><button onClick={() => setCostadosCortos(v => !v)} className={`w-12 h-6 rounded-full relative shrink-0 transition-all ${costadosCortos ? 'bg-indigo-600' : 'bg-slate-200'}`}><div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${costadosCortos ? 'left-6' : 'left-0.5'}`} /></button></div><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Color de Fachada</span><input type="text" value={faceColor} onChange={e => setFaceColor(e.target.value)} placeholder="Ej: Blanco, Ámbar, Gris" className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label></div>)}
+        {activeTab === 'config' && (<div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button><h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-4">Ajustes</h2><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Largo Muro A (mm)</span><input type="number" value={wallA} onChange={e => setWallA(parseInt(e.target.value))} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Línea de Producto</span><select value={lineType} onChange={e => setLineType(e.target.value as any)} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800"><option>Básica</option><option>Media</option><option>Alta</option></select></label><div className="mb-4 bg-white border rounded-2xl p-4 space-y-2"><div className="text-sm font-black text-slate-800">Corredera de los cajones</div><div className="flex flex-wrap gap-2"><button onClick={() => setCorredera({ tipo: 'full' })} className={`rounded-xl px-3 py-2 text-xs font-black border ${corredera.tipo === 'full' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Full extensión</button><button onClick={() => setCorredera(c => ({ ...c, tipo: 'oculta' }))} className={`rounded-xl px-3 py-2 text-xs font-black border ${corredera.tipo === 'oculta' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Oculta</button>{corredera.tipo === 'oculta' && <><button onClick={() => setCorredera(c => ({ ...c, menos10: !c.menos10 }))} className={`rounded-xl px-3 py-2 text-xs font-black border ${!!corredera.menos10 ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Descontar 10 mm al largo</button><button onClick={() => setCorredera(c => ({ ...c, fondo15: !c.fondo15 }))} className={`rounded-xl px-3 py-2 text-xs font-black border ${!!corredera.fondo15 ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Fondo de 15</button></>}</div><div className="text-[11px] font-bold text-slate-400">Full extensión: 13 mm de luz por lado. Oculta: 6 mm por lado y lateral en medidas de 50 en 50; algunas marcas piden 10 mm menos de largo.</div></div><div className="mb-4 flex items-center justify-between gap-4 bg-white border rounded-2xl p-4"><div><div className="text-sm font-black text-slate-800">Costados internos más cortos</div><div className="text-[11px] font-bold text-slate-400">Con puente en L de melamina corrido entre varios bajos: los costados internos van 80 mm más cortos y no se les hace la caja.</div></div><button onClick={() => setAcabados(a => ({ ...a, golaCorrida: !a.golaCorrida }))} className={`w-12 h-6 rounded-full relative shrink-0 transition-all ${costadosCortos ? 'bg-indigo-600' : 'bg-slate-200'}`}><div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${costadosCortos ? 'left-6' : 'left-0.5'}`} /></button></div><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Color de Fachada</span><input type="text" value={faceColor} onChange={e => setFaceColor(e.target.value)} placeholder="Ej: Blanco, Ámbar, Gris" className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label></div>)}
       </main>
       <nav className="h-20 bg-white border-t border-slate-200 flex items-center px-4 pb-2 shadow-2xl z-[70]"><BottomNavItem active={activeTab === 'inicio'} onClick={() => setActiveTab('inicio')} icon={<Home />} label="INICIO" /><BottomNavItem active={activeTab === 'proyectos'} onClick={() => setActiveTab('proyectos')} icon={<FolderOpen />} label="PROYECTOS" /><BottomNavItem active={activeTab === 'bosquejo'} onClick={() => setActiveTab('bosquejo')} icon={<Pencil />} label="BOSQUEJO" /><BottomNavItem active={activeTab === 'design'} onClick={() => setActiveTab('design')} icon={<Layout />} label="DISEÑO" /><BottomNavItem active={activeTab === 'catalog'} onClick={() => setActiveTab('catalog')} icon={<Component />} label="MÓDULOS" /><BottomNavItem active={activeTab === 'quote'} onClick={() => setActiveTab('quote')} icon={<ShoppingCart />} label="PRECIOS" /><BottomNavItem active={activeTab === 'listado'} onClick={() => setActiveTab('listado')} icon={<Table />} label="LISTADO" badge={lista.piezas.length > 0 ? lista.piezas.reduce((a, p) => a + p.quantity, 0).toString() : bom ? bom.pieces.length.toString() : undefined} /><BottomNavItem active={activeTab === 'laminas'} onClick={() => setActiveTab('laminas')} icon={<LayoutGrid />} label="LÁMINAS" /><BottomNavItem active={activeTab === 'planos'} onClick={() => setActiveTab('planos')} icon={<FileText />} label="PLANOS" /><BottomNavItem active={activeTab === 'render'} onClick={() => setActiveTab('render')} icon={<ImageIcon />} label="RENDER" /><BottomNavItem active={activeTab === 'config'} onClick={() => setActiveTab('config')} icon={<Settings />} label="AJUSTES" /></nav>
     </div>
