@@ -66,6 +66,9 @@ export interface AcabadosNivel { est: Tablero; fach: Tablero; fondo: Tablero }
 export interface Acabados {
   MA: AcabadosNivel;
   MB: AcabadosNivel;
+  AL?: AcabadosNivel; // alacena alta: si no se da, lleva lo mismo que los bajos
+  TH?: AcabadosNivel; // torre de hornos: si no se da, lleva lo mismo que los bajos
+  PU?: AcabadosNivel; // módulo en puente (el de arriba): si no se da, lleva lo mismo que los aéreos
   cantoFachada: boolean; // estructura blanca con fachada de color: el canto del frente va en el color de la fachada
   gola: 'melamina' | 'aluminio'; // sistema gola: puente en L de melamina o perfil de aluminio
   golaCorrida: boolean; // gola en melamina: puente en L corrido entre bajos pegados y costados internos 80 mm más cortos (sin cortes en la instalación)
@@ -88,7 +91,7 @@ export const CALIBRES = { estructura: [15, 18], fachada: [15, 18], fondo: [2.5, 
 /** Calibre como se escribe en la lista: 5,5 / 2,5 */
 export const calTexto = (n: number) => String(n).replace('.', ',');
 /** Nivel que corresponde a un mueble: los aéreos usan MA; base, torres, alacenas y closets usan MB */
-export const nivelDe = (a: Acabados, tipo?: string): AcabadosNivel => (tipo === 'MA' ? a.MA : a.MB);
+export const nivelDe = (a: Acabados, tipo?: string): AcabadosNivel => (tipo === 'PU' ? (a.PU ?? a.MA) : tipo === 'AL' ? (a.AL ?? a.MB) : tipo === 'TH' ? (a.TH ?? a.MB) : tipo === 'MA' ? a.MA : a.MB);
 
 /** Completa acabados guardados antes (formato viejo con estMA/estMB/estOtros, fondo, cal, rh) o a medias */
 export function completarAcabados(v?: unknown): Acabados {
@@ -97,7 +100,7 @@ export function completarAcabados(v?: unknown): Acabados {
   const tab = (t: any, d: Tablero): Tablero => ({ ...d, ...(t && typeof t === 'object' ? t : {}) });
   const niv = (n: any, d: AcabadosNivel): AcabadosNivel => ({ est: tab(n?.est, d.est), fach: tab(n?.fach, d.fach), fondo: tab(n?.fondo, d.fondo) });
   const herr = { ...HERRAJES_COCINA, ...(a.herrajes && typeof a.herrajes === 'object' ? a.herrajes : {}) };
-  if (a.MA || a.MB) return { ...base, ...a, MA: niv(a.MA, base.MA), MB: niv(a.MB, base.MB), herrajes: herr } as Acabados;
+  if (a.MA || a.MB) return { ...base, ...a, MA: niv(a.MA, base.MA), MB: niv(a.MB, base.MB), ...(a.PU ? { PU: niv(a.PU, base.MA) } : {}), ...(a.AL ? { AL: niv(a.AL, base.MB) } : {}), ...(a.TH ? { TH: niv(a.TH, base.MB) } : {}), herrajes: herr } as Acabados;
   // formato anterior: un campo por tipo de estructura y uno solo de fondo y fachada
   const viejo = (k: 'estMA' | 'estMB'): AcabadosNivel => ({
     est: { color: a[k] ?? 'Blanco', cal: a.cal?.[k] ?? 15, rh: a.rh?.[k] ?? true, rigido: a.rigido?.[k] ?? false },

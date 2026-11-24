@@ -18,6 +18,8 @@ export interface PropsEsquema {
   colorFach: string; // tono de la fachada
   colorEstAereo?: string; // el aéreo puede llevar otros colores que los bajos
   colorFachAereo?: string;
+  colorEstPuente?: string; // el módulo en puente puede llevar otros colores que el aéreo
+  colorFachPuente?: string;
   foco: Foco;
   puente?: boolean; // doble módulo superior (diseño en puente): un módulo más alto y más profundo sobre el aéreo
 }
@@ -46,7 +48,8 @@ const Caja: React.FC<{ x0: number; y0: number; z0: number; w: number; d: number;
   );
 };
 
-export const EsquemaModulos: React.FC<PropsEsquema> = ({ aereoAbre, gola, zocaloAluminio, colorEst, colorFach, colorEstAereo, colorFachAereo, foco, puente }) => {
+export const EsquemaModulos: React.FC<PropsEsquema> = ({ aereoAbre, gola, zocaloAluminio, colorEst, colorFach, colorEstAereo, colorFachAereo, colorEstPuente, colorFachPuente, foco, puente }) => {
+  const eP = colorEstPuente ?? colorEstAereo ?? colorEst, fP = colorFachPuente ?? colorFachAereo ?? colorFach;
   const eA = colorEstAereo ?? colorEst, fA = colorFachAereo ?? colorFach;
   const W = 1200, DB = 560, ZOC = 100, HB = 720, MES = 30, DA = 320, HA = 700;
   const zBaseTop = ZOC + HB; // 820
@@ -61,7 +64,7 @@ export const EsquemaModulos: React.FC<PropsEsquema> = ({ aereoAbre, gola, zocalo
   return (
     <svg viewBox={`0 0 220 ${puente ? 450 : 395}`} className="w-full h-auto" role="img" aria-label="Esquema en perspectiva del mueble base y el aéreo">
       <defs>
-        {[...new Set([colorFach, fA])].filter(hexConVeta).map(c => (
+        {[...new Set([colorFach, fA, fP])].filter(hexConVeta).map(c => (
           <pattern key={c} id={idVeta(c)} width={14} height={40} patternUnits="userSpaceOnUse">
             <rect width={14} height={40} fill={c} />
             <path d="M2 0 Q2.8 10 2 20 T2 40" stroke="rgba(0,0,0,.16)" strokeWidth={0.7} fill="none" />
@@ -121,9 +124,9 @@ export const EsquemaModulos: React.FC<PropsEsquema> = ({ aereoAbre, gola, zocalo
 
       {puente && (
         <g>
-          <Caja x0={0} y0={0} z0={zAer0 + HA} w={W} d={450} h={450} color={eA} />
-          {puerta(0, W / 2, zAer0 + HA + 5, zAer0 + HA + 445, 450, fA)}
-          {puerta(W / 2, W, zAer0 + HA + 5, zAer0 + HA + 445, 450, fA)}
+          <Caja x0={0} y0={0} z0={zAer0 + HA} w={W} d={450} h={450} color={eP} />
+          {puerta(0, W / 2, zAer0 + HA + 5, zAer0 + HA + 445, 450, fP)}
+          {puerta(W / 2, W, zAer0 + HA + 5, zAer0 + HA + 445, 450, fP)}
         </g>
       )}
 

@@ -7,7 +7,8 @@ import {
   Flame, Droplets, Refrigerator, Wind, Component, X, List, Layers, Info, WashingMachine,
   ZoomIn, ZoomOut, Zap, Maximize, Ruler, ArrowRight, MoveHorizontal, Move,
   TowerControl as Tower, AlertCircle, CheckCircle2, ChevronDown, Puzzle, Shirt, DoorOpen, Bath, Tv, Warehouse, ToggleLeft as Toggle,
-  Construction, Minus, Utensils, Target, ZapIcon, Layers2, Archive, Download, Table, Undo2, Redo2, Home, LayoutGrid, FolderOpen, FileText, Image as ImageIcon
+  Construction, Minus, Utensils, Target, ZapIcon, Layers2, Archive, Download, Table, Undo2, Redo2, Home, LayoutGrid, FolderOpen, FileText, Image as ImageIcon,
+  UserRound,
 } from 'lucide-react';
 import {
   KitchenModule, LayoutType, WallName,
@@ -30,7 +31,7 @@ import { VistaLateral, TramoAltura } from './VistaLateral';
 import { ACABADOS, Acabados, AcabadosNivel, CALIBRES, PATAS_POR_MUEBLE, CATALOGO, Tablero, calTexto, colorDeCatalogo, completarAcabados, esBlanco, hexDe } from './colores';
 import { PlanoLimpio } from './PlanoLimpio';
 import { Proyectos, DialogoAprobar, ProductoActivo } from './Proyectos';
-import { subirDocumentos, archivoDeDataURL, DocumentoNuevo, guardarDiseno, marcarAprobado, guardarEnBiblioteca, listarBiblioteca } from './nube';
+import { subirDocumentos, archivoDeDataURL, DocumentoNuevo, guardarDiseno, marcarAprobado, guardarEnBiblioteca, listarBiblioteca, sesionActual, alCambiarSesion } from './nube';
 import { Biblioteca, huellaDiseno } from './Biblioteca';
 import { Precios } from './Precios';
 import { PUNTO_INFO, puntosAdecuacion } from './puntos';
@@ -565,6 +566,9 @@ export default function App() {
   const [isSpecialModulesPanelOpen, setIsSpecialModulesPanelOpen] = useState(false);
   const [isWorkspaceModalOpen, setIsWorkspaceModalOpen] = useState(false);
   const [tramoLateral, setTramoLateral] = useState<TramoAltura>(null);
+  // sesión de la cuenta (la pantalla para entrar está en Proyectos): el botón de arriba la muestra y lleva allá
+  const [correoSesion, setCorreoSesion] = useState<string | null>(null);
+  useEffect(() => { sesionActual().then(s => setCorreoSesion(s?.user.email ?? null)).catch(() => {}); return alCambiarSesion(s => setCorreoSesion(s?.user.email ?? null)); }, []);
   const [focoEsquema, setFocoEsquema] = useState<Foco>(null); // zona del esquema que se está configurando en Configuración de módulos
   const [isModulosModalOpen, setIsModulosModalOpen] = useState(false); // Configuración de módulos: colores y sistema, mesón, dilatación
   const guiaEspacio = useRef(false); // diseño nuevo: Espacio se abrió solo y al aplicarlo sigue Configuración de módulos
@@ -644,7 +648,8 @@ export default function App() {
     return { ...a, MA: { ...a.MA, fach: { ...a.MA.fach, color: a.MA.fach.color || faceColor } }, MB: { ...a.MB, fach: { ...a.MB.fach, color: faceColor } } };
   }, [acabadosGuardados, faceColor]);
   // cambia un tablero de un nivel; la fachada de MB es el color de fachada general
-  const setTablero = (n: 'MA' | 'MB', k: keyof AcabadosNivel, p: Partial<Tablero>) => {
+  const setTablero = (n: 'MA' | 'MB' | 'PU' | 'AL' | 'TH', k: keyof AcabadosNivel, p: Partial<Tablero>) => {
+    if (n === 'PU' || n === 'AL' || n === 'TH') { setAcabados(prev => { const a = completarAcabados(prev); const base = a[n] ?? (n === 'PU' ? a.MA : a.MB); return { ...a, [n]: { ...base, [k]: { ...base[k], ...p } } }; }); return; }
     if (n === 'MB' && k === 'fach' && p.color !== undefined) setFaceColor(p.color);
     setAcabados(prev => { const a = completarAcabados(prev); return { ...a, [n]: { ...a[n], [k]: { ...a[n][k], ...p } } }; });
   }; // estructura por tipo de mueble, canto del frente y sistema gola
@@ -1113,7 +1118,12 @@ export default function App() {
   }), [acabados.MA.est.cal, acabados.MB.est.cal, acabados.aereoAbre, acabados.laminaLargo, costadosCortos, corredera, cfg.id, puerta, layout, wallA, wallB, wallC, spaceHeight, hasZocalo, zocaloHeight, zocaloDepth, labeledModules, appliances, hasCounter, counterThickness, counterOverhang, hasSplash, splashHeight, counterExtras, activeIslands, columns, closetInput, fitInput, lArm, hasLeftClosure, hasRightClosure, hasDilatation, dilatationGap, dilatationDepth]);
 
   // Fase 0: lista de piezas única, sacada de las mismas cajas que se dibujan
-  const ctxPiezas = useMemo(() => ({ lineType, faceColor: colorDeCatalogo(faceColor)?.nombre ?? faceColor, acabados, corredera: corredera.tipo, conZocalo: hasZocalo, puerta: cfg.id === 'puertas' ? puerta : undefined, abiertos: modules.filter(m => m.frontsLayout === 'open').map(m => m.uniqueId) }), [lineType, faceColor, acabados, corredera.tipo, hasZocalo, cfg.id, puerta, modules]);
+  const ctxPiezas = useMemo(() => ({ lineType, faceColor: colorDeCatalogo(faceColor)?.nombre ?? faceColor, acabados, corredera: corredera.tipo, conZocalo: hasZocalo, puentes: modules.filter(m => m.esPuente).map(m => m.uniqueId), puerta: cfg.id === 'puertas' ? puerta : undefined, abiertos: modules.filter(m => m.frontsLayout === 'open').map(m => m.uniqueId) }), [lineType, faceColor, acabados, corredera.tipo, hasZocalo, cfg.id, puerta, modules]);
+  const nivelPU = acabados.PU ?? acabados.MA; // colores del módulo en puente
+  const nivelAL = acabados.AL ?? acabados.MB; // alacena alta y torre de hornos: como los bajos hasta que se elija otro
+  const nivelTH = acabados.TH ?? acabados.MB;
+  const alacenaOn = specialModules.some(sm => sm.active && sm.kind === 'tall-pantry');
+  const torreOn = specialModules.some(sm => sm.active && sm.kind === 'tall-oven');
   const lista = useMemo(() => listaDePiezas(boxes, ctxPiezas), [boxes, ctxPiezas]);
   // Regla: ningún módulo puede ocupar el mismo espacio que un electrodoméstico (ni otro módulo)
   const collisions = useMemo(() => findCollisions(boxes), [boxes]);
@@ -4304,6 +4314,7 @@ export default function App() {
       <header className="px-6 py-4 flex items-center justify-between bg-white/70 backdrop-blur-lg border-b border-slate-200 z-[60]">
         <div className="flex items-center gap-3 cursor-pointer" title="Ir a Inicio" onClick={() => setActiveTab('inicio')}><div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg"><Box size={20} /></div><div><h1 className="text-base font-black text-slate-800 tracking-tighter uppercase">MODULLY</h1><span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none block">Cierre Exacto</span></div></div>
         <div className="relative flex items-center gap-2">
+          <button onClick={() => setActiveTab('proyectos')} title={correoSesion ? `Sesión: ${correoSesion}` : 'Entrar o crear cuenta'} className={`flex items-center gap-1.5 px-3 py-2 rounded-2xl border text-[11px] font-black uppercase tracking-wide transition-colors ${correoSesion ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700'}`}><UserRound size={14} /><span className="max-w-[110px] truncate normal-case">{correoSesion ? correoSesion.split('@')[0] : 'Entrar'}</span></button>
           {activeTab !== 'inicio' && <button onClick={() => setActiveTab('inicio')} title="Ir a Inicio" className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-600 text-[11px] font-black uppercase tracking-wide hover:border-indigo-300 hover:text-indigo-700 transition-colors"><Home size={14} />Inicio</button>}
           <button onClick={() => setIsSectionMenuOpen(!isSectionMenuOpen)} className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-700 text-[11px] font-black uppercase tracking-wide hover:bg-indigo-100 transition-colors">
             {SECTION_ICONS[section]}
@@ -4963,7 +4974,7 @@ export default function App() {
                     <div className="rounded-2xl bg-slate-50 border border-slate-100 p-2">
                       <EsquemaModulos aereoAbre={acabados.aereoAbre} gola={acabados.gola} zocaloAluminio={acabados.herrajes.zocaloAluminio}
                         colorEst={hexDe(acabados.MB.est.color)} colorFach={hexDe(acabados.MB.fach.color || acabados.MB.est.color)}
-                        colorEstAereo={hexDe(acabados.MA.est.color)} colorFachAereo={hexDe(acabados.MA.fach.color || acabados.MB.fach.color || acabados.MA.est.color)} foco={focoEsquema} puente={puenteAlto > 0} />
+                        colorEstPuente={hexDe(nivelPU.est.color)} colorFachPuente={hexDe(nivelPU.fach.color || acabados.MA.fach.color || acabados.MA.est.color)} colorEstAereo={hexDe(acabados.MA.est.color)} colorFachAereo={hexDe(acabados.MA.fach.color || acabados.MB.fach.color || acabados.MA.est.color)} foco={focoEsquema} puente={puenteAlto > 0} />
                     </div>
                     <div className="text-[10px] font-bold text-slate-400">{focoEsquema === 'aereo' ? (acabados.aereoAbre === 'pestana' ? 'Pestaña inferior: el borde de abajo de la puerta sobresale para agarrarla.' : 'Al ras: la puerta queda pareja con el mueble y abre con tirador.')
                       : focoEsquema === 'gola' ? (acabados.gola === 'aluminio' ? 'Gola en perfil de aluminio sobre el frente del mueble base.' : 'Gola en melamina: puente en L en la parte de arriba del mueble base.')
@@ -4972,111 +4983,84 @@ export default function App() {
                   </div>
                 )}
                 <div className="space-y-8">
-                  {/* Colores y sistema: estructura por tipo de mueble, fachada, canto del frente y gola */}
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Colores y sistema</label>
-                    <div className={`grid ${cfg.hasUpper ? 'grid-cols-2 divide-x divide-slate-300' : 'grid-cols-1'}`}>
-                      {((cfg.hasUpper ? ['MA', 'MB'] : ['MB']) as ('MA' | 'MB')[]).map(n => (
-                        <div key={n} className={`space-y-4 min-w-0 ${cfg.hasUpper ? (n === 'MA' ? 'pr-4' : 'pl-4') : ''}`}>
-                          <div className="text-[11px] font-black text-indigo-700 uppercase pb-1 border-b border-indigo-100">{cfg.id === 'cocinas' ? (n === 'MA' ? 'Mueble aéreo' : 'Muebles base') : (n === 'MA' ? cfg.upperName : cfg.lowerName)}</div>
-                          {([['est', 'Estructura', CALIBRES.estructura, true], ['fach', 'Fachada', CALIBRES.fachada, true], ['fondo', 'Espaldares y fondos', CALIBRES.fondo, false]] as const).map(([k, t, cals, canto]) => (
-                            <CampoColor key={k} label={t} value={acabados[n][k].color} onChange={v => setTablero(n, k, { color: v })}
-                              calibres={cals as unknown as number[]} cal={acabados[n][k].cal} onCal={c => setTablero(n, k, { cal: c })}
-                              rh={acabados[n][k].rh} onRh={v => setTablero(n, k, { rh: v })}
-                              {...(canto ? { rigido: acabados[n][k].rigido, onRigido: (v: boolean) => setTablero(n, k, { rigido: v }) } : {})} />
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                    {(['MA', 'MB'] as const).some(n => esBlanco(acabados[n].est.color) && !esBlanco(acabados[n].fach.color)) && (
-                      <div className="p-3 bg-slate-50 rounded-2xl space-y-2">
-                        <div className="text-[11px] font-black text-slate-700">La estructura es blanca y la fachada es de color. ¿El canto del frente va del color de la fachada?</div>
+                  {/* Sistema, herrajes, alturas y puente primero; los colores van justo antes del mesón */}
+                {cfg.id === 'cocinas' && (
+                  <div className="space-y-4">
+                    {cfg.hasUpper && (
+                      <div className="space-y-1">
+                        <div className="text-[11px] font-black text-slate-700 px-1">Muebles aéreos: ¿cómo abre la puerta?</div>
                         <div className="grid grid-cols-2 gap-2">
-                          {([[true, 'Sí, del color de la fachada'], [false, 'No, todo blanco']] as const).map(([v, t]) => (
-                            <button key={String(v)} type="button" onClick={() => setAcabados(a => ({ ...a, cantoFachada: v }))} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.cantoFachada === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
+                          {([['pestana', 'Con pestaña inferior'], ['alras', 'Al ras del mueble']] as const).map(([v, t]) => (
+                            <button key={v} type="button" onClick={() => { setAcabados(a => ({ ...a, aereoAbre: v })); setFocoEsquema('aereo'); }} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.aereoAbre === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
                           ))}
                         </div>
-                        {acabados.cantoFachada && <div className="text-[10px] font-bold text-slate-400">Laterales y entrepaños: 1L del color de la fachada y 2A blanco. Bases y tapas: 1L del color de la fachada.</div>}
                       </div>
                     )}
-                    {cfg.id === 'cocinas' && (
-                      <div className="space-y-4">
-                        {cfg.hasUpper && (
-                          <div className="space-y-1">
-                            <div className="text-[11px] font-black text-slate-700 px-1">Muebles aéreos: ¿cómo abre la puerta?</div>
-                            <div className="grid grid-cols-2 gap-2">
-                              {([['pestana', 'Con pestaña inferior'], ['alras', 'Al ras del mueble']] as const).map(([v, t]) => (
-                                <button key={v} type="button" onClick={() => { setAcabados(a => ({ ...a, aereoAbre: v })); setFocoEsquema('aereo'); }} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.aereoAbre === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        <div className="space-y-1">
-                          <div className="text-[11px] font-black text-slate-700 px-1">Muebles base: ¿la gola va en aluminio o en melamina?</div>
-                          <div className="grid grid-cols-2 gap-2">
-                            {([['melamina', 'En melamina (puente en L)'], ['aluminio', 'En aluminio (perfil)']] as const).map(([v, t]) => (
-                              <button key={v} type="button" onClick={() => { setAcabados(a => ({ ...a, gola: v })); setFocoEsquema('gola'); }} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.gola === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
-                            ))}
-                          </div>
+                    <div className="space-y-1">
+                      <div className="text-[11px] font-black text-slate-700 px-1">Muebles base: ¿la gola va en aluminio o en melamina?</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([['melamina', 'En melamina (puente en L)'], ['aluminio', 'En aluminio (perfil)']] as const).map(([v, t]) => (
+                          <button key={v} type="button" onClick={() => { setAcabados(a => ({ ...a, gola: v })); setFocoEsquema('gola'); }} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.gola === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
+                        ))}
+                      </div>
+                    </div>
+                    {acabados.gola === 'melamina' && (
+                      <div className="space-y-2">
+                        <div className="text-[11px] font-black text-slate-700 px-1">Gola en melamina: ¿corrida entre módulos, sin cortes al instalar?</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([[true, 'Sí, corrida'], [false, 'No, una por módulo']] as const).map(([v, t]) => (
+                            <button key={String(v)} type="button" onClick={() => { setAcabados(a => ({ ...a, golaCorrida: v })); setFocoEsquema('gola'); }} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.golaCorrida === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
+                          ))}
                         </div>
-                        {acabados.gola === 'melamina' && (
+                        {acabados.golaCorrida && (
                           <div className="space-y-2">
-                            <div className="text-[11px] font-black text-slate-700 px-1">Gola en melamina: ¿corrida entre módulos, sin cortes al instalar?</div>
+                            <div className="text-[10px] font-bold text-slate-500 px-1">El puente en L (65 + 15 = 80 mm) pasa de un módulo a otro y los costados internos bajan 80 mm. Si supera la lámina, se corta en el costado de un módulo y sigue otro puente.</div>
                             <div className="grid grid-cols-2 gap-2">
-                              {([[true, 'Sí, corrida'], [false, 'No, una por módulo']] as const).map(([v, t]) => (
-                                <button key={String(v)} type="button" onClick={() => { setAcabados(a => ({ ...a, golaCorrida: v })); setFocoEsquema('gola'); }} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.golaCorrida === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
+                              {([2400, 2800] as const).map(v => (
+                                <button key={v} type="button" onClick={() => setAcabados(a => ({ ...a, laminaLargo: v }))} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.laminaLargo === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Lámina de {v} mm</button>
                               ))}
                             </div>
-                            {acabados.golaCorrida && (
-                              <div className="space-y-2">
-                                <div className="text-[10px] font-bold text-slate-500 px-1">El puente en L (65 + 15 = 80 mm) pasa de un módulo a otro y los costados internos bajan 80 mm. Si supera la lámina, se corta en el costado de un módulo y sigue otro puente.</div>
-                                <div className="grid grid-cols-2 gap-2">
-                                  {([2400, 2800] as const).map(v => (
-                                    <button key={v} type="button" onClick={() => setAcabados(a => ({ ...a, laminaLargo: v }))} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.laminaLargo === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Lámina de {v} mm</button>
-                                  ))}
-                                </div>
-                                {(() => {
-                                  const tr = boxes.filter(b => /^panel-lower-corrido-.*-0$/.test(b.id)).map(b => Math.round(Math.max(b.sx, b.sy)));
-                                  return tr.length > 0 ? <div className="text-[10px] font-black text-indigo-700 px-1">Puentes corridos: {tr.map(n => `${n} mm`).join(' · ')}</div> : <div className="text-[10px] font-bold text-slate-400 px-1">Se arman al convertir a módulos, cuando hay bajos pegados.</div>;
-                                })()}
-                              </div>
-                            )}
+                            {(() => {
+                              const tr = boxes.filter(b => /^panel-lower-corrido-.*-0$/.test(b.id)).map(b => Math.round(Math.max(b.sx, b.sy)));
+                              return tr.length > 0 ? <div className="text-[10px] font-black text-indigo-700 px-1">Puentes corridos: {tr.map(n => `${n} mm`).join(' · ')}</div> : <div className="text-[10px] font-bold text-slate-400 px-1">Se arman al convertir a módulos, cuando hay bajos pegados.</div>;
+                            })()}
                           </div>
                         )}
-                        <div className="space-y-1">
-                          <div className="text-[11px] font-black text-slate-700 px-1">Cajones: ¿correderas full extensión o riel oculto (montaje bajo)?</div>
-                          <div className="grid grid-cols-2 gap-2">
-                            {([['full', 'Full extensión'], ['oculta', 'Riel oculto']] as const).map(([v, t]) => (
-                              <button key={v} type="button" onClick={() => { setCorredera(c => ({ ...c, tipo: v })); setFocoEsquema('cajon'); }} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${corredera.tipo === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
-                            ))}
-                          </div>
-                          {corredera.tipo === 'oculta' && (
-                            <div className="grid grid-cols-2 gap-2 pt-1">
-                              {([['menos10', 'Descontar 10 mm al largo'], ['fondo15', 'Fondo de 15']] as const).map(([k, t]) => (
-                                <label key={k} className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 cursor-pointer text-[10px] font-black ${corredera[k] ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600'}`}>
-                                  <input type="checkbox" className="accent-indigo-600 w-4 h-4" checked={!!corredera[k]} onChange={e => { const v = e.target.checked; setCorredera(c => ({ ...c, [k]: v })); }} />{t}
-                                </label>
-                              ))}
-                            </div>
-                          )}
-                          <div className="rounded-xl bg-slate-50 border border-slate-100 p-1 max-w-[260px] mx-auto"><EsquemaCorredera tipo={corredera.tipo} colorEst={hexDe(acabados.MB.est.color)} colorFach={hexDe(acabados.MB.fach.color || acabados.MB.est.color)} /></div>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-[11px] font-black text-slate-700 px-1">Herrajería de la cocina</div>
-                          <div className="grid grid-cols-2 gap-2">
-                            {([['platillero', 'Platillero'], ['condimentero', 'Condimentero'], ['basurera', 'Basurera'], ['esquinaMagica', 'Esquina mágica'], ['zocaloAluminio', 'Zócalo en aluminio']] as const).map(([k, t]) => (
-                              <label key={k} className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 cursor-pointer text-[11px] font-black ${acabados.herrajes[k] ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600'} ${k === 'zocaloAluminio' ? 'col-span-2' : ''}`}>
-                                <input type="checkbox" className="accent-indigo-600 w-4 h-4" checked={acabados.herrajes[k]}
-                                  onChange={e => { const v = e.target.checked; setAcabados(a => ({ ...a, herrajes: { ...a.herrajes, [k]: v } })); setFocoEsquema(k === 'zocaloAluminio' ? 'zocalo' : 'herrajes'); }} />
-                                <span>{t}{k === 'zocaloAluminio' && <span className="block text-[9px] font-bold text-slate-400 normal-case">Cada mueble base lleva {PATAS_POR_MUEBLE} patas de plástico</span>}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </div>
                       </div>
                     )}
-                    <div className="text-[10px] font-bold text-slate-400">En el diseño se ven tonos parecidos; el color real se ve en el render.</div>
+                    <div className="space-y-1">
+                      <div className="text-[11px] font-black text-slate-700 px-1">Cajones: ¿correderas full extensión o riel oculto (montaje bajo)?</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([['full', 'Full extensión'], ['oculta', 'Riel oculto']] as const).map(([v, t]) => (
+                          <button key={v} type="button" onClick={() => { setCorredera(c => ({ ...c, tipo: v })); setFocoEsquema('cajon'); }} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${corredera.tipo === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
+                        ))}
+                      </div>
+                      {corredera.tipo === 'oculta' && (
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          {([['menos10', 'Descontar 10 mm al largo'], ['fondo15', 'Fondo de 15']] as const).map(([k, t]) => (
+                            <label key={k} className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 cursor-pointer text-[10px] font-black ${corredera[k] ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600'}`}>
+                              <input type="checkbox" className="accent-indigo-600 w-4 h-4" checked={!!corredera[k]} onChange={e => { const v = e.target.checked; setCorredera(c => ({ ...c, [k]: v })); }} />{t}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                      <div className="rounded-xl bg-slate-50 border border-slate-100 p-1 max-w-[260px] mx-auto"><EsquemaCorredera tipo={corredera.tipo} colorEst={hexDe(acabados.MB.est.color)} colorFach={hexDe(acabados.MB.fach.color || acabados.MB.est.color)} /></div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-[11px] font-black text-slate-700 px-1">Herrajería de la cocina</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([['platillero', 'Platillero'], ['condimentero', 'Condimentero'], ['basurera', 'Basurera'], ['esquinaMagica', 'Esquina mágica'], ['zocaloAluminio', 'Zócalo en aluminio']] as const).map(([k, t]) => (
+                          <label key={k} className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 cursor-pointer text-[11px] font-black ${acabados.herrajes[k] ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600'} ${k === 'zocaloAluminio' ? 'col-span-2' : ''}`}>
+                            <input type="checkbox" className="accent-indigo-600 w-4 h-4" checked={acabados.herrajes[k]}
+                              onChange={e => { const v = e.target.checked; setAcabados(a => ({ ...a, herrajes: { ...a.herrajes, [k]: v } })); setFocoEsquema(k === 'zocaloAluminio' ? 'zocalo' : 'herrajes'); }} />
+                            <span>{t}{k === 'zocaloAluminio' && <span className="block text-[9px] font-bold text-slate-400 normal-case">Cada mueble base lleva {PATAS_POR_MUEBLE} patas de plástico</span>}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   </div>
+                )}
+
 
                   {cfg.id === 'cocinas' && cfg.hasUpper && (() => {
                     const zoc = hasZocalo ? zocaloHeight : 0, mes = hasCounter ? counterThickness : 0;
@@ -5137,6 +5121,49 @@ export default function App() {
                       )}
                     </div>
                   )}
+
+                  {/* Colores: estructura por tipo de mueble (aéreo, base y, si hay puente, el módulo de arriba), fachada y fondos */}
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Colores</label>
+                  <div className={`grid ${cfg.hasUpper ? 'grid-cols-2 divide-x divide-slate-300' : 'grid-cols-1'}`}>
+                    {((cfg.hasUpper ? ['MA', 'MB'] : ['MB']) as ('MA' | 'MB')[]).map(n => (
+                      <div key={n} className={`space-y-4 min-w-0 ${cfg.hasUpper ? (n === 'MA' ? 'pr-4' : 'pl-4') : ''}`}>
+                        <div className="text-[11px] font-black text-indigo-700 uppercase pb-1 border-b border-indigo-100">{cfg.id === 'cocinas' ? (n === 'MA' ? 'Mueble aéreo' : 'Muebles base') : (n === 'MA' ? cfg.upperName : cfg.lowerName)}</div>
+                        {([['est', 'Estructura', CALIBRES.estructura, true], ['fach', 'Fachada', CALIBRES.fachada, true], ['fondo', 'Espaldares y fondos', CALIBRES.fondo, false]] as const).map(([k, t, cals, canto]) => (
+                          <CampoColor key={k} label={t} value={acabados[n][k].color} onChange={v => setTablero(n, k, { color: v })}
+                            calibres={cals as unknown as number[]} cal={acabados[n][k].cal} onCal={c => setTablero(n, k, { cal: c })}
+                            rh={acabados[n][k].rh} onRh={v => setTablero(n, k, { rh: v })}
+                            {...(canto ? { rigido: acabados[n][k].rigido, onRigido: (v: boolean) => setTablero(n, k, { rigido: v }) } : {})} />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                  {(['MA', 'MB'] as const).some(n => esBlanco(acabados[n].est.color) && !esBlanco(acabados[n].fach.color)) && (
+                    <div className="p-3 bg-slate-50 rounded-2xl space-y-2">
+                      <div className="text-[11px] font-black text-slate-700">La estructura es blanca y la fachada es de color. ¿El canto del frente va del color de la fachada?</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([[true, 'Sí, del color de la fachada'], [false, 'No, todo blanco']] as const).map(([v, t]) => (
+                          <button key={String(v)} type="button" onClick={() => setAcabados(a => ({ ...a, cantoFachada: v }))} className={`py-2 rounded-xl text-[10px] font-black uppercase border-2 ${acabados.cantoFachada === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{t}</button>
+                        ))}
+                      </div>
+                      {acabados.cantoFachada && <div className="text-[10px] font-bold text-slate-400">Laterales y entrepaños: 1L del color de la fachada y 2A blanco. Bases y tapas: 1L del color de la fachada.</div>}
+                    </div>
+                  )}
+                    {cfg.id === 'cocinas' && ([['PU', 'Módulo en puente (el de arriba)', puenteAlto > 0, nivelPU, acabados.MA.fach.color], ['AL', 'Alacena alta', alacenaOn, nivelAL, acabados.MB.fach.color], ['TH', 'Torre de hornos', torreOn, nivelTH, acabados.MB.fach.color]] as const).filter(x => x[2]).map(([n, t, , nv, fb]) => (
+                      <div key={n} className="space-y-3" onFocusCapture={() => n === 'PU' && setFocoEsquema('puente')} onMouseEnter={() => n === 'PU' && setFocoEsquema('puente')}>
+                        <div className="text-[11px] font-black text-indigo-700 uppercase pb-1 border-b border-indigo-100">{t}</div>
+                        <div className="grid grid-cols-2 gap-4">
+                          {([['est', 'Estructura', CALIBRES.estructura, true], ['fach', 'Fachada', CALIBRES.fachada, true], ['fondo', 'Espaldares y fondos', CALIBRES.fondo, false]] as const).map(([k, tt, cals, canto]) => (
+                            <CampoColor key={k} label={tt} value={k === 'fach' ? (nv.fach.color || fb) : nv[k].color} onChange={v => setTablero(n, k, { color: v })}
+                              calibres={cals as unknown as number[]} cal={nv[k].cal} onCal={c => setTablero(n, k, { cal: c })}
+                              rh={nv[k].rh} onRh={v => setTablero(n, k, { rh: v })}
+                              {...(canto ? { rigido: nv[k].rigido, onRigido: (v: boolean) => setTablero(n, k, { rigido: v }) } : {})} />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  <div className="text-[10px] font-bold text-slate-400">En el diseño se ven tonos parecidos; el color real se ve en el render.</div>
+                  </div>
 
                   {cfg.features.counter && (
                   <div className="space-y-4">
@@ -5221,7 +5248,7 @@ export default function App() {
               {(
                 <KitchenViewer3D
                   puntos={puntosAdecuacion(appliances, modules, wallA)}
-                  colores={{ fachada: hexDe(acabados.MB.fach.color), fachadaMA: hexDe(acabados.MA.fach.color), ma: hexDe(acabados.MA.est.color, '#f4f4f1'), mb: hexDe(acabados.MB.est.color, '#f4f4f1'), otros: hexDe(acabados.MB.est.color, '#f4f4f1'), fondo: hexDe(acabados.MB.fondo.color, '#e5e7eb'), fondoMA: hexDe(acabados.MA.fondo.color, '#e5e7eb') }}
+                  colores={{ al: hexDe(nivelAL.est.color, '#f4f4f1'), fachadaAL: hexDe(nivelAL.fach.color || acabados.MB.fach.color), fondoAL: hexDe(nivelAL.fondo.color, '#e5e7eb'), th: hexDe(nivelTH.est.color, '#f4f4f1'), fachadaTH: hexDe(nivelTH.fach.color || acabados.MB.fach.color), fondoTH: hexDe(nivelTH.fondo.color, '#e5e7eb'), puentes: modules.filter(m => m.esPuente).map(m => m.uniqueId), pu: hexDe(nivelPU.est.color, '#f4f4f1'), fachadaPU: hexDe(nivelPU.fach.color || acabados.MA.fach.color), fondoPU: hexDe(nivelPU.fondo.color, '#e5e7eb'), fachada: hexDe(acabados.MB.fach.color), fachadaMA: hexDe(acabados.MA.fach.color), ma: hexDe(acabados.MA.est.color, '#f4f4f1'), mb: hexDe(acabados.MB.est.color, '#f4f4f1'), otros: hexDe(acabados.MB.est.color, '#f4f4f1'), fondo: hexDe(acabados.MB.fondo.color, '#e5e7eb'), fondoMA: hexDe(acabados.MA.fondo.color, '#e5e7eb') }}
                   wallThickMm={cfg.id === 'puertas' ? puerta.espesor : undefined}
                   puertaApi={cfg.id === 'puertas' ? { cfg: puerta, onChange: setPuerta, onOpenForm: () => setPuertaHidden(false) } : undefined}
                   layout={layout} 

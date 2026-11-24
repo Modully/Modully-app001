@@ -115,6 +115,7 @@ export interface ContextoPiezas {
   corredera?: 'full' | 'oculta'; // correderas de los cajones (para el costeo)
   conZocalo?: boolean; // la cocina lleva zócalo (con zócalo en aluminio, cada mueble base lleva patas)
   parcial?: boolean;   // lista de un módulo suelto (costeo): sin los herrajes globales de la cocina
+  puentes?: string[]; // módulos en puente (el de arriba): llevan sus propios colores
   abiertos?: string[]; // módulos abiertos (sin puertas): todas sus piezas van en el material de la fachada, también el fondo
 }
 
@@ -229,6 +230,7 @@ export function listaDePiezas(boxes: Box[], ctx: ContextoPiezas): ListaPiezas {
     const r = REGLAS.find(x => x.re.test(n));
     let papel: Papel = r?.papel ?? 'estructura';
     const em = etiquetaModulo(b);
+    const esPu = !!(b.moduleId && ctx.puentes?.includes(b.moduleId));
     let parte = r?.parte ?? limpiar(em ? em.resto : b.name);
     let canto = r?.canto ?? '';
     // módulo de cocina: el amarre del aéreo es su soporte (cuchilla) y el nombre lleva el módulo ("Lateral MB A")
@@ -236,11 +238,11 @@ export function listaDePiezas(boxes: Box[], ctx: ContextoPiezas): ListaPiezas {
       if (parte === 'Puente' && em.etiqueta.startsWith('MA')) parte = 'Soporte';
       parte = `${parte} ${em.etiqueta}`;
       // fachada de cocina: 15 por defecto y 18 solo en la línea Alta
-      if (papel === 'fachada' && b.kind === 'front') cal = ctx.acabados ? nivelDe(ctx.acabados, em.etiqueta.split(' ')[0]).fach.cal : ctx.lineType === 'Alta' ? 18 : 15;
+      if (papel === 'fachada' && b.kind === 'front') cal = ctx.acabados ? nivelDe(ctx.acabados, esPu ? 'PU' : em.etiqueta.split(' ')[0]).fach.cal : ctx.lineType === 'Alta' ? 18 : 15;
     }
     if (/^espaldar/.test(n) && cal >= 15) { canto = '2A'; papel = 'estructura'; } // espaldar de 15 (torre de hornos): tablero de estructura con canto en los dos anchos
     if (papel === 'fondo' && cal >= 15 && !/^espaldar/.test(n)) papel = 'estructura'; // fondo de cajón de 15 (corredera oculta): tablero de estructura, sin canto
-    const tipoMueble = em?.etiqueta.split(' ')[0];
+    const tipoMueble = esPu ? 'PU' : em?.etiqueta.split(' ')[0];
     let color = material(papel, ctx, tipoMueble);
     // calibre del fondo en la columna CAL: 3, 4 o 6 (el real va en el color)
     if (papel === 'fondo' && ctx.acabados && cal < 15) cal = Math.ceil(nivelDe(ctx.acabados, tipoMueble).fondo.cal);
