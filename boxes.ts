@@ -336,19 +336,30 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       const bajos = modules.filter(m => m.wall === w && m.type === 'LOWER' && m.detailed && !!m.frontsLayout && !m.cornerArm && m.depth >= 60).sort((a, b) => a.positionX - b.positionX);
       const tramos: KitchenModule[][] = [];
       bajos.forEach(m => { const t = tramos[tramos.length - 1]; const u = t?.[t.length - 1]; if (u && Math.abs(u.positionX + u.width - m.positionX) < 2) t.push(m); else tramos.push([m]); });
+      // Cocina en L o U: en el rincón el puente llega hasta la cara exterior (un espesor más largo) para que se encuentren las dos L del rincón y tapen los huecos
+      const E0 = PANEL_THICKNESS;
+      const hayBajosEn = (o: WallName) => modules.some(m => m.wall === o && m.type === 'LOWER');
+      const rinconIni = (m: KitchenModule) => (w === 'A' ? hasB && hayBajosEn('B') && m.positionX < 250 : (w === 'B' ? hasB : hasC) && hayBajosEn('A') && m.positionX < 250);
+      const rinconFin = (m: KitchenModule) => w === 'A' && hasC && hayBajosEn('C') && m.positionX + m.width > wallA - 250;
+      const primeros = new Set(tramos.map(t => t[0].uniqueId)), ultimos = new Set(tramos.map(t => t[t.length - 1].uniqueId));
+      const extremos = (s: KitchenModule[]) => {
+        const a = s[0], z = s[s.length - 1];
+        return { ini: a.positionX + (primeros.has(a.uniqueId) && rinconIni(a) ? 0 : E0), fin: z.positionX + z.width - (ultimos.has(z.uniqueId) && rinconFin(z) ? 0 : E0) };
+      };
       // un puente más largo que la lámina se corta en el costado de un módulo y sigue otro puente hasta donde se necesite
       const segmentos: KitchenModule[][] = [];
       tramos.forEach(t => {
         let cur: KitchenModule[] = [t[0]];
         t.slice(1).forEach(m => {
-          if ((m.positionX + m.width - PANEL_THICKNESS) - (cur[0].positionX + PANEL_THICKNESS) <= laminaGola) cur.push(m);
+          const e = extremos([...cur, m]);
+          if (e.fin - e.ini <= laminaGola) cur.push(m);
           else { segmentos.push(cur); cur = [m]; }
         });
         segmentos.push(cur);
       });
       segmentos.filter(t => t.length >= 2).forEach((t, ti) => {
         t.forEach((m, i) => junto.set(m.uniqueId, { inicio: i > 0, fin: i < t.length - 1 }));
-        const E = PANEL_THICKNESS, ini = t[0].positionX + E, fin = t[t.length - 1].positionX + t[t.length - 1].width - E, H = t[0].height, D = t[0].depth;
+        const E = PANEL_THICKNESS, { ini, fin } = extremos(t), H = t[0].height, D = t[0].depth;
         const partes = 1, largo = fin - ini;
         for (let k = 0; k < partes; k++) {
           const pp = placeOnWall(w, ini + k * largo, largo, D, armOrigin(w, false), 0);

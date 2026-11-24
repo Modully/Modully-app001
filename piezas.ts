@@ -73,6 +73,7 @@ const REGLAS: Regla[] = [
   { re: /^nariz/, parte: 'Nariz', papel: 'estructura', canto: '1L', confirmar: true },
   { re: /^(lateral|costado|division)/, parte: undefined, papel: 'estructura', canto: '1L 2A' },
   { re: /^(base|piso)/, parte: 'Base', papel: 'estructura', canto: '1L' },
+  { re: /^puente l corrido/, parte: 'Puente L', papel: 'estructura', canto: '1L' }, // el puente corrido entre módulos va 1L (plano de Helin)
   { re: /^(gola|puente l)/, parte: 'Puente L', papel: 'estructura', canto: '2L' },
   { re: /^amarre/, parte: 'Puente', papel: 'estructura', canto: '1L' },
   { re: /^puente/, parte: undefined, papel: 'estructura', canto: '1L' },
