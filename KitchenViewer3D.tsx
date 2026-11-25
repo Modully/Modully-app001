@@ -715,7 +715,6 @@ const CorteFrontal: React.FC<{
                 <rect x={x0} y={Y(it.z1)} width={prof * sx} height={(it.z1 - it.z0) * s} fill="#fff" stroke="#1e293b" strokeWidth={1.3} />
                 <line x1={x0 + 3} y1={Y(it.z1) + 2} x2={x0 + 3} y2={Y(it.z0) - 2} stroke="#475569" strokeWidth={0.8} />
                 {it.m?.type === 'LOWER' && <line x1={x0 - 3} y1={Y(it.z1)} x2={x1} y2={Y(it.z1)} stroke="#1e293b" strokeWidth={2.4} />}
-                {it.m?.type === 'LOWER' && (it.z1 - it.z0) > 500 && <line x1={x0 + 6} y1={Y(it.z1) + (it.z1 - it.z0) * s * 0.28} x2={x1 - 2} y2={Y(it.z1) + (it.z1 - it.z0) * s * 0.28} stroke="#475569" strokeWidth={0.8} />}
               </g>
             );
           })}
