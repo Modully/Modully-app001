@@ -4598,14 +4598,18 @@ export default function App() {
                   </Modal>
                 );
               })()}
-              <Modal isOpen={isWorkspaceModalOpen} onClose={() => setIsWorkspaceModalOpen(false)} onApply={() => { addIsland(); if (guiaEspacio.current) { guiaEspacio.current = false; setIsModulosModalOpen(true); } }} title="Configuración de Espacio">
-                <div className="space-y-8">
+              <Modal isOpen={isWorkspaceModalOpen} onClose={() => setIsWorkspaceModalOpen(false)} onApply={() => { addIsland(); if (guiaEspacio.current) { guiaEspacio.current = false; setIsModulosModalOpen(true); } }} title="Configuración de Espacio" ancho={!isFitSection && cfg.id !== 'puertas' ? 'max-w-4xl' : 'max-w-lg'}>
+                <div className={!isFitSection && cfg.id !== 'puertas' ? 'grid md:grid-cols-[300px_1fr] gap-8 items-start' : ''}>
                   {!isFitSection && cfg.id !== 'puertas' && (
-                    <div className="sticky -top-8 z-20 -mx-8 px-8 pt-3 pb-3 bg-white/95 backdrop-blur border-b border-slate-100">
-                      <MiniEspacio wallA={wallA} wallB={wallB} wallC={wallC} armB={armB} armC={armC} izq={hasLeftClosure} der={hasRightClosure}
+                    <div className="md:sticky md:top-0 space-y-2">
+                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Así queda</div>
+                      <div className="rounded-2xl bg-slate-50 border border-slate-100 p-2">
+                        <MiniEspacio wallA={wallA} wallB={wallB} wallC={wallC} armB={armB} armC={armC} izq={hasLeftClosure} der={hasRightClosure}
                         appliances={appliances} modules={modules} columns={columns} islands={activeIslands} puntos={puntosAdecuacion(appliances, modules, wallA)} />
+                      </div>
                     </div>
                   )}
+                <div className="space-y-8">
                   <div className="flex items-baseline gap-2 pt-2 border-t border-slate-100"><span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center shrink-0">1</span><span className="text-[11px] font-black text-slate-700 uppercase tracking-widest">Forma y medidas</span><span className="text-[10px] font-bold text-slate-400">tipo, largo, alto y zócalo</span></div>
                   <div className="space-y-4">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Tipo de {cfg.singular}</label>
@@ -4965,6 +4969,7 @@ export default function App() {
                   </div>
                   )}
                 </div>
+              </div>
               </Modal>
               <Modal isOpen={isModulosModalOpen} onClose={() => { setIsModulosModalOpen(false); setFocoEsquema(null); }} title="Configuración de Módulos" ancho={cfg.id === 'cocinas' ? 'max-w-4xl' : 'max-w-lg'}>
                 <div className={cfg.id === 'cocinas' ? 'grid md:grid-cols-[250px_1fr] gap-8 items-start' : ''}>
