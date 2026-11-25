@@ -626,6 +626,7 @@ export default function App() {
   const [dilatationGap, setDilatationGap] = useState(DILATATION_GAP_DEFAULT);
   const [dilatationDepth, setDilatationDepth] = useState(DILATATION_DEPTH_DEFAULT);
   // Qué se ve en la escena (solo visual: no cambia el diseño, el despiece ni la exportación)
+  const [verCorte, setVerCorte] = useState(true); // corte A con su sección en la vista frontal
   const [visibility, setVisibility] = useState({ puntos: true, isla: true, muros: true, upper: true, lower: true, counter: true, appliances: true, doors: true, shelves: true, cajonero: true, costado: true, dims: true, wallA: true, wallB: true, wallC: true, hoja: true, marco: true, tapaluz: true });
   const [hasLeftClosure, setHasLeftClosure] = useState(false);
   const [hasRightClosure, setHasRightClosure] = useState(false);
@@ -2030,6 +2031,18 @@ export default function App() {
   };
 
   // Esquinero en L: el módulo del muro A y el primero del brazo (B o C) pasan a ser un solo módulo con dos brazos
+  // Unir dos cubos contiguos del mismo nivel en uno solo (Shift + clic en los dos): el de la izquierda crece y el otro desaparece
+  const mergeModules = (aId: string, bId: string) => {
+    setModules(prev => {
+      const a = prev.find(m => m.uniqueId === aId), b = prev.find(m => m.uniqueId === bId);
+      if (!a || !b) return prev;
+      const [l, rr] = a.positionX <= b.positionX ? [a, b] : [b, a];
+      const w = Math.round(l.width + rr.width);
+      const joined: KitchenModule = { ...l, width: w, name: l.name.replace(/\d+\s?mm/, `${w}mm`) };
+      return prev.filter(m => m.uniqueId !== rr.uniqueId).map(m => (m.uniqueId === l.uniqueId ? joined : m));
+    });
+  };
+
   const joinCornerModules = (aId: string, armId: string) => {
     setModules(prev => {
       const a = prev.find(m => m.uniqueId === aId);
@@ -4598,8 +4611,8 @@ export default function App() {
                   </Modal>
                 );
               })()}
-              <Modal isOpen={isWorkspaceModalOpen} onClose={() => setIsWorkspaceModalOpen(false)} onApply={() => { addIsland(); if (guiaEspacio.current) { guiaEspacio.current = false; setIsModulosModalOpen(true); } }} title="Configuración de Espacio" ancho={!isFitSection && cfg.id !== 'puertas' ? 'max-w-5xl' : 'max-w-lg'}>
-                <div className={!isFitSection && cfg.id !== 'puertas' ? 'grid md:grid-cols-[1.2fr_1fr] gap-8 items-start' : ''}>
+              <Modal isOpen={isWorkspaceModalOpen} onClose={() => setIsWorkspaceModalOpen(false)} onApply={() => { addIsland(); if (guiaEspacio.current) { guiaEspacio.current = false; setIsModulosModalOpen(true); } }} title="Configuración de Espacio" ancho={!isFitSection && cfg.id !== 'puertas' ? 'max-w-6xl' : 'max-w-lg'}>
+                <div className={!isFitSection && cfg.id !== 'puertas' ? 'grid md:grid-cols-[1.9fr_1fr] gap-8 items-start' : ''}>
                   {!isFitSection && cfg.id !== 'puertas' && (
                     <div className="md:sticky md:top-0 space-y-2">
                       <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Así queda</div>
@@ -5314,12 +5327,14 @@ export default function App() {
                   onSplitDepth={splitModuleDepthwise}
                   onExtendFace={extendModuleFace}
                   onJoinCorner={joinCornerModules}
+                  onMergeModules={mergeModules}
                   onSplitCorner={splitCornerModule}
                   onEditCornerArm={editCornerArmWidth}
                   onDragModule={handleDragModule3D}
                   onResizeEdge={handleResizeEdge3D}
                   onMoveAppliance={moveAppliance}
                   visibility={visibility}
+                  verCorte={verCorte}
                   collisions={collidingBoxes}
                   measureMode={isMeasureMode}
                   onResizeJunction={handleResizeJunction3D}
@@ -5685,6 +5700,7 @@ export default function App() {
                       <button key={v} onClick={() => setActiveView(v as any)} className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${activeView === v ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>{v}</button>
                     ))}
                   </div>
+                  {activeView === 'frontal' && <button onClick={() => setVerCorte(v => !v)} aria-pressed={verCorte} title={verCorte ? 'Ocultar el corte A y su sección' : 'Mostrar el corte A y su sección'} className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${verCorte ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-slate-100 text-slate-400 border-transparent'}`}>Corte</button>}
                   <div className="w-px h-6 bg-slate-200" />
                   <div className="flex gap-1">
                     <button onClick={undo} disabled={!canUndo} title="Deshacer (Ctrl+Z)" aria-label="Deshacer" className="p-1.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all">

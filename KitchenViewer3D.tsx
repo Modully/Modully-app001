@@ -9,7 +9,7 @@ import type { CounterEdge, CounterExtras, closetDerived } from './boxes';
 import { closetSectionOf, closetCajoneroIndex, closetTorreIndex, fitRows, fitCells, fitInsets, fitBodyParts, doorOpening } from './boxes';
 import type { ClosetConfig, ClosetFit, FitBodyCfg } from './types';
 import type { PuertaCfg } from './puertas';
-import { Box, findModuleBox, boxesBounds, applianceCenter, counterTopZ, CORNER_BLIND_OFFSET, WALL_THICKNESS } from './boxes';
+import { Box, findModuleBox, boxesBounds, applianceCenter, counterTopZ, CORNER_BLIND_OFFSET, WALL_THICKNESS, MAX_MODULE_WIDTH } from './boxes';
 import { COLORS } from './constants';
 import { vetaProps } from './veta';
 import { PUNTO_INFO, PuntoAdecuacion, cotasPorElectro, siglaPunto } from './puntos';
@@ -565,6 +565,231 @@ const MovableCota: React.FC<{ kind: 'v' | 'h'; from: number; to: number; at: num
         })()}
       </Html>
     </>
+  );
+};
+
+/**
+ * Corte de la vista frontal, como en un plano: una línea de corte A que se arrastra por el muro A (con su letra y su marca arriba y abajo),
+ * y, a un lado, la SECCIÓN A-A: el perfil de lo que cruza el corte,
+ * con sus alturas y sus fondos. En cocinas cada módulo se mide y se edita; en los productos por cuerpos (closet fit, walking, baño, TV)
+ * cada cuerpo; en el resto (closet, puertas) el conjunto. Se muestra u oculta con el botón junto a las vistas.
+ */
+interface ItemCorte { id: string; nombre: string; z0: number; z1: number; atras: number; frente: number; arriba: boolean; m?: KitchenModule; editH?: (n: number) => void; editD?: (n: number) => void }
+const CorteFrontal: React.FC<{
+  modules: KitchenModule[]; boxes: Box[]; wallA: number; spaceHeight: number; hasZocalo?: boolean; zocaloHeight?: number; zf: number; visible: boolean;
+  controlsRef?: React.RefObject<any>;
+  onHeight?: (id: string, height: number) => void; onDepth?: (id: string, depth: number) => void; onWidth?: (id: string, width: number) => void; onTop?: (id: string, height: number, topGap: number) => void;
+  onBodyHeight?: (id: string, height: number) => void; onBodyDepth?: (depth: number) => void;
+}> = ({ modules, boxes, wallA, spaceHeight, hasZocalo, zocaloHeight = 0, zf, visible, controlsRef, onHeight, onDepth, onWidth, onTop, onBodyHeight, onBodyDepth }) => {
+  const { camera, size } = useThree();
+  const [cx, setCx] = useState<number>(() => {
+    const b = modules.find(m => m.wall === 'A' && m.type === 'LOWER');
+    return Math.round(b ? b.positionX + b.width * 0.25 : wallA * 0.4);
+  });
+  const est = useRef<{ sx: number; sy: number; c0: number } | null>(null);
+  const arrastrar = useDocumentDrag(
+    (dx, dy) => { const t = est.current; if (!t) return; setCx(Math.max(0, Math.min(wallA, Math.round((t.c0 + pixelsToMm(dx, dy, t.sx, t.sy)) / 5) * 5))); },
+    () => { est.current = null; if (controlsRef?.current) controlsRef.current.enabled = true; document.body.style.cursor = 'auto'; }
+  );
+  // la sección se puede mover: se agarra por su título
+  const [pp, setPp] = useState({ r: 12, t: 150 });
+  const ppIni = useRef({ r: 12, t: 150 });
+  // cocinas: a la derecha; productos con su propio formulario a la derecha (closet, baño, TV, puertas): a la izquierda
+  const lado: 'der' | 'izq' = modules.some(m => m.wall === 'A') ? 'der' : 'izq';
+  const moverPanel = useDocumentDrag((dx, dy) => setPp({ r: Math.max(0, ppIni.current.r + (lado === 'der' ? -dx : dx)), t: Math.max(0, ppIni.current.t + dy) }), () => { document.body.style.cursor = 'auto'; });
+  const empezarPanel = (e: React.MouseEvent) => { e.stopPropagation(); e.preventDefault(); ppIni.current = { ...pp }; document.body.style.cursor = 'move'; moverPanel(e); };
+  const toX = (X: number) => (X - wallA / 2) / 1000;
+  const NARANJA = '#ea580c';
+  const techo = spaceHeight - TOP_MARGIN;
+  const xc = toX(cx);
+  const empezar = (e: React.MouseEvent) => {
+    e.stopPropagation(); e.preventDefault();
+    const { sx, sy } = screenPixelsPerMeter(camera, size, new THREE.Vector3(xc, spaceHeight / 2000, zf), new THREE.Vector3(1, 0, 0));
+    est.current = { sx, sy, c0: cx };
+    if (controlsRef?.current) controlsRef.current.enabled = false;
+    document.body.style.cursor = 'ew-resize';
+    arrastrar(e);
+  };
+  const zDe = (m: KitchenModule) => {
+    const z1 = m.type === 'UPPER' ? techo - (m.topGap ?? 0) : (hasZocalo ? zocaloHeight : 0) + m.height;
+    return { z0: z1 - m.height, z1 };
+  };
+  const muroA = modules.filter(m => m.wall === 'A' && !m.cornerArm);
+  const alto = (m: KitchenModule, n: number) => {
+    const v = Math.max(50, Math.round(n));
+    if (m.type === 'UPPER') onTop?.(m.uniqueId, v, m.topGap ?? 0); else onHeight?.(m.uniqueId, v);
+  };
+  // al editar una altura o un espacio: se pregunta si va solo en ese módulo o en todos los del mismo nivel (superiores o bajos)
+  const [pend, setPend] = useState<{ campo: 'alto' | 'hueco'; m: KitchenModule; valor: number; tg?: number } | null>(null);
+  const grupoDe = (m: KitchenModule) => muroA.filter(u => u.type === m.type && !u.isHood && !u.isFridgeCabinet && !u.isStoveCabinet);
+  const pedirAlto = (m: KitchenModule, n: number) => {
+    const v = Math.max(50, Math.round(n));
+    if ((m.type === 'UPPER' || m.type === 'LOWER') && grupoDe(m).length > 1) setPend({ campo: 'alto', m, valor: v }); else alto(m, v);
+  };
+  const pedirHueco = (m: KitchenModule, valor: number, tg: number) => {
+    if (grupoDe(m).length > 1) setPend({ campo: 'hueco', m, valor, tg }); else onTop?.(m.uniqueId, m.height, tg);
+  };
+  const aplicar = (todos: boolean) => {
+    if (!pend) return;
+    const g = todos ? grupoDe(pend.m) : [pend.m];
+    if (pend.campo === 'alto') g.forEach(u => alto(u, pend.valor)); else g.forEach(u => onTop?.(u.uniqueId, u.height, pend.tg ?? 0));
+    setPend(null);
+  };
+  // lo que cruza el corte, de abajo hacia arriba
+  const items: ItemCorte[] = (() => {
+    if (muroA.length) {
+      return muroA.filter(m => m.positionX <= cx && cx < m.positionX + m.width).map(m => ({ m, ...zDe(m) })).sort((a, b) => a.z0 - b.z0).map(({ m, z0, z1 }) => ({
+        id: m.uniqueId, nombre: m.name, z0, z1, atras: 0, frente: m.depth, arriba: m.type === 'UPPER', m,
+        editH: (n: number) => pedirAlto(m, n), editD: (n: number) => onDepth?.(m.uniqueId, Math.max(100, Math.round(n))),
+      }));
+    }
+    const enA = boxes.filter(b => b.wall === 'A' && !b.islandId && b.kind !== 'wall' && b.sx > 1 && b.sz > 1 && b.x <= cx && cx < b.x + b.sx);
+    const cuerpos = enA.filter(b => b.id.startsWith('fit-') && b.name.startsWith('Cuerpo '));
+    if (cuerpos.length) {
+      return cuerpos.map(b => ({
+        id: b.id, nombre: b.name, z0: b.z, z1: b.z + b.sz, atras: b.y, frente: b.y + b.sy, arriba: false,
+        editH: (n: number) => onBodyHeight?.(b.id, Math.max(50, Math.round(n))), editD: (n: number) => onBodyDepth?.(Math.max(150, Math.round(n))),
+      })).sort((a, b) => a.z0 - b.z0);
+    }
+    const piezas = enA.filter(b => b.kind !== 'front');
+    if (!piezas.length) return [];
+    return [{ id: 'conjunto', nombre: 'Conjunto', z0: Math.min(...piezas.map(b => b.z)), z1: Math.max(...piezas.map(b => b.z + b.sz)), atras: Math.min(...piezas.map(b => b.y)), frente: Math.max(...piezas.map(b => b.y + b.sy)), arriba: false }];
+  })();
+  // piezas que corta el plano de corte (solo en diseños ya convertidos a piezas; los cubos no se dibujan sólidos)
+  const piezasCorte = boxes.filter(b => b.wall === 'A' && !b.islandId && ['panel', 'front', 'counter', 'zocalo', 'filler'].includes(b.kind) && b.sx > 0.5 && b.sz > 0.5 && b.x <= cx && cx < b.x + b.sx);
+  const flecha = (z: number, dir: 1 | -1) => (
+    <Line points={[[xc + 0.1, z + dir * 0.04, zf], [xc, z, zf], [xc + 0.1, z - dir * 0.04, zf]] as [number, number, number][]} color={NARANJA} lineWidth={1.6} depthTest={false} renderOrder={30} raycast={() => null} />
+  );
+  const letra = (z: number) => (
+    <Html position={[xc - 0.02, z, zf]} center zIndexRange={[70, 0]} style={{ pointerEvents: 'none' }}>
+      <div style={{ font: '800 20px system-ui', color: NARANJA, transform: 'translate(-18px, 0)' }}>A</div>
+    </Html>
+  );
+
+  /* ───── la sección A-A (perfil), a un lado de la pantalla ───── */
+  const seccion = (() => {
+    const W = 330, H = 420, piso = 372, s = 0.118, Wx = 196, sx = 0.17;
+    const Y = (z: number) => piso - z * s, Xd = (d: number) => Wx - d * sx;
+    const xc2 = Wx + 28;
+    const caja = (z: number, w = 44): React.CSSProperties => ({ position: 'absolute', left: 0, top: Y(z), transform: 'translate(0,-50%)', width: w });
+    type Tramo = { a: number; b: number; texto: number; onEdit?: (n: number) => void };
+    const tramos: Tramo[] = [];
+    let z = 0;
+    items.forEach((it, i) => {
+      if (it.z0 - z > 15) {
+        const prev = i > 0 ? items[i - 1] : null;
+        const m = it.m;
+        tramos.push({ a: z, b: it.z0, texto: Math.round(it.z0 - z), onEdit: m && m.type === 'UPPER' ? (n => pedirHueco(m, Math.round(n), Math.max(0, Math.round(techo - ((prev?.z1 ?? 0) + n) - m.height)))) : undefined });
+      }
+      tramos.push({ a: it.z0, b: it.z1, texto: Math.round(it.z1 - it.z0), onEdit: it.editH });
+      z = it.z1;
+    });
+    const sobre = items.length ? items[items.length - 1] : null;
+    if (sobre && spaceHeight - z > 15) {
+      const m = sobre.m;
+      tramos.push({ a: z, b: spaceHeight, texto: Math.round(spaceHeight - z), onEdit: m && m.type === 'UPPER' ? (n => pedirHueco(m, Math.round(n), Math.max(0, Math.round(n - TOP_MARGIN)))) : undefined });
+    }
+    const cotaFondo = items.map((it, i) => {
+      const libreAbajo = it.z0 - (i > 0 ? items[i - 1].z1 : 0); // mm libres bajo este módulo
+      const abajo = libreAbajo * s > 30;
+      return { abajo, y: abajo ? Y(it.z0) + 15 : Y(it.z1) - 15, borde: abajo ? Y(it.z0) : Y(it.z1) };
+    });
+    // números de la cadena de alturas: los tramos muy chicos no llevan número y los demás se separan para no pisarse
+    const ly: (number | null)[] = [];
+    let ultimo = Infinity;
+    tramos.forEach(t => {
+      if (t.b - t.a < 35) { ly.push(null); return; }
+      const y = Math.min((Y(t.a) + Y(t.b)) / 2, ultimo - 14);
+      ly.push(y); ultimo = y;
+    });
+    return (
+      <div data-overlay className="select-none rounded-xl bg-white/95 border border-slate-300 shadow-lg" style={{ position: 'absolute', ...(lado === 'der' ? { right: pp.r } : { left: pp.r + 58 }), top: pp.t, width: W, height: H, pointerEvents: 'auto' }} onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+        <svg width={W} height={H} style={{ position: 'absolute', inset: 0 }}>
+          <line x1={14} y1={piso} x2={W - 14} y2={piso} stroke="#334155" strokeWidth={1.4} />
+          <line x1={14} y1={Y(spaceHeight)} x2={Wx + 14} y2={Y(spaceHeight)} stroke="#94a3b8" strokeWidth={1} strokeDasharray="6 3 1 3" />
+          <line x1={Wx} y1={Y(spaceHeight) - 10} x2={Wx} y2={piso + 12} stroke="#94a3b8" strokeWidth={1.2} strokeDasharray="8 3 2 3" />
+          {items.map(it => {
+            const prof = it.frente - it.atras, x0 = Xd(it.frente), x1 = Xd(it.atras);
+            return (
+              <g key={it.id}>
+                <rect x={x0} y={Y(it.z1)} width={prof * sx} height={(it.z1 - it.z0) * s} fill="#fff" stroke="#1e293b" strokeWidth={1.3} />
+                <line x1={x0 + 3} y1={Y(it.z1) + 2} x2={x0 + 3} y2={Y(it.z0) - 2} stroke="#475569" strokeWidth={0.8} />
+                {it.m?.type === 'LOWER' && <line x1={x0 - 3} y1={Y(it.z1)} x2={x1} y2={Y(it.z1)} stroke="#1e293b" strokeWidth={2.4} />}
+                {it.m?.type === 'LOWER' && (it.z1 - it.z0) > 500 && <line x1={x0 + 6} y1={Y(it.z1) + (it.z1 - it.z0) * s * 0.28} x2={x1 - 2} y2={Y(it.z1) + (it.z1 - it.z0) * s * 0.28} stroke="#475569" strokeWidth={0.8} />}
+              </g>
+            );
+          })}
+          {/* las piezas que atraviesa el corte (bases, tapas, puentes, entrepaños, puertas, mesón, zócalo), sólidas como en un plano */}
+          {piezasCorte.map(b => {
+            const tono = b.kind === 'front' ? '#64748b' : b.kind === 'counter' ? '#a8a29e' : b.kind === 'zocalo' ? '#cbd5e1' : '#1e293b';
+            const w = Math.max(1.4, b.sy * sx), h = Math.max(1.4, b.sz * s);
+            return <rect key={b.id} x={Xd(b.y + b.sy)} y={Y(b.z + b.sz)} width={w} height={h} fill={tono} />;
+          })}
+          <line x1={xc2} y1={Y(0)} x2={xc2} y2={Y(spaceHeight)} stroke="#2563eb" strokeWidth={1} />
+          {tramos.map((t, i) => (
+            <g key={i}>
+              <line x1={xc2 - 5} y1={Y(t.a)} x2={xc2 + 5} y2={Y(t.a)} stroke="#2563eb" strokeWidth={1.2} />
+              <line x1={xc2 - 5} y1={Y(t.b)} x2={xc2 + 5} y2={Y(t.b)} stroke="#2563eb" strokeWidth={1.2} />
+              <line x1={Wx + 2} y1={Y(t.b)} x2={xc2 + 7} y2={Y(t.b)} stroke="#cbd5e1" strokeWidth={0.7} />
+            </g>
+          ))}
+          {items.map((it, i) => {
+            const k = cotaFondo[i];
+            return (
+              <g key={'f' + it.id}>
+                <line x1={Xd(it.frente)} y1={k.y} x2={Xd(it.atras)} y2={k.y} stroke="#2563eb" strokeWidth={1} />
+                <line x1={Xd(it.frente)} y1={k.y - 5} x2={Xd(it.frente)} y2={k.y + 5} stroke="#2563eb" strokeWidth={1.2} />
+                <line x1={Xd(it.atras)} y1={k.y - 5} x2={Xd(it.atras)} y2={k.y + 5} stroke="#2563eb" strokeWidth={1.2} />
+                <line x1={Xd(it.frente)} y1={k.borde} x2={Xd(it.frente)} y2={k.y} stroke="#cbd5e1" strokeWidth={0.7} />
+              </g>
+            );
+          })}
+        </svg>
+        <div title="Arrastra para mover la sección" onMouseDown={empezarPanel} style={{ position: 'absolute', left: 12, top: 10, font: '800 12px system-ui', color: '#2563eb', cursor: 'move' }}>⠿ SECCIÓN A-A</div>
+        <div style={{ position: 'absolute', left: 12, top: 28, font: '700 10px system-ui', color: '#64748b', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span>corte a</span>
+          <CalcInput value={cx} onCommit={n => setCx(Math.max(0, Math.min(wallA, Math.round(n))))} className="w-11 text-center bg-transparent text-[11px] leading-none font-black text-orange-700 outline-none border-b border-orange-300 focus:border-orange-600" />
+          <span>mm del punto 0</span>
+        </div>
+        {tramos.map((t, i) => ly[i] == null ? null : (
+          <div key={'h' + i} style={{ position: 'absolute', left: xc2 + 8, top: ly[i] as number, transform: 'translate(0,-50%)', width: 44 }}>
+            {t.onEdit ? <CalcInput value={t.texto} onCommit={t.onEdit} className="w-11 text-left bg-transparent text-[11px] leading-none font-black text-slate-900 outline-none border-b border-transparent hover:border-slate-400 focus:border-indigo-500" />
+              : <span className="text-[11px] font-black text-slate-900">{t.texto}</span>}
+          </div>
+        ))}
+        {items.map(it => (
+          <div key={'d' + it.id} style={{ position: 'absolute', left: Xd(it.frente) + ((it.frente - it.atras) * sx) / 2, top: (cotaFondo[items.indexOf(it)]?.y ?? 0) + (cotaFondo[items.indexOf(it)]?.abajo ? 12 : -12), transform: 'translate(-50%,-50%)' }}>
+            {it.editD ? <CalcInput value={Math.round(it.frente - it.atras)} onCommit={it.editD} className="w-10 text-center bg-transparent text-[11px] leading-none font-black text-slate-900 outline-none border-b border-transparent hover:border-slate-400 focus:border-indigo-500" />
+              : <span className="text-[11px] font-black text-slate-900">{Math.round(it.frente - it.atras)}</span>}
+          </div>
+        ))}
+        {pend && (
+          <div className="rounded-lg border border-orange-300 bg-orange-50 px-2 py-1.5" style={{ position: 'absolute', left: 8, right: 8, bottom: 6 }}>
+            <div className="text-[10px] font-black text-orange-800 leading-tight">¿Cambiar {pend.campo === 'alto' ? 'el alto' : 'el espacio'} a {pend.valor} mm en todos los módulos {pend.m.type === 'UPPER' ? 'superiores' : 'bajos'}?</div>
+            <div className="flex gap-1.5 mt-1">
+              <button onClick={() => aplicar(true)} className="rounded-md bg-orange-600 text-white text-[10px] font-black px-2 py-0.5">Sí, a todos</button>
+              <button onClick={() => aplicar(false)} className="rounded-md bg-white border border-orange-300 text-orange-700 text-[10px] font-black px-2 py-0.5">Solo este</button>
+              <button onClick={() => setPend(null)} className="text-[10px] font-black text-slate-500 px-1">Cancelar</button>
+            </div>
+          </div>
+        )}
+        {items.length === 0 && <div style={{ position: 'absolute', left: 16, top: 150, right: 16, font: '700 11px system-ui', color: '#64748b' }}>El corte no cruza nada: muévelo sobre un mueble.</div>}
+      </div>
+    );
+  })();
+
+  if (!visible) return null;
+  return (
+    <group>
+      {/* línea de corte A: de piso a techo, con su letra y su marca arriba y abajo; el asa ⇄ arriba la mueve */}
+      <Line points={[[xc, -0.08, zf], [xc, (spaceHeight + 80) / 1000, zf]]} color={NARANJA} lineWidth={1.4} dashed dashSize={0.14} gapSize={0.03} depthTest={false} renderOrder={30} raycast={() => null} />
+      {flecha(-0.08, 1)}{flecha((spaceHeight + 80) / 1000, -1)}
+      {letra(-0.2)}{letra((spaceHeight + 200) / 1000)}
+      <Html position={[xc, (spaceHeight + 420) / 1000, zf]} center zIndexRange={[70, 0]} style={{ pointerEvents: 'none' }}>
+        <span data-overlay title="Arrastra para mover el corte" onMouseDown={empezar} onPointerDown={e => e.stopPropagation()} className="flex items-center justify-center w-6 h-6 rounded-full bg-white border border-orange-400 text-orange-600 text-[13px] font-black leading-none cursor-ew-resize shadow" style={{ pointerEvents: 'auto' }}>⇄</span>
+      </Html>
+      <Html fullscreen calculatePosition={(_o, _c, s) => [s.width / 2, s.height / 2]} zIndexRange={[55, 0]} style={{ pointerEvents: 'none' }}>{seccion}</Html>
+    </group>
   );
 };
 
@@ -2893,12 +3118,14 @@ interface KitchenViewer3DProps {
   onSplitDepth?: (id: string) => void;
   onExtendFace?: (id: string, face: FaceKey) => void;
   onJoinCorner?: (aId: string, armId: string) => void;
+  onMergeModules?: (aId: string, bId: string) => void; // unir dos cubos contiguos del mismo nivel en uno solo
   onSplitCorner?: (id: string) => void;
   onEditCornerArm?: (id: string, width: number) => void;
   onDragModule?: (id: string, newPositionX: number) => void;
   onResizeEdge?: (id: string, side: 'left' | 'right', deltaX: number, initialWidth: number, initialPositionX: number) => void;
   onMoveAppliance?: (type: ApplianceType, wall: WallName, distance: number) => void;
   colores?: { al?: string; fachadaAL?: string; fondoAL?: string; th?: string; fachadaTH?: string; fondoTH?: string; puentes?: string[]; pu?: string; fachadaPU?: string; fondoPU?: string; fachada: string; fachadaMA?: string; ma: string; mb: string; otros: string; fondo?: string; fondoMA?: string }; // tonos parecidos a los colores elegidos (catálogo)
+  verCorte?: boolean; // corte A con su sección en la vista frontal (botón junto a las vistas)
   visibility?: { upper: boolean; lower: boolean; counter: boolean; appliances: boolean; puntos?: boolean; isla?: boolean; muros?: boolean; doors?: boolean; shelves?: boolean; cajonero?: boolean; costado?: boolean; dims?: boolean; wallA?: boolean; wallB?: boolean; wallC?: boolean; hoja?: boolean; marco?: boolean; tapaluz?: boolean };
   collisions?: Box[]; // cajas que chocan: se marcan en rojo
   measureMode?: boolean; // cinta métrica activa: la escena solo se mira y se mide
@@ -2906,9 +3133,9 @@ interface KitchenViewer3DProps {
 }
 
 export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
-  wallThickMm, puertaApi, colores,
+  wallThickMm, puertaApi, colores, verCorte,
   layout, lArm, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules: modulesIn, boxes: boxesIn, appliances, puntos = [], onAbrirIsla, hasIsland, island, islands = [], onEditIsland, onEditWall, closetForm, fitApi, onDeleteIsland, viewMode, hasZocalo, zocaloHeight = 100,
-  hasLeftClosure, hasRightClosure, counterExtras, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSetModuleFronts, onSplitHorizontal, onSplitDepth, onExtendFace, onJoinCorner, onSplitCorner, onEditCornerArm, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
+  hasLeftClosure, hasRightClosure, counterExtras, onMergeModules, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSetModuleFronts, onSplitHorizontal, onSplitDepth, onExtendFace, onJoinCorner, onSplitCorner, onEditCornerArm, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
 }) => {
   const controlsRef = useRef<any>(null);
   // botones Isla y Muros de la barra de vistas: ocultan las islas (con su mesón, campana y piezas) y los muros
@@ -3538,8 +3765,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
                 const xT = xl - 0.3, gris = '#334155';
                 // arriba de todo, el alto del muro (techo); la última altura de los muebles es su alto total
                 const muro = Math.round(spaceHeight);
-                const alturas = muro > levels[levels.length - 1] + 1 ? [...levels, muro] : levels;
-                const iMuebles = levels.length - 1, iMuro = alturas.length - 1;
+                const alturas = [0, muro]; // a la izquierda solo van el 0 y el alto del muro; las alturas de los módulos se miden en el corte
+                const iMuebles: number = -1, iMuro: number = 1;
                 // alturas muy juntas (base, mesón, salpicadero, muebles y techo): cada número sube lo justo para no taparse con el de abajo
                 const ys: number[] = [];
                 alturas.forEach((z, k) => { ys.push(Math.max(z / 1000, k ? ys[k - 1] + 0.075 : -Infinity)); });
@@ -3572,6 +3799,13 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               })()}
             </>
           );
+        })()}
+        {viewMode === 'frontal' && !measureMode && !fitIsolate && vis.wallA !== false && (() => {
+          // corte A con su sección: para todos los productos (cocinas por módulos; closet fit, walking, baño y TV por cuerpos; closet y puertas como conjunto)
+          const zf = offsetZ + Math.max(200, ...boxes.filter(b => b.wall === 'A' && !b.islandId && b.kind !== 'wall').map(b => b.y + b.sy)) / 1000 + 0.01;
+          return <CorteFrontal modules={modules} boxes={boxes} wallA={wallA} spaceHeight={spaceHeight} hasZocalo={hasZocalo} zocaloHeight={zocaloHeight} zf={zf} visible={verCorte !== false} controlsRef={controlsRef}
+            onHeight={(id, h) => onEditModuleMeasure?.(id, 'height', h)} onDepth={(id, d) => onEditModuleMeasure?.(id, 'depth', d)} onWidth={(id, w) => onEditModuleDimension?.(id, w)} onTop={(id, h, g) => onSetModuleTopEdge?.(id, h, g)}
+            onBodyHeight={(id, h) => fitEdit(id, { height: h })} onBodyDepth={d => fitApi && fitApi.onChange({ ...fitApi.fit, depth: d })} />;
         })()}
         {fitApi && viewMode === 'frontal' && vis.dims !== false && !fitIsolate && vis.wallA !== false && (() => {
           const f = fitApi.fit;
@@ -4528,8 +4762,20 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
       {/* Esquinero en L: con dos módulos elegidos (clic + Shift + clic) se pueden unir; un esquinero elegido se puede separar */}
       {!measureMode && (() => {
         const mods = pair.map(id => modules.find(m => m.uniqueId === id));
-        let info: { ok: boolean; msg: string; a?: KitchenModule; arm?: KitchenModule } | null = null;
-        if (pair.length === 2 && mods[0] && mods[1]) {
+        let info: { ok: boolean; msg: string; a?: KitchenModule; arm?: KitchenModule; merge?: boolean } | null = null;
+        if (pair.length === 2 && mods[0] && mods[1] && mods[0].wall === mods[1].wall && mods[0].islandId === mods[1].islandId) {
+          // dos cubos del mismo muro: se unen en uno solo si son contiguos, del mismo nivel y sin puertas ni frentes todavía
+          const [l, rr] = mods[0].positionX <= mods[1].positionX ? [mods[0], mods[1]] : [mods[1], mods[0]];
+          const ancho = Math.round(l.width + rr.width);
+          const especial = (x: KitchenModule) => x.isStoveCabinet || x.isSinkCabinet || x.isFridgeCabinet || x.isHood;
+          if (l.type !== rr.type || (l.type !== 'LOWER' && l.type !== 'UPPER')) info = { ok: false, msg: 'Para unirlos, los dos módulos deben ser del mismo nivel: bajos con bajos o aéreos con aéreos.' };
+          else if (l.cornerArm || rr.cornerArm) info = { ok: false, msg: 'Uno de los dos ya es un esquinero en L.' };
+          else if (especial(l) || especial(rr)) info = { ok: false, msg: 'Los módulos de la poceta, la estufa, la nevera y la campana no se unen.' };
+          else if (Math.abs(l.positionX + l.width - rr.positionX) > 2) info = { ok: false, msg: `${l.label} y ${rr.label} no están uno junto al otro: elige dos cubos contiguos.` };
+          else if (l.detailed || rr.detailed) info = { ok: false, msg: 'Ya tienen puertas y frentes: pulsa «Volver a cubos» para poder unirlos.' };
+          else if (ancho > MAX_MODULE_WIDTH) info = { ok: false, msg: `Juntos miden ${ancho} mm y un módulo mide como máximo ${MAX_MODULE_WIDTH} mm.` };
+          else info = { ok: true, msg: `Unir ${l.label} y ${rr.label} en un solo cubo de ${ancho} mm`, a: l, arm: rr, merge: true };
+        } else if (pair.length === 2 && mods[0] && mods[1]) {
           const a = mods[0].wall === 'A' ? mods[0] : mods[1].wall === 'A' ? mods[1] : undefined;
           const arm = a === mods[0] ? mods[1] : mods[0];
           if (!a || (arm.wall !== 'B' && arm.wall !== 'C')) info = { ok: false, msg: 'Elige un módulo del muro A y uno del brazo de la L (B o C).' };
@@ -4548,7 +4794,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             <div className={`flex items-center justify-center flex-wrap gap-x-3 gap-y-2 w-max max-w-full px-4 py-2.5 rounded-2xl shadow-xl border-2 border-white text-white text-[12px] font-black ${info ? (info.ok ? 'bg-amber-500' : 'bg-red-500') : 'bg-indigo-600'}`}>
               <span>{info ? info.msg : `Esquinero en L ${Math.round(single!.width)} × ${Math.round(single!.cornerArm!.width)}`}</span>
               {info?.ok && (
-                <button className="px-3 py-1 rounded-xl bg-white text-amber-600 hover:bg-amber-50" onClick={() => { onJoinCorner?.(info!.a!.uniqueId, info!.arm!.uniqueId); setPair([]); setSelectedId(info!.a!.uniqueId); }}>Unir</button>
+                <button className="px-3 py-1 rounded-xl bg-white text-amber-600 hover:bg-amber-50" onClick={() => { if (info!.merge) onMergeModules?.(info!.a!.uniqueId, info!.arm!.uniqueId); else onJoinCorner?.(info!.a!.uniqueId, info!.arm!.uniqueId); setPair([]); setSelectedId(info!.a!.uniqueId); }}>Unir</button>
               )}
               {!info && (
                 <button className="px-3 py-1 rounded-xl bg-white text-indigo-600 hover:bg-indigo-50" onClick={() => { onSplitCorner?.(single!.uniqueId); setSelectedId(null); }}>Separar</button>

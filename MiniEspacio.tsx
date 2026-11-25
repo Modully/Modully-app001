@@ -43,7 +43,7 @@ export const MiniEspacio: React.FC<{
   // cotas desde el punto 0 (esquina interior donde arranca el muro A; el C desde su esquina): una por electrodoméstico, en su
   // centro, con su nombre y sus puntos al lado (sigla y altura en cm). Sin línea de cota: solo la marca, la línea punteada y el texto
   const cotasA = cotasPorElectro(puntos, 'A'), cotasB = cotasPorElectro(puntos, 'B'), cotasC = cotasPorElectro(puntos, 'C');
-  const largoTexto = (cs: CotaElectro[]) => Math.max(0, ...cs.map(c => `${c.x} ${c.nombre} `.length + c.puntos.reduce((n, p) => n + siglaPunto(p).length + 1, 0))) * fs * 0.48;
+  const largoTexto = (cs: CotaElectro[]) => Math.max(0, ...cs.map(c => `${c.x} `.length + c.puntos.reduce((n, p) => n + siglaPunto(p).length + 1, 0))) * fs * 0.48;
   const lineaA = -fs * 1.6;                                // altura (y) de las marcas del muro A
   const lineaB = -fs * 1.6, lineaC = wallA + fs * 1.6;     // x de las marcas de los muros B y C
   const izqExtra = (armB ? fs * 1.8 : 0) + (cotasB.length ? largoTexto(cotasB) + fs : 0), derExtra = (armC ? fs * 1.8 : 0) + (cotasC.length ? largoTexto(cotasC) + fs : 0);
@@ -81,7 +81,7 @@ export const MiniEspacio: React.FC<{
 
   return (
     <div className="relative">
-    <svg ref={svgRef} viewBox={`${v.x} ${v.y} ${v.w} ${v.h}`} className={`w-full ${grande ? 'h-[55vh]' : 'h-52 md:h-80'} bg-slate-50 rounded-2xl border border-slate-200 touch-none select-none ${arrastre.current ? 'cursor-grabbing' : 'cursor-grab'}`} role="img" aria-label="Vista en planta del espacio"
+    <svg ref={svgRef} viewBox={`${v.x} ${v.y} ${v.w} ${v.h}`} className={`w-full ${grande ? 'h-[55vh]' : 'h-52 md:h-[380px]'} bg-slate-50 rounded-2xl border border-slate-200 touch-none select-none ${arrastre.current ? 'cursor-grabbing' : 'cursor-grab'}`} role="img" aria-label="Vista en planta del espacio"
       onPointerDown={e => { const m = svgRef.current?.getScreenCTM(); if (!m) return; (e.target as Element).setPointerCapture?.(e.pointerId); arrastre.current = { x: e.clientX, y: e.clientY, v: vRef.current, escala: m.a }; }}
       onPointerMove={e => { const a = arrastre.current; if (!a) return; if (e.buttons === 0) { arrastre.current = null; return; } setVista({ ...a.v, x: a.v.x - (e.clientX - a.x) / a.escala, y: a.v.y - (e.clientY - a.y) / a.escala }); }}
       onPointerUp={() => { arrastre.current = null; }} onPointerCancel={() => { arrastre.current = null; }}
@@ -136,7 +136,7 @@ export const MiniEspacio: React.FC<{
         <g key={w} stroke="#334155" strokeWidth={fs * 0.05}>
           {[null, ...cs, { x: Math.round(w === 'A' ? wallA : w === 'B' ? wallB : wallC), nombre: '', puntos: [], total: true }].map(c => {
             const d = c ? c.x : 0;
-            const contenido = <>{c ? `${c.x}${c.nombre ? ` ${c.nombre}` : ''}` : '0'}{c?.puntos.map(p => <tspan key={p.id} fill={PUNTO_INFO[p.tipo].color}> {siglaPunto(p)}</tspan>)}</>;
+            const contenido = <>{c ? `${c.x}` : '0'}{c?.puntos.map(p => <tspan key={p.id} fill={PUNTO_INFO[p.tipo].color}> {siglaPunto(p)}</tspan>)}</>;
             if (w === 'A') return (
               <g key={d}>
                 <line x1={d} y1={0} x2={d} y2={lineaA} strokeDasharray={c && c.puntos.length ? `${fs * 0.2} ${fs * 0.15}` : undefined} />
