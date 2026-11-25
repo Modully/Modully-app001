@@ -81,7 +81,7 @@ export const MiniEspacio: React.FC<{
 
   return (
     <div className="relative">
-    <svg ref={svgRef} viewBox={`${v.x} ${v.y} ${v.w} ${v.h}`} className={`w-full ${grande ? 'h-[55vh]' : 'h-52'} bg-slate-50 rounded-2xl border border-slate-200 touch-none select-none ${arrastre.current ? 'cursor-grabbing' : 'cursor-grab'}`} role="img" aria-label="Vista en planta del espacio"
+    <svg ref={svgRef} viewBox={`${v.x} ${v.y} ${v.w} ${v.h}`} className={`w-full ${grande ? 'h-[55vh]' : 'h-52 md:h-80'} bg-slate-50 rounded-2xl border border-slate-200 touch-none select-none ${arrastre.current ? 'cursor-grabbing' : 'cursor-grab'}`} role="img" aria-label="Vista en planta del espacio"
       onPointerDown={e => { const m = svgRef.current?.getScreenCTM(); if (!m) return; (e.target as Element).setPointerCapture?.(e.pointerId); arrastre.current = { x: e.clientX, y: e.clientY, v: vRef.current, escala: m.a }; }}
       onPointerMove={e => { const a = arrastre.current; if (!a) return; if (e.buttons === 0) { arrastre.current = null; return; } setVista({ ...a.v, x: a.v.x - (e.clientX - a.x) / a.escala, y: a.v.y - (e.clientY - a.y) / a.escala }); }}
       onPointerUp={() => { arrastre.current = null; }} onPointerCancel={() => { arrastre.current = null; }}

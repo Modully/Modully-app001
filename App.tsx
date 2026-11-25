@@ -4598,8 +4598,8 @@ export default function App() {
                   </Modal>
                 );
               })()}
-              <Modal isOpen={isWorkspaceModalOpen} onClose={() => setIsWorkspaceModalOpen(false)} onApply={() => { addIsland(); if (guiaEspacio.current) { guiaEspacio.current = false; setIsModulosModalOpen(true); } }} title="Configuración de Espacio" ancho={!isFitSection && cfg.id !== 'puertas' ? 'max-w-4xl' : 'max-w-lg'}>
-                <div className={!isFitSection && cfg.id !== 'puertas' ? 'grid md:grid-cols-[300px_1fr] gap-8 items-start' : ''}>
+              <Modal isOpen={isWorkspaceModalOpen} onClose={() => setIsWorkspaceModalOpen(false)} onApply={() => { addIsland(); if (guiaEspacio.current) { guiaEspacio.current = false; setIsModulosModalOpen(true); } }} title="Configuración de Espacio" ancho={!isFitSection && cfg.id !== 'puertas' ? 'max-w-5xl' : 'max-w-lg'}>
+                <div className={!isFitSection && cfg.id !== 'puertas' ? 'grid md:grid-cols-[1.2fr_1fr] gap-8 items-start' : ''}>
                   {!isFitSection && cfg.id !== 'puertas' && (
                     <div className="md:sticky md:top-0 space-y-2">
                       <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Así queda</div>
