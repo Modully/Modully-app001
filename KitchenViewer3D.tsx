@@ -621,7 +621,7 @@ const CorteFrontal: React.FC<{
   };
   // al editar una altura o un espacio: se pregunta si va solo en ese módulo o en todos los del mismo nivel (superiores o bajos)
   const [pend, setPend] = useState<{ campo: 'alto' | 'hueco'; m: KitchenModule; valor: number; tg?: number } | null>(null);
-  const grupoDe = (m: KitchenModule) => muroA.filter(u => u.type === m.type && !u.isHood && !u.isFridgeCabinet && !u.isStoveCabinet);
+  const grupoDe = (m: KitchenModule) => muroA.filter(u => u.type === m.type && !!u.esPuente === !!m.esPuente && !u.isHood && !u.isFridgeCabinet && !u.isStoveCabinet);
   const pedirAlto = (m: KitchenModule, n: number) => {
     const v = Math.max(50, Math.round(n));
     if ((m.type === 'UPPER' || m.type === 'LOWER') && grupoDe(m).length > 1) setPend({ campo: 'alto', m, valor: v }); else alto(m, v);
@@ -765,7 +765,7 @@ const CorteFrontal: React.FC<{
         ))}
         {pend && (
           <div className="rounded-lg border border-orange-300 bg-orange-50 px-2 py-1.5" style={{ position: 'absolute', left: 8, right: 8, bottom: 6 }}>
-            <div className="text-[10px] font-black text-orange-800 leading-tight">¿Cambiar {pend.campo === 'alto' ? 'el alto' : 'el espacio'} a {pend.valor} mm en todos los módulos {pend.m.type === 'UPPER' ? 'superiores' : 'bajos'}?</div>
+            <div className="text-[10px] font-black text-orange-800 leading-tight">¿Cambiar {pend.campo === 'alto' ? 'el alto' : 'el espacio'} a {pend.valor} mm en todos los módulos {pend.m.esPuente ? 'en puente' : pend.m.type === 'UPPER' ? 'superiores' : 'bajos'}?</div>
             <div className="flex gap-1.5 mt-1">
               <button onClick={() => aplicar(true)} className="rounded-md bg-orange-600 text-white text-[10px] font-black px-2 py-0.5">Sí, a todos</button>
               <button onClick={() => aplicar(false)} className="rounded-md bg-white border border-orange-300 text-orange-700 text-[10px] font-black px-2 py-0.5">Solo este</button>
