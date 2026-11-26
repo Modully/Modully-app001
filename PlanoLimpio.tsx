@@ -35,8 +35,8 @@ export const PlanoLimpio: React.FC<{ boxes: Box[]; modules: KitchenModule[]; onC
   const color = (id?: string) => (id && id === sel ? '#4f46e5' : '#e7d6bd');
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-      <div className="text-sm font-black text-slate-800 uppercase tracking-tight">Boceto en limpio</div>
+    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 space-y-3">
+      <div className="text-base font-semibold tracking-tight text-slate-900">Boceto en limpio</div>
       <div className="flex flex-col lg:flex-row gap-4">
         <div className="flex-1 min-w-0 space-y-4">
           {muros.map((m: any) => {

@@ -6,8 +6,8 @@ import {
   Square, Frame, BoxSelect, Globe, Eye, ChevronLeft, ChevronRight, Menu,
   Flame, Droplets, Refrigerator, Wind, Component, X, List, Layers, Info, WashingMachine,
   ZoomIn, ZoomOut, Zap, Maximize, Ruler, ArrowRight, MoveHorizontal, Move,
-  TowerControl as Tower, AlertCircle, CheckCircle2, ChevronDown, Puzzle, Shirt, DoorOpen, Bath, Tv, Warehouse, ToggleLeft as Toggle,
-  Construction, Minus, Utensils, Target, ZapIcon, Layers2, Archive, Download, Table, Undo2, Redo2, Home, LayoutGrid, FolderOpen, FileText, Image as ImageIcon,
+  TowerControl as Tower, AlertCircle, CheckCircle2, ChevronDown, Puzzle, ToggleLeft as Toggle,
+  Construction, Minus, Target, ZapIcon, Layers2, Archive, Download, Table, Undo2, Redo2, Home, LayoutGrid, FolderOpen, FileText, Image as ImageIcon,
   UserRound,
 } from 'lucide-react';
 import {
@@ -81,9 +81,91 @@ const KitchenShapeIcon: React.FC<{ shape: LayoutType; size?: number }> = ({ shap
   </svg>
 );
 
-/** Isla y península vistas desde arriba: la cocina en L (muros y mueble) con una península pegada al brazo y una isla suelta */
+/** Iconos lineales arquitectónicos para cada categoría del menú superior y panel 3D */
+const SectionLineIcon: React.FC<{ id: SectionId; size?: number }> = ({ id, size = 19 }) => {
+  const props = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.65, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true as const };
+  if (id === 'cocinas') {
+    return (
+      <svg {...props}>
+        <rect x="3" y="4" width="6" height="16" rx="0.8" />
+        <path d="M3 10h6" />
+        <rect x="11" y="4" width="10" height="4.5" rx="0.7" />
+        <rect x="9" y="12.5" width="12" height="7.5" rx="0.7" />
+        <rect x="12.5" y="14.6" width="5" height="3.2" rx="0.4" />
+      </svg>
+    );
+  }
+  if (id === 'closets') {
+    return (
+      <svg {...props}>
+        <rect x="3.5" y="4" width="17" height="16" rx="1" />
+        <path d="M12 4v16" />
+        <path d="M3.5 9.5h8.5M3.5 14.5h8.5" />
+        <path d="M16 7.5v9M14 9.5L16 7.5l2 2M14 14.5L16 16.5l2-2" />
+      </svg>
+    );
+  }
+  if (id === 'closetfit') {
+    return (
+      <svg {...props}>
+        <rect x="4.5" y="3.5" width="15" height="17" rx="1" />
+        <path d="M4.5 15.5h15" />
+        <path d="M12 3.5v12" />
+        <path d="M9.5 8.5v2.5M14.5 8.5v2.5M10.5 18h3" />
+      </svg>
+    );
+  }
+  if (id === 'walking') {
+    return (
+      <svg {...props}>
+        <path d="M5 4.5v15.5M19 4.5v15.5" />
+        <path d="M3.5 5.5h17M3.5 17h17" />
+        <path d="M12 5.5v2.2" />
+        <path d="M12 7.7L7 11.4a.7.7 0 0 0 .4 1.3h9.2a.7.7 0 0 0 .4-1.3L12 7.7Z" />
+      </svg>
+    );
+  }
+  if (id === 'puertas') {
+    return (
+      <svg {...props}>
+        <path d="M3 21h18" />
+        <path d="M5.5 21V3.5h13V21" />
+        <path d="M7.8 21V5.8h8.4V21" />
+        <path d="M13.6 13h1.2" />
+      </svg>
+    );
+  }
+  if (id === 'bano') {
+    return (
+      <svg {...props}>
+        <path d="M12 8.5V4.8a2 2 0 0 1 3.8-.6" />
+        <path d="M6.5 8.5c0 2.4 2.2 3.8 5.5 3.8s5.5-1.4 5.5-3.8H6.5Z" />
+        <path d="M3.5 12.3h17" />
+        <rect x="5" y="12.3" width="14" height="7" rx="0.4" />
+        <path d="M12 12.3v7M6.8 19.3V21M17.2 19.3V21" />
+        <circle cx="9.8" cy="15.8" r="0.6" fill="currentColor" stroke="none" />
+        <circle cx="14.2" cy="15.8" r="0.6" fill="currentColor" stroke="none" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...props}>
+      <rect x="5.5" y="4" width="13" height="8" rx="0.8" />
+      <path d="M10.5 12v2.5M13.5 12v2.5" />
+      <rect x="3.5" y="14.5" width="17" height="4.8" rx="0.6" />
+      <path d="M9 14.5v4.8M15 14.5v4.8M11.3 16.9h1.4M5.5 19.3V21M18.5 19.3V21" />
+    </svg>
+  );
+};
+
 const SECTION_ICONS: Record<SectionId, React.ReactNode> = {
-  cocinas: <Utensils size={16} />, closets: <Shirt size={16} />, closetfit: <Archive size={16} />, walking: <Warehouse size={16} />, puertas: <DoorOpen size={16} />, bano: <Bath size={16} />, tv: <Tv size={16} />,
+  cocinas: <SectionLineIcon id="cocinas" />,
+  closets: <SectionLineIcon id="closets" />,
+  closetfit: <SectionLineIcon id="closetfit" />,
+  walking: <SectionLineIcon id="walking" />,
+  puertas: <SectionLineIcon id="puertas" />,
+  bano: <SectionLineIcon id="bano" />,
+  tv: <SectionLineIcon id="tv" />,
 };
 
 const IslandIcon: React.FC<{ size?: number }> = ({ size = 28 }) => (
@@ -378,38 +460,26 @@ const MeasureInput: React.FC<{ label: string; value: number; onCommit: (value: n
   );
 };
 
-const BottomNavItem: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string; badge?: string }> = ({ active, onClick, icon, label, badge }) => (
-  <button
-    onClick={onClick}
-    className={`flex flex-col items-center justify-center flex-1 h-full gap-1 transition-all ${active ? 'text-indigo-600' : 'text-gray-400'}`}
-  >
-    <div className={`p-1 rounded-lg transition-colors ${active ? 'bg-indigo-50' : ''}`}>
-      {React.cloneElement(icon as React.ReactElement<any>, { size: 22, strokeWidth: active ? 2.5 : 2 })}
-    </div>
-    <span className="text-[10px] font-bold uppercase tracking-tighter">{label}{badge ? <span className="ml-1 px-1 rounded-full bg-indigo-600 text-white text-[8px] align-middle">{badge}</span> : null}</span>
-  </button>
-);
-
 const SidebarToolButton: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string; collapsed: boolean; badge?: string }> = ({ active, onClick, icon, label, collapsed, badge }) => (
   <button
     onClick={onClick}
-    className={`flex items-center rounded-2xl transition-all group relative shrink-0 ${
-      collapsed ? 'w-12 h-12 justify-center' : 'w-full px-4 py-3 gap-3'
+    className={`flex items-center rounded-xl transition-all group relative shrink-0 ${
+      collapsed ? 'w-11 h-11 justify-center' : 'w-full px-3 py-2.5 gap-3'
     } ${
       active 
-        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100'
-        : 'bg-white text-slate-400 hover:bg-slate-50 hover:text-indigo-500 border border-slate-100 shadow-sm'
+        ? 'bg-indigo-50 text-indigo-600 border border-indigo-200 shadow-sm'
+        : 'bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-slate-200/80'
     }`}
     title={collapsed ? label : undefined}
   >
     <div className="flex-shrink-0">{icon}</div>
     {!collapsed && (
-      <span className={`text-[10px] font-black uppercase tracking-widest whitespace-nowrap ${active ? 'text-white' : 'text-slate-600'}`}>
+      <span className={`text-xs font-medium whitespace-nowrap ${active ? 'text-indigo-600 font-semibold' : 'text-slate-700'}`}>
         {label}
       </span>
     )}
     {badge && (
-      <div className="absolute -top-1 -right-1 bg-amber-500 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center border-2 border-white">
+      <div className="absolute -top-1 -right-1 bg-indigo-600 text-white text-[9px] font-semibold w-4 h-4 rounded-full flex items-center justify-center border-2 border-white">
         {badge}
       </div>
     )}
@@ -417,14 +487,14 @@ const SidebarToolButton: React.FC<{ active: boolean; onClick: () => void; icon: 
 );
 
 const LoadingOverlay: React.FC<{ message: string }> = ({ message }) => (
-  <div className="absolute inset-0 z-[100] bg-white/80 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center">
-    <div className="relative mb-6">
-      <Loader2 size={48} className="text-indigo-600 animate-spin" />
-      <Sparkles size={24} className="text-amber-400 absolute -top-2 -right-2 animate-bounce" />
+  <div className="absolute inset-0 z-[100] bg-white/85 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center">
+    <div className="relative mb-5">
+      <Loader2 size={44} className="text-indigo-600 animate-spin" />
+      <Sparkles size={20} className="text-indigo-500 absolute -top-2 -right-2 animate-pulse" />
     </div>
-    <h3 className="text-lg font-black text-slate-800 mb-2">Calculando Muro Exacto...</h3>
-    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest max-w-xs">{message}</p>
-    <div className="mt-8 flex gap-2">
+    <h3 className="text-lg font-semibold tracking-tight text-slate-900 mb-1.5">Calculando muro exacto...</h3>
+    <p className="text-xs font-medium text-slate-500 max-w-xs">{message}</p>
+    <div className="mt-6 flex gap-2">
       {[0, 1, 2].map(i => <div key={i} className="w-2 h-2 rounded-full bg-indigo-200 animate-pulse" style={{ animationDelay: `${i * 0.2}s` }} />)}
     </div>
   </div>
@@ -433,23 +503,23 @@ const LoadingOverlay: React.FC<{ message: string }> = ({ message }) => (
 const Modal: React.FC<{ isOpen: boolean; onClose: () => void; onApply?: () => void; title: string; children: React.ReactNode; ancho?: string }> = ({ isOpen, onClose, onApply, title, children, ancho = 'max-w-lg' }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={`bg-white rounded-[2.5rem] shadow-2xl w-full ${ancho} overflow-hidden flex flex-col modal-content animate-in zoom-in-95 duration-300`}>
-        <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">{title}</h3>
-          <button onClick={onClose} className="p-2 bg-white rounded-xl shadow-sm text-slate-400 hover:text-red-500 transition-colors">
-            <X size={20} />
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={`bg-white border border-slate-200/80 rounded-2xl shadow-xl w-full ${ancho} overflow-hidden flex flex-col modal-content animate-in zoom-in-95 duration-200`}>
+        <div className="px-6 py-4 border-b border-slate-200/80 flex items-center justify-between bg-white">
+          <h3 className="text-lg font-semibold tracking-tight text-slate-900">{title}</h3>
+          <button onClick={onClose} className="p-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-500 hover:text-slate-800 transition-colors">
+            <X size={18} />
           </button>
         </div>
-        <div className="p-8 overflow-y-auto max-h-[70vh] no-scrollbar">
+        <div className="p-6 overflow-y-auto max-h-[72vh] no-scrollbar">
           {children}
         </div>
-        <div className="p-6 bg-slate-50/50 border-t border-slate-100 flex justify-end">
+        <div className="px-6 py-4 bg-slate-50/70 border-t border-slate-200/80 flex justify-end">
           <button 
             onClick={() => { onApply?.(); onClose(); }}
-            className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black uppercase tracking-widest text-xs shadow-lg shadow-indigo-200 active:scale-95 transition-all"
+            className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-xl font-medium text-sm active:scale-[0.99] transition-all"
           >
-            Aplicar Cambios
+            Aplicar cambios
           </button>
         </div>
       </div>
@@ -557,7 +627,17 @@ const VerticalDimensionLine: React.FC<{
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'design' | 'catalog' | 'quote' | 'config' | 'listado' | 'laminas' | 'planos' | 'render' | 'bosquejo' | 'inicio' | 'proyectos'>('inicio');
-  const [activeView, setActiveView] = useState<'plan' | 'frontal' | 'isometric' | '3d'>('plan');
+  const [lastDeliverableTab, setLastDeliverableTab] = useState<'render' | 'planos' | 'laminas' | 'listado'>('render');
+  const [nuevoProyectoTick, setNuevoProyectoTick] = useState(0);
+  useEffect(() => {
+    if (activeTab === 'render' || activeTab === 'planos' || activeTab === 'laminas' || activeTab === 'listado') {
+      setLastDeliverableTab(activeTab);
+    }
+  }, [activeTab]);
+  const [activeView, setActiveView] = useState<'plan' | 'frontal' | 'isometric' | '3d'>('3d');
+  const [isCapasMenuOpen, setIsCapasMenuOpen] = useState(false);
+  const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
+  const [modulosPanelOpen, setModulosPanelOpen] = useState(false);
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   
@@ -1984,11 +2064,24 @@ export default function App() {
     setActiveTab('design');
     if (usarComo !== undefined) { setNombreAprobar(usarComo); setAprobando('dialogo'); }
   };
+  const abrirProductoGuardado = (sec: SectionId, datos: unknown, prod: ProductoActivo) => {
+    switchSection(sec);
+    applySnapshot(datos as DesignSnapshot);
+    bumpHistory();
+    setProductoActivo(prod);
+    setAprobadoKey(null);
+    aprobadoAlAbrir.current = !!prod.aprobado;
+    setFotoBoceto(null);
+    setActiveTab('design');
+  };
   const crearDesdeBosquejo = (d: DatosBosquejo, foto?: string, evidencias?: EvidenciasBoceto) => {
     setFotoBoceto(foto ?? null); setEvidenciasBoceto(evidencias ?? null); setProductoActivo(null);
+    espacioGuiado.current[d.producto] = true;
     switchSection(d.producto);
     setWallA(d.A); setSpaceHeight(d.alto);
-    setBosquejoListo(true); // se queda en Bosquejo y muestra el diseño pasado en limpio
+    setBosquejoListo(true);
+    if (d.producto === 'cocinas') setActiveView('3d');
+    setActiveTab('design');
     if (d.producto === 'puertas') return;
     setLayout(d.forma); setLArm(d.brazo); setWallB(d.B); setWallC(d.C);
     // muros a los lados del muro A (mueble entre muros): en la app son los muros de cierre izquierdo y derecho
@@ -4499,40 +4592,205 @@ export default function App() {
       {isSuggesting && <LoadingOverlay message={suggestMessage} />}
       {aprobando === 'dialogo' && <DialogoAprobar seccion={section} nombreInicial={nombreAprobar} onCerrar={() => { setAprobando(null); setNombreAprobar(undefined); }}
         onListo={p => { setNombreAprobar(undefined); aprobarDiseno({ id: '', nombre: p.nombre, proyectoId: p.proyectoId, cliente: p.cliente }, { ubicacion: p.ubicacion, cantidad: p.cantidad }); }} />}
-      <header className="px-6 py-4 flex items-center justify-between bg-white/70 backdrop-blur-lg border-b border-slate-200 z-[60]">
-        <div className="flex items-center gap-3 cursor-pointer" title="Ir a Inicio" onClick={() => setActiveTab('inicio')}><div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg"><Box size={20} /></div><div><h1 className="text-base font-black text-slate-800 tracking-tighter uppercase">MODULLY</h1><span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none block">Cierre Exacto</span></div></div>
-        <div className="relative flex items-center gap-2">
-          <button onClick={() => setActiveTab('proyectos')} title={correoSesion ? `Sesión: ${correoSesion}` : 'Entrar o crear cuenta'} className={`flex items-center gap-1.5 px-3 py-2 rounded-2xl border text-[11px] font-black uppercase tracking-wide transition-colors ${correoSesion ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700'}`}><UserRound size={14} /><span className="max-w-[110px] truncate normal-case">{correoSesion ? correoSesion.split('@')[0] : 'Entrar'}</span></button>
-          {activeTab !== 'inicio' && <button onClick={() => setActiveTab('inicio')} title="Ir a Inicio" className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-600 text-[11px] font-black uppercase tracking-wide hover:border-indigo-300 hover:text-indigo-700 transition-colors"><Home size={14} />Inicio</button>}
-          <button onClick={() => setIsSectionMenuOpen(!isSectionMenuOpen)} className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-700 text-[11px] font-black uppercase tracking-wide hover:bg-indigo-100 transition-colors">
-            {SECTION_ICONS[section]}
-            <span>{cfg.name}</span>
-            <ChevronDown size={14} className={`transition-transform ${isSectionMenuOpen ? 'rotate-180' : ''}`} />
-          </button>
-          {isSectionMenuOpen && (
-            <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-3xl shadow-2xl border border-slate-100 p-2 z-[90] flex flex-col gap-1">
-              {SECTION_ORDER.map(id => (
-                <button key={id} onClick={() => switchSection(id)} className={`flex items-center gap-3 p-3 rounded-2xl text-left transition-all ${id === section ? 'bg-indigo-600 text-white' : 'hover:bg-indigo-50 text-slate-700'}`}>
-                  <span className={id === section ? 'text-white' : 'text-indigo-600'}>{SECTION_ICONS[id]}</span>
-                  <span className="text-[11px] font-black uppercase tracking-tight">{SECTIONS[id].name}</span>
+      {(() => {
+        const isDeliverableTab = activeTab === 'render' || activeTab === 'planos' || activeTab === 'laminas' || activeTab === 'listado';
+        const isInProjectFlow = activeTab === 'bosquejo' || activeTab === 'design' || activeTab === 'quote' || isDeliverableTab;
+        const globalNavItems: { id: 'inicio' | 'proyectos' | 'catalog' | 'config'; label: string }[] = [
+          { id: 'inicio', label: 'Inicio' },
+          { id: 'proyectos', label: 'Proyectos' },
+          { id: 'catalog', label: 'Biblioteca de Módulos' },
+          { id: 'config', label: 'Configuración' },
+        ];
+        const steps = [
+          { n: 1, id: 'bosquejo' as const, label: 'Boceto', active: activeTab === 'bosquejo', done: bosquejoListo || labeledModules.length > 0 },
+          { n: 2, id: 'design' as const, label: 'Diseño 3D', active: activeTab === 'design', done: lista.piezas.length > 0 && aprobadoKey === snapshotKey },
+          { n: 3, id: 'quote' as const, label: 'Precios', active: activeTab === 'quote', done: false },
+          { n: 4, id: lastDeliverableTab, label: 'Entregables', active: isDeliverableTab, done: aprobadoKey !== null && aprobadoKey === snapshotKey },
+        ];
+        return (
+          <>
+            <header className="sticky top-0 z-[60] bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 lg:px-6 min-h-14 py-2 flex flex-wrap items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('inicio')}
+                  className="flex items-center gap-2.5 text-left shrink-0 group"
+                  title="Ir a Inicio"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm group-hover:bg-slate-800 transition-colors">
+                    <Box size={17} />
+                  </div>
+                  <div className="leading-tight">
+                    <span className="block text-sm font-semibold tracking-tight text-slate-900">Modully</span>
+                    <span className="hidden sm:block text-[11px] font-medium text-slate-400 leading-none">Cierre exacto</span>
+                  </div>
                 </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </header>
+                <div className="hidden md:block w-px h-5 bg-slate-200" />
+                <nav aria-label="Navegación principal" className="flex items-center gap-1 overflow-x-auto no-scrollbar min-w-0">
+                  {globalNavItems.map(item => {
+                    const active = activeTab === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setActiveTab(item.id)}
+                        className={`px-3 py-1.5 rounded-xl text-xs whitespace-nowrap border transition-colors ${
+                          active
+                            ? 'text-indigo-600 bg-indigo-50 border-indigo-200 font-semibold'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 border-transparent font-medium'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </nav>
+              </div>
+              <div className="relative flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsSectionMenuOpen(!isSectionMenuOpen)}
+                  className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-medium transition-colors"
+                  title="Cambiar tipo de producto"
+                >
+                  <span className="text-indigo-600">{SECTION_ICONS[section]}</span>
+                  <span>{cfg.name}</span>
+                  <ChevronDown size={14} className={`text-slate-400 transition-transform ${isSectionMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {(activeTab === 'inicio' || activeTab === 'proyectos') && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab('proyectos'); setNuevoProyectoTick(t => t + 1); }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium shadow-sm transition-colors"
+                  >
+                    <Plus size={14} />
+                    <span>Nuevo Proyecto</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('config')}
+                  title="Ajustes"
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-colors ${
+                    activeTab === 'config'
+                      ? 'text-indigo-600 bg-indigo-50 border-indigo-200'
+                      : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                  }`}
+                >
+                  <Settings size={14} />
+                  <span className="hidden lg:inline">Ajustes</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('proyectos')}
+                  title={correoSesion ? `Sesión: ${correoSesion}` : 'Perfil y cuenta'}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-medium transition-colors"
+                >
+                  <UserRound size={14} className={correoSesion ? 'text-indigo-600' : 'text-slate-500'} />
+                  <span className="max-w-[110px] truncate">{correoSesion ? correoSesion.split('@')[0] : 'Perfil'}</span>
+                  {correoSesion && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+                </button>
+                {isSectionMenuOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-60 bg-white rounded-2xl shadow-lg border border-slate-200/80 p-1.5 z-[90] flex flex-col gap-0.5">
+                    {SECTION_ORDER.map(id => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => switchSection(id)}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs transition-colors ${
+                          id === section
+                            ? 'text-indigo-600 bg-indigo-50 border border-indigo-200 font-semibold'
+                            : 'hover:bg-slate-50 text-slate-700 border border-transparent font-medium'
+                        }`}
+                      >
+                        <span className={id === section ? 'text-indigo-600' : 'text-slate-500'}>{SECTION_ICONS[id]}</span>
+                        <span>{SECTIONS[id].name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </header>
+
+            {isInProjectFlow && (
+              <div className="bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 lg:px-6 py-2 flex flex-wrap items-center justify-between gap-3 z-[58] shrink-0">
+                <div className="flex items-center gap-1.5 min-w-0 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('proyectos')}
+                    className="font-medium text-slate-500 hover:text-slate-900 transition-colors"
+                  >
+                    Proyectos
+                  </button>
+                  <span className="text-slate-300">/</span>
+                  <span className="font-semibold tracking-tight text-slate-900 truncate max-w-[200px] sm:max-w-[280px]">
+                    {productoActivo ? `${productoActivo.cliente} — ${productoActivo.nombre}` : cfg.name}
+                  </span>
+                </div>
+
+                <nav aria-label="Pasos del proyecto" className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                  {steps.map((s, idx) => (
+                    <React.Fragment key={s.label}>
+                      {idx > 0 && <ChevronRight size={14} className="text-slate-300 shrink-0 hidden sm:block" />}
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab(s.id)}
+                        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs whitespace-nowrap border transition-all ${
+                          s.active
+                            ? 'text-indigo-600 bg-indigo-50 border-indigo-200 font-semibold'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border-transparent font-medium'
+                        }`}
+                      >
+                        <span
+                          className={`w-5 h-5 rounded-full text-[11px] font-semibold flex items-center justify-center shrink-0 ${
+                            s.active
+                              ? 'bg-indigo-600 text-white'
+                              : s.done
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-slate-100 text-slate-500'
+                          }`}
+                        >
+                          {s.done && !s.active ? '✓' : s.n}
+                        </span>
+                        <span>{s.label}</span>
+                      </button>
+                    </React.Fragment>
+                  ))}
+                </nav>
+
+                <div className="hidden md:flex items-center gap-2 shrink-0">
+                  <span
+                    className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-medium border ${
+                      aprobadoKey !== null && aprobadoKey === snapshotKey
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : productoActivo
+                          ? 'bg-slate-100 text-slate-600 border-slate-200/80'
+                          : 'bg-slate-50 text-slate-500 border-slate-200/80'
+                    }`}
+                  >
+                    {aprobadoKey !== null && aprobadoKey === snapshotKey
+                      ? 'Diseño aprobado'
+                      : productoActivo
+                        ? 'Proyecto guardado'
+                        : 'Borrador activo'}
+                  </span>
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {activeTab === 'design' && (
-          <div className="relative flex-1 bg-white overflow-hidden flex flex-row h-full">
-            <aside className={`relative h-full transition-all duration-300 ease-in-out bg-slate-50 border-r border-slate-200 flex flex-col items-center py-4 gap-4 z-[55] shadow-xl overflow-y-auto no-scrollbar ${isSidebarVisible ? (isSidebarCollapsed ? 'w-20' : 'w-48') : 'w-0 opacity-0 pointer-events-none'}`}>
-              <div className="flex flex-col gap-2 w-full px-3"><button onClick={() => setIsSidebarVisible(false)} className="w-full h-10 flex items-center justify-center rounded-xl bg-white border border-slate-100 text-slate-400 hover:text-red-500 transition-colors shadow-sm mb-2"><X size={18} /></button><button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="w-full h-10 flex items-center justify-center rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 hover:bg-indigo-100 transition-colors mb-2 shadow-sm">{isSidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}</button></div>
-              <div className="flex flex-col gap-4 w-full px-3 mt-4">
-                <SidebarToolButton active={isViewsPanelOpen} onClick={() => togglePanel('views')} icon={<Eye size={24} />} label="Vistas" collapsed={isSidebarCollapsed} />
-                <SidebarToolButton active={isElementsPanelOpen} onClick={() => togglePanel('elements')} icon={<Settings2 size={24} />} label="Elementos" collapsed={isSidebarCollapsed} badge={modules.length > 0 ? modules.length.toString() : undefined} />
-                <SidebarToolButton active={isAccessoriesPanelOpen} onClick={() => togglePanel('accessories')} icon={<Puzzle size={24} />} label="Accesorios" collapsed={isSidebarCollapsed} badge={appliances.filter(a => a.active).length > 0 ? appliances.filter(a => a.active).length.toString() : undefined} />
-                <SidebarToolButton active={isSpecialModulesPanelOpen} onClick={() => togglePanel('special')} icon={<Archive size={24} />} label="Especiales" collapsed={isSidebarCollapsed} badge={specialModules.filter(sm => sm.active).length > 0 ? specialModules.filter(sm => sm.active).length.toString() : undefined} />
-                <SidebarToolButton active={isWorkspaceModalOpen} onClick={() => togglePanel('workspace')} icon={<Maximize size={24} />} label="Espacio" collapsed={isSidebarCollapsed} />
-                <SidebarToolButton active={isModulosModalOpen} onClick={() => setIsModulosModalOpen(o => !o)} icon={<Palette size={24} />} label="Módulos" collapsed={isSidebarCollapsed} />
+          <div className="relative flex-1 bg-[#F3F4F6] overflow-hidden flex flex-row h-full">
+            <aside className={`relative h-full transition-all duration-300 ease-in-out bg-white border-r border-slate-200/80 flex flex-col items-center py-3 gap-2 z-[55] overflow-y-auto no-scrollbar ${isSidebarVisible ? (isSidebarCollapsed ? 'w-16' : 'w-44') : 'w-0 opacity-0 pointer-events-none'}`}>
+              <div className="flex flex-col gap-1.5 w-full px-2.5"><button onClick={() => setIsSidebarVisible(false)} title="Ocultar barra de herramientas" className="w-full h-8 flex items-center justify-center rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-500 hover:text-slate-900 transition-colors"><X size={15} /></button><button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} title={isSidebarCollapsed ? 'Expandir herramientas' : 'Contraer herramientas'} className="w-full h-8 flex items-center justify-center rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-600 hover:bg-indigo-100/70 transition-colors">{isSidebarCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}</button></div>
+              <div className="flex flex-col gap-2 w-full px-2.5 mt-1">
+                <SidebarToolButton active={isElementsPanelOpen} onClick={() => togglePanel('elements')} icon={<Settings2 size={18} />} label="Módulos" collapsed={isSidebarCollapsed} badge={modules.length > 0 ? modules.length.toString() : undefined} />
+                <SidebarToolButton active={isAccessoriesPanelOpen} onClick={() => togglePanel('accessories')} icon={<Puzzle size={18} />} label="Accesorios" collapsed={isSidebarCollapsed} badge={appliances.filter(a => a.active).length > 0 ? appliances.filter(a => a.active).length.toString() : undefined} />
+                <SidebarToolButton active={isSpecialModulesPanelOpen} onClick={() => togglePanel('special')} icon={<Archive size={18} />} label="Especiales" collapsed={isSidebarCollapsed} badge={specialModules.filter(sm => sm.active).length > 0 ? specialModules.filter(sm => sm.active).length.toString() : undefined} />
+                <SidebarToolButton active={isWorkspaceModalOpen} onClick={() => togglePanel('workspace')} icon={<Maximize size={18} />} label="Espacio" collapsed={isSidebarCollapsed} />
+                <SidebarToolButton active={isModulosModalOpen} onClick={() => setIsModulosModalOpen(o => !o)} icon={<Palette size={18} />} label="Acabados" collapsed={isSidebarCollapsed} />
                 <SidebarToolButton 
                   active={isMeasureMode} 
                   onClick={() => {
@@ -4540,7 +4798,7 @@ export default function App() {
                     setMeasurePoints([]);
                     setSnapPreview(null);
                   }} 
-                  icon={<Ruler size={24} />} 
+                  icon={<Ruler size={18} />} 
                   label="Medir" 
                   collapsed={isSidebarCollapsed}
                   badge={measurePoints.length > 0 ? measurePoints.length.toString() : undefined}
@@ -4548,26 +4806,26 @@ export default function App() {
                 <SidebarToolButton 
                   active={isAgentPanelOpen} 
                   onClick={() => setIsAgentPanelOpen(!isAgentPanelOpen)} 
-                  icon={<Sparkles size={24} />} 
+                  icon={<Sparkles size={18} />} 
                   label="Asistente" 
                   collapsed={isSidebarCollapsed}
                 />
               </div>
             </aside>
-            <div className="flex-1 relative bg-slate-50 self-stretch min-h-0">
-              {!isSidebarVisible && (<button onClick={() => setIsSidebarVisible(true)} className="absolute left-0 top-1/2 -translate-y-1/2 z-[50] bg-white/90 backdrop-blur-md border border-slate-200 p-3 rounded-r-2xl shadow-xl text-indigo-600 hover:pr-5 transition-all group"><Menu size={20} /></button>)}
+            <div className="flex-1 relative bg-[#F3F4F6] self-stretch min-h-0">
+              {!isSidebarVisible && (<button onClick={() => setIsSidebarVisible(true)} className="absolute left-0 top-1/2 -translate-y-1/2 z-[50] bg-white/95 backdrop-blur-md border border-slate-200 p-3 rounded-r-2xl shadow-sm text-indigo-600 hover:pr-4 transition-all group"><Menu size={18} /></button>)}
               
-              <div data-side-panel className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-2xl z-[45] border-r border-slate-200 shadow-2xl transition-all duration-500 ease-out transform ${isElementsPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                <div className="h-full flex flex-col p-6 overflow-y-auto no-scrollbar space-y-8">
-                  <div className="flex items-center justify-between"><div><h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Plan de Diseño</h2><p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none">Cotas Editables ISO</p></div><button onClick={() => setIsElementsPanelOpen(false)} className="p-2 bg-slate-100 rounded-xl text-slate-500 hover:text-red-500"><X size={20} /></button></div>
-                  <div className="space-y-4 flex-1 flex flex-col min-h-0"><div className="flex items-center justify-between px-1"><h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Módulos en Escena</h3><span className="bg-indigo-100 text-indigo-600 text-[10px] font-black px-2 py-0.5 rounded-full">{modules.length}</span></div><div className="flex-1 overflow-y-auto no-scrollbar space-y-2">{labeledModules.map(m => (
-                    <div key={m.uniqueId} className="p-3 bg-white border border-slate-100 rounded-xl shadow-sm space-y-2">
+              <div data-side-panel className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-xl z-[45] border-r border-slate-200/80 shadow-xl transition-all duration-300 ease-out transform ${isElementsPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                <div className="h-full flex flex-col p-6 overflow-y-auto no-scrollbar space-y-6">
+                  <div className="flex items-center justify-between"><div><h2 className="text-lg font-semibold tracking-tight text-slate-900">Plan de diseño</h2><p className="text-xs font-medium text-indigo-600">Cotas editables ISO</p></div><button onClick={() => setIsElementsPanelOpen(false)} className="p-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-500 hover:text-slate-800"><X size={18} /></button></div>
+                  <div className="space-y-4 flex-1 flex flex-col min-h-0"><div className="flex items-center justify-between px-1"><h3 className="text-xs font-semibold text-slate-500">Módulos en escena</h3><span className="bg-indigo-50 text-indigo-600 border border-indigo-200 text-xs font-semibold px-2 py-0.5 rounded-full">{modules.length}</span></div><div className="flex-1 overflow-y-auto no-scrollbar space-y-2">{labeledModules.map(m => (
+                    <div key={m.uniqueId} className="p-3 bg-white border border-slate-200/80 rounded-2xl shadow-sm space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-indigo-600 text-white font-black text-xs">{m.label}</div>
-                          <p className="text-[10px] font-black text-slate-800 uppercase tracking-tight">{m.name}</p>
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-indigo-50 text-indigo-600 border border-indigo-200 font-semibold text-xs">{m.label}</div>
+                          <p className="text-xs font-semibold text-slate-900">{m.name}</p>
                         </div>
-                        <button onClick={() => deleteModule(m.uniqueId)} className="p-2 text-slate-300 hover:text-red-500" title="Eliminar módulo"><Trash2 size={14} /></button>
+                        <button onClick={() => deleteModule(m.uniqueId)} className="p-2 text-slate-400 hover:text-red-500" title="Eliminar módulo"><Trash2 size={14} /></button>
                       </div>
                       <div className="grid grid-cols-3 gap-2">
                         <MeasureInput label="Ancho" value={m.width} onCommit={(v) => applyDimensionChange('module', m.uniqueId, v)} />
@@ -4579,21 +4837,21 @@ export default function App() {
                 </div>
               </div>
 
-              <div data-side-panel className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-2xl z-[45] border-r border-slate-200 shadow-2xl transition-all duration-500 ease-out transform ${isAccessoriesPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                <div className="h-full flex flex-col p-6 overflow-y-auto no-scrollbar space-y-8">
+              <div data-side-panel className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-xl z-[45] border-r border-slate-200/80 shadow-xl transition-all duration-300 ease-out transform ${isAccessoriesPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                <div className="h-full flex flex-col p-6 overflow-y-auto no-scrollbar space-y-6">
                   <div className="flex items-center justify-between">
-                    <div><h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Accesorios</h2><p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none">Electrodomésticos</p></div>
-                    <button onClick={() => setIsAccessoriesPanelOpen(false)} className="p-2 bg-slate-100 rounded-xl text-slate-500 hover:text-red-500"><X size={20} /></button>
+                    <div><h2 className="text-lg font-semibold tracking-tight text-slate-900">Accesorios</h2><p className="text-xs font-medium text-indigo-600">Electrodomésticos</p></div>
+                    <button onClick={() => setIsAccessoriesPanelOpen(false)} className="p-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-500 hover:text-slate-800"><X size={18} /></button>
                   </div>
                   {listaElectro}
                 </div>
               </div>
 
-              <div data-side-panel className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-2xl z-[45] border-r border-slate-200 shadow-2xl transition-all duration-500 ease-out transform ${isSpecialModulesPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                <div className="h-full flex flex-col p-6 overflow-y-auto no-scrollbar space-y-8">
+              <div data-side-panel className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-xl z-[45] border-r border-slate-200/80 shadow-xl transition-all duration-300 ease-out transform ${isSpecialModulesPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                <div className="h-full flex flex-col p-6 overflow-y-auto no-scrollbar space-y-6">
                   <div className="flex items-center justify-between">
-                    <div><h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Módulos Especiales</h2><p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none">Configuración Avanzada</p></div>
-                    <button onClick={() => setIsSpecialModulesPanelOpen(false)} className="p-2 bg-slate-100 rounded-xl text-slate-500 hover:text-red-500"><X size={20} /></button>
+                    <div><h2 className="text-lg font-semibold tracking-tight text-slate-900">Módulos especiales</h2><p className="text-xs font-medium text-indigo-600">Configuración avanzada</p></div>
+                    <button onClick={() => setIsSpecialModulesPanelOpen(false)} className="p-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-500 hover:text-slate-800"><X size={18} /></button>
                   </div>
                   {isClosetSection && (
                     <div className="space-y-3">
@@ -5321,7 +5579,7 @@ export default function App() {
                   <div className={`grid ${cfg.hasUpper ? 'grid-cols-2 divide-x divide-slate-300' : 'grid-cols-1'}`}>
                     {((cfg.hasUpper ? ['MA', 'MB'] : ['MB']) as ('MA' | 'MB')[]).map(n => (
                       <div key={n} className={`space-y-4 min-w-0 ${cfg.hasUpper ? (n === 'MA' ? 'pr-4' : 'pl-4') : ''}`}>
-                        <div className="text-[11px] font-black text-indigo-700 uppercase pb-1 border-b border-indigo-100">{cfg.id === 'cocinas' ? (n === 'MA' ? 'Mueble aéreo' : 'Muebles base') : (n === 'MA' ? cfg.upperName : cfg.lowerName)}</div>
+                        <div className="text-xs font-semibold text-indigo-600 pb-1 border-b border-indigo-100">{cfg.id === 'cocinas' ? (n === 'MA' ? 'Muebles altos' : 'Muebles bajos') : (n === 'MA' ? cfg.upperName : cfg.lowerName)}</div>
                         {([['est', 'Estructura', CALIBRES.estructura, true], ['fach', 'Fachada', CALIBRES.fachada, true], ['fondo', 'Espaldares y fondos', CALIBRES.fondo, false]] as const).map(([k, t, cals, canto]) => (
                           <CampoColor key={k} label={t} value={acabados[n][k].color} onChange={v => setTablero(n, k, { color: v })}
                             calibres={cals as unknown as number[]} cal={acabados[n][k].cal} onCal={c => setTablero(n, k, { cal: c })}
@@ -5868,356 +6126,726 @@ export default function App() {
                 </div>
               )}
 
-              <div className="absolute top-4 left-4 right-4 flex justify-between items-start z-30 pointer-events-none">
-                <div className="pointer-events-auto bg-white/90 backdrop-blur-md px-4 py-2 rounded-2xl shadow-xl border border-white/50 flex flex-wrap items-center gap-x-3 gap-y-2 max-w-[calc(100%-12rem)]">
-                  <div className="flex gap-1">
-                    {['plan', 'frontal', 'isometric', '3d'].map(v => (
-                      <button key={v} onClick={() => setActiveView(v as any)} className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${activeView === v ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>{v}</button>
-                    ))}
-                  </div>
-                  {activeView === 'frontal' && <button onClick={() => setVerCorte(v => !v)} aria-pressed={verCorte} title={verCorte ? 'Ocultar el corte A y su sección' : 'Mostrar el corte A y su sección'} className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${verCorte ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-slate-100 text-slate-400 border-transparent'}`}>Corte</button>}
-                  <div className="w-px h-6 bg-slate-200" />
-                  <div className="flex gap-1">
-                    <button onClick={undo} disabled={!canUndo} title="Deshacer (Ctrl+Z)" aria-label="Deshacer" className="p-1.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
-                      <Undo2 size={16} />
-                    </button>
-                    <button onClick={redo} disabled={!canRedo} title="Rehacer (Ctrl+Y)" aria-label="Rehacer" className="p-1.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
-                      <Redo2 size={16} />
-                    </button>
-                  </div>
+              {/* Barra flotante superior izquierda (vistas) + menú desplegable superior derecha (Capas) */}
+              <div className="absolute top-4 left-4 right-4 flex flex-wrap justify-between items-start gap-2 z-30 pointer-events-none">
+                <div className="pointer-events-auto bg-white/95 backdrop-blur-md p-1 rounded-xl shadow-sm border border-slate-200/80 flex flex-wrap items-center gap-1">
+                  {([
+                    ['3d', 'Vista 3D'],
+                    ['plan', 'Planta'],
+                    ['frontal', 'Frontal'],
+                    ['isometric', 'Isométrica'],
+                  ] as const).map(([v, label]) => (
+                    <button key={v} onClick={() => setActiveView(v)} className={`px-3 py-1.5 rounded-lg text-xs transition-all border ${activeView === v ? 'text-indigo-600 bg-indigo-50 border-indigo-200 font-semibold' : 'bg-transparent hover:bg-slate-50 text-slate-600 border-transparent font-medium'}`}>{label}</button>
+                  ))}
+                  {activeView === 'frontal' && (
+                    <button onClick={() => setVerCorte(v => !v)} aria-pressed={verCorte} title={verCorte ? 'Ocultar el corte A y su sección' : 'Mostrar el corte A y su sección'} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${verCorte ? 'bg-indigo-50 text-indigo-600 border-indigo-200 font-semibold' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>Corte</button>
+                  )}
+                  <div className="w-px h-4 bg-slate-200 mx-0.5" />
+                  <button onClick={undo} disabled={!canUndo} title="Deshacer (Ctrl+Z)" aria-label="Deshacer" className="p-1.5 rounded-lg hover:bg-slate-50 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                    <Undo2 size={14} />
+                  </button>
+                  <button onClick={redo} disabled={!canRedo} title="Rehacer (Ctrl+Y)" aria-label="Rehacer" className="p-1.5 rounded-lg hover:bg-slate-50 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                    <Redo2 size={14} />
+                  </button>
                   {collisions.length > 0 && (
                     <div
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-red-50 border border-red-300 text-red-600 text-[9px] font-black uppercase tracking-wide"
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-50 border border-red-200 text-red-600 text-xs font-semibold ml-1"
                       title={collisions.map(([p, q]) => `${p.name} choca con ${q.name}`).join('\n')}
                       role="alert"
                     >
-                      <AlertCircle size={12} />
+                      <AlertCircle size={13} />
                       {collisions.length} {collisions.length === 1 ? 'choque' : 'choques'}
                     </div>
                   )}
-                  <div className="w-px h-6 bg-slate-200" />
-                  <div className="flex gap-1">
-                    {([['upper', 'MA', 'los muebles aéreos (MA)'], ['lower', 'MB', 'los muebles base (MB)'], ['counter', 'Mesón', 'el mesón'], ['appliances', 'Electro', 'los electrodomésticos'], ['puntos', 'Puntos', 'los puntos de adecuación (agua, desagüe, energía y gas)'], ['isla', 'Isla', 'las islas y penínsulas'], ['muros', 'Muros', 'los muros'], ['doors', 'Puertas', 'las puertas corredizas'], ['shelves', 'Entrepaños', 'los entrepaños'], ['cajonero', 'Cajonero', 'el cajonero'], ['costado', 'Costado', 'el costado piso a techo'], ['hoja', 'Hoja', 'la hoja y la chapa'], ['marco', 'Marco', 'los marcos, batientes y dilatadas'], ['tapaluz', 'Tapaluz', 'el tapaluz'], ['dims', 'Dimensiones', 'las notas de dimensiones'], ['wallA', 'A', 'el muro A con sus cubos'], ['wallB', 'B', 'el muro B con sus cubos'], ['wallC', 'C', 'el muro C con sus cubos']] as const).filter(([key]) => (key !== 'puntos' || cfg.accessories.length > 0) && (key !== 'isla' || (cfg.features.islands && islands.length > 0)) && (key !== 'muros' || cfg.id !== 'puertas') && ((key !== 'hoja' && key !== 'marco' && key !== 'tapaluz') || cfg.id === 'puertas') && (cfg.id !== 'puertas' || key === 'hoja' || key === 'marco' || key === 'tapaluz') && (key !== 'dims' || isFitSection) && (key !== 'wallA' || (isFitSection && layout !== 'STRAIGHT')) && (key !== 'wallB' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')))) && (key !== 'wallC' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')))) && ((key !== 'doors' && key !== 'shelves' && key !== 'cajonero' && key !== 'costado') || isClosetSection || (key as string) === 'dims' || (key as string).startsWith('wall')) && (key !== 'upper' || (cfg.hasUpper && !isClosetSection && !isFitSection)) && (key !== 'lower' || !(isClosetSection || isFitSection)) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
-                      <button
-                        key={key}
-                        onClick={() => setVisibility(v => ({ ...v, [key]: !v[key] }))}
-                        title={`${visibility[key] ? 'Ocultar' : 'Mostrar'} ${full}`}
-                        aria-pressed={visibility[key]}
-                        className={`px-2.5 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all border ${visibility[key] ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-slate-100 text-slate-300 border-transparent line-through'}`}
-                      >
-                        {label}
-                      </button>
-                    ))}
+                </div>
+
+                {/* Desplegable de capas arriba a la derecha */}
+                <div className="relative pointer-events-auto">
+                  <button
+                    type="button"
+                    onClick={() => setIsCapasMenuOpen(o => !o)}
+                    className="inline-flex items-center gap-2 bg-white/95 backdrop-blur-md hover:bg-white px-3.5 py-2 rounded-xl shadow-sm border border-slate-200/80 text-xs font-medium text-slate-700 transition-colors"
+                  >
+                    <Layers size={14} className="text-indigo-600" />
+                    <span>Capas: Mostrar / Ocultar</span>
+                    <ChevronDown size={14} className={`text-slate-400 transition-transform ${isCapasMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {isCapasMenuOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-60 bg-white rounded-2xl shadow-lg border border-slate-200/80 p-2 z-[80] space-y-1">
+                      <div className="px-2 py-1 text-[11px] font-medium text-slate-400">Elementos visibles en el 3D</div>
+                      {([
+                        ['upper', 'Muebles altos', 'los muebles altos'],
+                        ['lower', 'Muebles bajos', 'los muebles bajos'],
+                        ['counter', 'Mesón', 'el mesón'],
+                        ['appliances', 'Electrodomésticos', 'los electrodomésticos'],
+                        ['puntos', 'Puntos de agua y luz', 'los puntos de adecuación (agua, desagüe, energía y gas)'],
+                        ['isla', 'Isla / Península', 'las islas y penínsulas'],
+                        ['muros', 'Muros', 'los muros'],
+                        ['doors', 'Puertas', 'las puertas corredizas'],
+                        ['shelves', 'Entrepaños', 'los entrepaños'],
+                        ['cajonero', 'Cajonero', 'el cajonero'],
+                        ['costado', 'Costado', 'el costado piso a techo'],
+                        ['hoja', 'Hoja', 'la hoja y la chapa'],
+                        ['marco', 'Marco', 'los marcos, batientes y dilatadas'],
+                        ['tapaluz', 'Tapaluz', 'el tapaluz'],
+                        ['dims', 'Dimensiones', 'las notas de dimensiones'],
+                        ['wallA', 'Muro A', 'el muro A con sus cubos'],
+                        ['wallB', 'Muro B', 'el muro B con sus cubos'],
+                        ['wallC', 'Muro C', 'el muro C con sus cubos'],
+                      ] as const).filter(([key]) => (key !== 'puntos' || cfg.accessories.length > 0) && (key !== 'isla' || (cfg.features.islands && islands.length > 0)) && (key !== 'muros' || cfg.id !== 'puertas') && ((key !== 'hoja' && key !== 'marco' && key !== 'tapaluz') || cfg.id === 'puertas') && (cfg.id !== 'puertas' || key === 'hoja' || key === 'marco' || key === 'tapaluz') && (key !== 'dims' || isFitSection) && (key !== 'wallA' || (isFitSection && layout !== 'STRAIGHT')) && (key !== 'wallB' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')))) && (key !== 'wallC' || (isFitSection && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')))) && ((key !== 'doors' && key !== 'shelves' && key !== 'cajonero' && key !== 'costado') || isClosetSection || (key as string) === 'dims' || (key as string).startsWith('wall')) && (key !== 'upper' || (cfg.hasUpper && !isClosetSection && !isFitSection)) && (key !== 'lower' || !(isClosetSection || isFitSection)) && (key !== 'counter' || cfg.features.counter) && (key !== 'appliances' || cfg.accessories.length > 0)).map(([key, label, full]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setVisibility(v => ({ ...v, [key]: !v[key] }))}
+                          title={`${visibility[key] ? 'Ocultar' : 'Mostrar'} ${full}`}
+                          aria-pressed={visibility[key]}
+                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs transition-colors ${
+                            visibility[key] ? 'bg-indigo-50/70 text-indigo-700 font-medium' : 'text-slate-400 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span>{label}</span>
+                          <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${
+                            visibility[key] ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300'
+                          }`}>
+                            {visibility[key] ? '✓' : ''}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Panel derecho intuitivo: resumen, acciones clave, tarjetas de módulos, Color & Material y CTA final */}
+            <aside className="w-80 xl:w-[360px] shrink-0 bg-white border-l border-slate-200/80 flex flex-col h-full overflow-hidden z-20">
+              {/* Resumen y acciones rápidas de modulación */}
+              <div className="p-4 border-b border-slate-100 space-y-3">
+                <div className="flex items-center gap-3">
+                  {fotoBoceto ? (
+                    <img src={fotoBoceto} alt="Boceto" className="w-12 h-12 rounded-xl object-cover border border-slate-200 shrink-0" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-center text-indigo-600 shrink-0">
+                      {SECTION_ICONS[section]}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold tracking-tight text-slate-900 truncate">
+                      {fotoBoceto ? 'Resumen del boceto' : cfg.name}
+                    </div>
+                    <div className="text-xs text-slate-500 truncate">
+                      {cfg.id === 'cocinas' ? (layout === 'L_SHAPE' ? 'En L' : layout === 'U_SHAPE' ? 'En U' : 'Lineal') : cfg.singular}
+                      {' · '}
+                      {(wallA / 1000).toFixed(2)} m{layout !== 'STRAIGHT' ? ` × ${(wallB / 1000).toFixed(2)} m` : ''}
+                    </div>
                   </div>
                 </div>
 
-                <div className="relative pointer-events-auto flex flex-col items-end gap-2">
-                  <button 
+                {/* Acciones de modulación y aprobación */}
+                <div className="relative flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
                     onClick={() => setIsOptMenuOpen(!isOptMenuOpen)}
-                    disabled={isSuggesting} 
-                    className="bg-indigo-600 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2 active:scale-95 transition-all border-b-4 border-indigo-800 group"
+                    disabled={isSuggesting}
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100/80 text-indigo-600 border border-indigo-200 text-xs font-medium transition-colors"
                   >
-                    <Sparkles size={20} className={isSuggesting ? 'animate-spin' : 'group-hover:rotate-12 transition-transform'} />
-                    <span className="text-xs font-black uppercase tracking-tight">Optimizar Modulación</span>
-                    <ChevronDown size={16} className={`transition-transform duration-300 ${isOptMenuOpen ? 'rotate-180' : ''}`} />
+                    <Sparkles size={14} className={isSuggesting ? 'animate-spin' : ''} />
+                    <span>Optimizar</span>
+                    <ChevronDown size={13} className={`transition-transform ${isOptMenuOpen ? 'rotate-180' : ''}`} />
                   </button>
 
                   <button
+                    type="button"
                     onClick={convertToModules}
                     disabled={isSuggesting || (modules.length === 0 && !isFitSection)}
-                    className="bg-white text-indigo-700 px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2 active:scale-95 transition-all border-b-4 border-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     title="Convierte los cubos en módulos con sus puertas y frentes de cajón"
                   >
-                    <Box size={18} />
-                    <span className="text-xs font-black uppercase tracking-tight">{isFitSection ? (fit.converted ? 'Volver a cubos' : 'Convertir a módulos') : (modules.length > 0 && modules.every(m => m.detailed) ? 'Volver a cubos' : 'Convertir a módulos')}</span>
+                    <Box size={14} className="text-slate-500" />
+                    <span>{isFitSection ? (fit.converted ? 'Ver cubos' : 'A módulos') : (modules.length > 0 && modules.every(m => m.detailed) ? 'Ver cubos' : 'A módulos')}</span>
                   </button>
 
-                  {/* Aprobar diseño: la orden para crear los documentos del producto (listado de corte, láminas y planos) */}
-                  {(isFitSection ? fit.converted : modules.length > 0 && modules.every(m => m.detailed)) && (
-                    <button
-                      onClick={() => { if (aprobadoKey === snapshotKey) return; if (productoActivo) aprobarDiseno(productoActivo); else setAprobando('dialogo'); }}
-                      disabled={aprobando === 'guardando'}
-                      className={`px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2 active:scale-95 transition-all border-b-4 ${aprobadoKey === snapshotKey ? 'bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default' : 'bg-emerald-600 text-white border-emerald-800'} disabled:opacity-60`}
-                      title={aprobadoKey === snapshotKey ? 'Este diseño ya está aprobado; si lo cambias, hay que volver a aprobarlo' : 'Guarda el diseño en el proyecto y crea sus documentos'}
-                    >
-                      <CheckCircle2 size={18} />
-                      <span className="text-xs font-black uppercase tracking-tight">{aprobando === 'guardando' ? 'Aprobando…' : aprobadoKey === snapshotKey ? 'Diseño aprobado' : 'Aprobar diseño'}</span>
-                    </button>
-                  )}
-                  {avisoAprobar && <div className="max-w-[260px] text-[11px] font-bold text-slate-600 bg-white/95 rounded-xl px-3 py-2 shadow">{avisoAprobar}</div>}
-                  {paraBiblioteca && (
-                    <div className="w-[260px] bg-white/95 rounded-xl px-3 py-2.5 shadow space-y-2 pointer-events-auto">
-                      <div className="text-[11px] font-black text-slate-700">¿Guardar este diseño en la biblioteca para usarlo en otros proyectos?</div>
-                      <input value={paraBiblioteca.nombre} onChange={e => setParaBiblioteca(b => (b ? { ...b, nombre: e.target.value } : b))} className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800" aria-label="Nombre en la biblioteca" />
-                      <div className="flex gap-1.5">
-                        <button onClick={guardarBiblioteca} disabled={bibEstado === 'guardando'} className="flex-1 rounded-lg px-2 py-1.5 text-[11px] font-black bg-indigo-600 text-white disabled:opacity-50">{bibEstado === 'guardando' ? 'Guardando…' : 'Guardar en biblioteca'}</button>
-                        <button onClick={() => setParaBiblioteca(null)} className="rounded-lg px-2 py-1.5 text-[11px] font-black border border-slate-200 text-slate-600">No</button>
-                      </div>
-                    </div>
-                  )}
-
                   {isOptMenuOpen && (
-                    <div className="absolute top-full mt-2 w-72 bg-white rounded-3xl shadow-2xl border border-slate-100 p-2 z-[80] animate-in slide-in-from-top-2 duration-300 flex flex-col gap-1">
-                      <button 
+                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl shadow-lg border border-slate-200/80 p-1.5 z-[80] flex flex-col gap-1">
+                      <button
                         onClick={() => handleMathematicalSuggestion('efficiency')}
-                        className="flex items-center gap-4 p-3 rounded-2xl hover:bg-indigo-50 text-left transition-all group"
+                        className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-indigo-50/70 text-left transition-colors group"
                       >
-                        <div className="bg-amber-100 text-amber-600 p-2 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                          <ZapIcon size={18} />
+                        <div className="bg-amber-50 text-amber-600 border border-amber-200/60 p-1.5 rounded-lg">
+                          <ZapIcon size={15} />
                         </div>
                         <div>
-                          <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">Estrategia Eficiencia</p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">Prioriza módulos de 900mm</p>
+                          <p className="text-xs font-semibold text-slate-900">Estrategia eficiencia</p>
+                          <p className="text-[11px] text-slate-500">Prioriza módulos anchos (90 cm)</p>
                         </div>
                       </button>
-
-                      <button 
+                      <button
                         onClick={() => handleMathematicalSuggestion('standard')}
-                        className="flex items-center gap-4 p-3 rounded-2xl hover:bg-indigo-50 text-left transition-all group"
+                        className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-indigo-50/70 text-left transition-colors group"
                       >
-                        <div className="bg-blue-100 text-blue-600 p-2 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                          <Target size={18} />
+                        <div className="bg-blue-50 text-blue-600 border border-blue-200/60 p-1.5 rounded-lg">
+                          <Target size={15} />
                         </div>
                         <div>
-                          <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">Estrategia Estándar</p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">Prioriza módulos de 600mm</p>
+                          <p className="text-xs font-semibold text-slate-900">Estrategia estándar</p>
+                          <p className="text-[11px] text-slate-500">Prioriza módulos medios (60 cm)</p>
                         </div>
                       </button>
-
-                      <button 
+                      <button
                         onClick={() => handleMathematicalSuggestion('detailed')}
-                        className="flex items-center gap-4 p-3 rounded-2xl hover:bg-indigo-50 text-left transition-all group"
+                        className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-indigo-50/70 text-left transition-colors group"
                       >
-                        <div className="bg-emerald-100 text-emerald-600 p-2 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                          <Layers2 size={18} />
+                        <div className="bg-emerald-50 text-emerald-600 border border-emerald-200/60 p-1.5 rounded-lg">
+                          <Layers2 size={15} />
                         </div>
                         <div>
-                          <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">Estrategia Detallada</p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">Prioriza módulos de 300mm</p>
+                          <p className="text-xs font-semibold text-slate-900">Estrategia detallada</p>
+                          <p className="text-[11px] text-slate-500">Prioriza módulos angostos (30 cm)</p>
                         </div>
                       </button>
-
                       {activeIslands.length > 0 && (
                         <button
                           onClick={modulateIslandsOnly}
-                          className="flex items-center gap-4 p-3 rounded-2xl hover:bg-indigo-50 text-left transition-all group border-t border-slate-100 mt-1"
+                          className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-indigo-50/70 text-left transition-colors border-t border-slate-100 mt-0.5"
                         >
-                          <div className="bg-violet-100 text-violet-600 p-2 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                            <IslandIcon size={18} />
+                          <div className="bg-indigo-50 text-indigo-600 border border-indigo-200/60 p-1.5 rounded-lg">
+                            <IslandIcon size={15} />
                           </div>
                           <div>
-                            <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight">Modular isla / península</p>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase">Solo la isla; la cocina no se toca</p>
+                            <p className="text-xs font-semibold text-slate-900">Modular isla / península</p>
+                            <p className="text-[11px] text-slate-500">Solo la isla; la cocina no se toca</p>
                           </div>
                         </button>
                       )}
                     </div>
                   )}
                 </div>
+
+                {(isFitSection ? fit.converted : modules.length > 0 && modules.every(m => m.detailed)) && (
+                  <button
+                    onClick={() => { if (aprobadoKey === snapshotKey) return; if (productoActivo) aprobarDiseno(productoActivo); else setAprobando('dialogo'); }}
+                    disabled={aprobando === 'guardando'}
+                    className={`w-full px-3.5 py-2 rounded-xl flex items-center justify-center gap-2 transition-all border text-xs font-medium ${aprobadoKey === snapshotKey ? 'bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default' : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'} disabled:opacity-60`}
+                    title={aprobadoKey === snapshotKey ? 'Este diseño ya está aprobado; si lo cambias, hay que volver a aprobarlo' : 'Guarda el diseño en el proyecto y crea sus documentos'}
+                  >
+                    <CheckCircle2 size={15} className={aprobadoKey === snapshotKey ? 'text-emerald-600' : 'text-indigo-600'} />
+                    <span>{aprobando === 'guardando' ? 'Aprobando…' : aprobadoKey === snapshotKey ? 'Diseño aprobado' : 'Guardar y aprobar diseño'}</span>
+                  </button>
+                )}
+                {avisoAprobar && <div className="text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2">{avisoAprobar}</div>}
+                {paraBiblioteca && (
+                  <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 space-y-2">
+                    <div className="text-xs font-semibold text-slate-900">¿Guardar este diseño en la biblioteca?</div>
+                    <input value={paraBiblioteca.nombre} onChange={e => setParaBiblioteca(b => (b ? { ...b, nombre: e.target.value } : b))} className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-medium text-slate-800" aria-label="Nombre en la biblioteca" />
+                    <div className="flex gap-1.5">
+                      <button onClick={guardarBiblioteca} disabled={bibEstado === 'guardando'} className="flex-1 rounded-xl px-3 py-1.5 text-xs font-medium bg-slate-900 hover:bg-slate-800 text-white disabled:opacity-50">{bibEstado === 'guardando' ? 'Guardando…' : 'Guardar'}</button>
+                      <button onClick={() => setParaBiblioteca(null)} className="rounded-xl px-3 py-1.5 text-xs font-medium bg-white hover:bg-slate-50 border border-slate-200 text-slate-700">No</button>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
+
+              {/* Selector rápido de Color & Material + lista desplegable de módulos debajo */}
+              <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-5 no-scrollbar">
+                {/* Selector rápido de Color & Material */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-semibold tracking-tight text-slate-900">Color & Material</div>
+                      <div className="text-[11px] text-slate-500">{acabados.MB.fach.color || faceColor}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsModulosModalOpen(true)}
+                      className="text-[11px] font-medium text-indigo-600 hover:underline"
+                    >
+                      Personalizar
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {['Blanco', 'Arena', 'Riviera', 'Bosco', 'Nuez', 'Humo', 'Risco', 'Negro'].map(nombre => {
+                      const cat = colorDeCatalogo(nombre);
+                      const activo = (acabados.MB.fach.color || faceColor).toLowerCase() === nombre.toLowerCase();
+                      return (
+                        <button
+                          key={nombre}
+                          type="button"
+                          onClick={() => setTablero('MB', 'fach', { color: nombre })}
+                          title={nombre}
+                          className={`w-7 h-7 rounded-lg border transition-all ${activo ? 'ring-2 ring-indigo-600 ring-offset-1 border-slate-400 scale-105' : 'border-slate-300 hover:scale-105'}`}
+                          style={{ background: cat?.hex ?? '#f4f4f1' }}
+                          aria-label={`Color ${nombre}`}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Lista desplegable de módulos detectados */}
+                <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                  {labeledModules.length === 0 ? (
+                    <>
+                      <div className="text-xs font-semibold tracking-tight text-slate-900">Módulos (0)</div>
+                      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-4 text-center space-y-2.5">
+                        <p className="text-xs text-slate-500">Aún no hay módulos en este espacio.</p>
+                        <button
+                          type="button"
+                          onClick={() => handleMathematicalSuggestion('efficiency')}
+                          className="w-full py-2 px-3 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-medium text-slate-700 transition-colors"
+                        >
+                          Generar modulación automática
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setModulosPanelOpen(o => !o)}
+                        aria-expanded={modulosPanelOpen}
+                        className="w-full flex items-center justify-between text-left group py-0.5"
+                      >
+                        <span className="text-xs font-semibold tracking-tight text-slate-900">Módulos ({labeledModules.length})</span>
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-600 group-hover:underline">
+                          <span>{modulosPanelOpen ? 'Contraer' : 'Ver todos'}</span>
+                          <ChevronDown size={13} className={`transition-transform ${modulosPanelOpen ? 'rotate-180' : ''}`} />
+                        </span>
+                      </button>
+
+                      {modulosPanelOpen && (
+                        <div className="space-y-2">
+                          {labeledModules.map(m => {
+                            const nombreHumano = m.name
+                              .replace(/\bMA\b/g, 'Mueble alto')
+                              .replace(/\bMB\b/g, 'Mueble bajo');
+                            const nivelHumano = m.type === 'UPPER' ? 'Mueble alto' : m.type === 'TALL' ? 'Mueble torre' : 'Mueble bajo';
+                            const abierto = editingModuleId === m.uniqueId;
+                            return (
+                              <div key={m.uniqueId} className="rounded-xl border border-slate-200/80 bg-slate-50/50 hover:bg-white p-2.5 transition-colors space-y-2">
+                                <div className="flex items-center gap-2.5">
+                                  <span className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200 text-xs font-semibold flex items-center justify-center shrink-0">
+                                    {m.label}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-xs font-semibold text-slate-900 truncate">{nombreHumano}</div>
+                                    <div className="text-[11px] text-slate-500">{nivelHumano} · {Math.round(m.width / 10)} cm</div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingModuleId(abierto ? null : m.uniqueId)}
+                                    title="Editar medidas"
+                                    className={`p-1.5 rounded-lg border transition-colors ${abierto ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-white text-slate-400 hover:text-slate-700 border-slate-200/80'}`}
+                                  >
+                                    <Pencil size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteModule(m.uniqueId)}
+                                    title="Eliminar módulo"
+                                    className="p-1.5 rounded-lg bg-white text-slate-400 hover:text-rose-600 border border-slate-200/80 transition-colors"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                                {abierto && (
+                                  <div className="grid grid-cols-3 gap-2 pt-1.5 border-t border-slate-200/60">
+                                    <MeasureInput label="Ancho" value={m.width} onCommit={(v) => applyDimensionChange('module', m.uniqueId, v)} />
+                                    <MeasureInput label="Alto" value={m.height} onCommit={(v) => updateModuleMeasure(m.uniqueId, 'height', v)} />
+                                    <MeasureInput label="Fondo" value={m.depth} onCommit={(v) => updateModuleMeasure(m.uniqueId, 'depth', v)} />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Botón protagonista inferior */}
+              <div className="p-4 border-t border-slate-200/80 bg-white space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('quote')}
+                  className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold shadow-sm flex items-center justify-center gap-2 transition-colors"
+                >
+                  <span>Ver Costos y Precios</span>
+                  <ArrowRight size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsWorkspaceModalOpen(true)}
+                  className="w-full py-1 text-center text-xs font-medium text-slate-500 hover:text-slate-900 transition-colors"
+                >
+                  ← Modificar medidas o espacio
+                </button>
+              </div>
+            </aside>
           </div>
         )}
         {activeTab === 'catalog' && (
-          <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-4 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-2 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
-            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Mis módulos</h2>
-            <p className="text-xs font-bold text-slate-400">Tus módulos especiales: créalos a tu medida, guárdalos aquí y agrégalos a cualquier diseño.</p>
-            <ModulosEspeciales delDiseno={labeledModules} onAgregar={addModuloEspecial} />
+          <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 px-6 py-6 pb-12">
+            <div className="max-w-5xl mx-auto space-y-6">
+              <div>
+                <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Biblioteca de módulos</h2>
+                <p className="text-sm text-slate-500 mt-1">Tus módulos especiales: créalos a tu medida, guárdalos aquí y agrégalos a cualquier diseño.</p>
+              </div>
+              <ModulosEspeciales delDiseno={labeledModules} onAgregar={addModuloEspecial} />
+            </div>
           </div>
         )}
         {activeTab === 'quote' && (
-          <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
-            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-1">Precios</h2>
-            <p className="text-xs font-bold text-slate-400 mb-4">Lo que nos cuesta cada pieza, módulo y mueble con tu tabla de costos, y la cotización para el cliente.</p>
-            <Precios boxes={boxes} ctx={ctxPiezas} lista={lista}
-              modulos={labeledModules.map(m => ({ uniqueId: m.uniqueId, label: m.label, type: m.type, width: m.width, height: m.height, depth: m.depth }))}
-              nombreResto={cfg.id === 'cocinas' ? 'Zócalo, rellenos y mesón' : cfg.name}
-              datos={{
-                cliente: productoActivo?.cliente ?? '', proyecto: productoActivo?.nombre ?? '', producto: cfg.id === 'cocinas' ? 'Cocina integral' : cfg.singular.charAt(0).toUpperCase() + cfg.singular.slice(1),
-                descripcion: [cfg.id === 'cocinas' ? (layout === 'L_SHAPE' ? 'En L' : layout === 'U_SHAPE' ? 'En U' : 'Lineal') : '', `${wallA}${layout !== 'STRAIGHT' && cfg.id === 'cocinas' ? ` × ${wallB}` : ''} mm`, `alto ${spaceHeight} mm`, faceColor ? `fachada ${faceColor}` : ''].filter(Boolean).join(' · '),
-              }}
-              onGuardarCotizacion={productoActivo ? async (archivo, nombre) => { await subirDocumentos(productoActivo.id, [{ tipo: 'cotizacion', nombre, archivo }], false); } : undefined} />
+          <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 px-6 py-6 pb-12">
+            <div className="max-w-5xl mx-auto space-y-6">
+              <div>
+                <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Precios</h2>
+                <p className="text-sm text-slate-500 mt-1">Lo que nos cuesta cada pieza, módulo y mueble con tu tabla de costos, y la cotización para el cliente.</p>
+              </div>
+              <Precios boxes={boxes} ctx={ctxPiezas} lista={lista}
+                modulos={labeledModules.map(m => ({ uniqueId: m.uniqueId, label: m.label, type: m.type, width: m.width, height: m.height, depth: m.depth }))}
+                nombreResto={cfg.id === 'cocinas' ? 'Zócalo, rellenos y mesón' : cfg.name}
+                datos={{
+                  cliente: productoActivo?.cliente ?? '', proyecto: productoActivo?.nombre ?? '', producto: cfg.id === 'cocinas' ? 'Cocina integral' : cfg.singular.charAt(0).toUpperCase() + cfg.singular.slice(1),
+                  descripcion: [cfg.id === 'cocinas' ? (layout === 'L_SHAPE' ? 'En L' : layout === 'U_SHAPE' ? 'En U' : 'Lineal') : '', `${wallA}${layout !== 'STRAIGHT' && cfg.id === 'cocinas' ? ` × ${wallB}` : ''} mm`, `alto ${spaceHeight} mm`, faceColor ? `fachada ${faceColor}` : ''].filter(Boolean).join(' · '),
+                }}
+                onGuardarCotizacion={productoActivo ? async (archivo, nombre) => { await subirDocumentos(productoActivo.id, [{ tipo: 'cotizacion', nombre, archivo }], false); } : undefined}
+                onContinuarEntregables={() => setActiveTab(lastDeliverableTab)} />
+            </div>
           </div>
         )}
-        {activeTab === 'listado' && (
-          <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Listado de Partes</h2>
-              <div className="flex items-center gap-2">
-                <button onClick={exportBoxesJSON} disabled={boxes.length === 0} className="flex items-center gap-2 bg-slate-700 text-white px-6 py-2 rounded-2xl font-black text-xs uppercase disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-800 transition-colors shadow-lg">
-                  <Download size={16} />
-                  Cajas para Fusion
-                </button>
-                <button onClick={() => { if (lista.piezas.length > 0) exportarListadoDeCorte(lista, `Listado_${cfg.name.replace(/\s+/g, '_')}`); else if (bom) exportBOMToExcel(bom); }} disabled={lista.piezas.length === 0 && !bom} className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-2 rounded-2xl font-black text-xs uppercase disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-700 transition-colors shadow-lg">
-                  <Download size={16} />
-                  Descargar Excel
-                </button>
+        {(activeTab === 'render' || activeTab === 'planos' || activeTab === 'laminas' || activeTab === 'listado') && (
+          <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 px-6 py-6 pb-12">
+            <div className="max-w-6xl mx-auto space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Entregables</h2>
+                  <p className="text-sm text-slate-500 mt-1">Render 3D, planos de ensamble, optimización de láminas y listado de partes.</p>
+                </div>
+                {activeTab === 'listado' && (
+                  <div className="flex items-center gap-2">
+                    <button onClick={exportBoxesJSON} disabled={boxes.length === 0} className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-xl font-medium text-xs disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                      <Download size={15} />
+                      Cajas para Fusion
+                    </button>
+                    <button onClick={() => { if (lista.piezas.length > 0) exportarListadoDeCorte(lista, `Listado_${cfg.name.replace(/\s+/g, '_')}`); else if (bom) exportBOMToExcel(bom); }} disabled={lista.piezas.length === 0 && !bom} className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl font-medium text-xs disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm">
+                      <Download size={15} />
+                      Descargar Excel
+                    </button>
+                  </div>
+                )}
               </div>
+
+              <div className="inline-flex flex-wrap items-center gap-1 p-1 bg-white border border-slate-200/80 rounded-2xl shadow-sm">
+                {([
+                  { id: 'render' as const, label: 'Render 3D', icon: <ImageIcon size={15} /> },
+                  { id: 'planos' as const, label: 'Planos', icon: <FileText size={15} /> },
+                  { id: 'laminas' as const, label: 'Láminas', icon: <LayoutGrid size={15} /> },
+                  { id: 'listado' as const, label: 'Listado', icon: <Table size={15} />, count: lista.piezas.length > 0 ? lista.piezas.reduce((a, p) => a + p.quantity, 0) : bom ? bom.pieces.length : 0 },
+                ]).map(sub => {
+                  const active = activeTab === sub.id;
+                  return (
+                    <button
+                      key={sub.id}
+                      type="button"
+                      onClick={() => setActiveTab(sub.id)}
+                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs border transition-colors ${
+                        active
+                          ? 'text-indigo-600 bg-indigo-50 border-indigo-200 font-semibold'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border-transparent font-medium'
+                      }`}
+                    >
+                      {sub.icon}
+                      <span>{sub.label}</span>
+                      {sub.count ? (
+                        <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${active ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                          {sub.count}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {activeTab === 'render' && (
+                <RenderVista
+                  key={`${faceColor}|${acabados.MA.fach.color}|${acabados.MB.est.color}`}
+                  boxes={boxes}
+                  appliances={appliances}
+                  modules={modules}
+                  wallA={wallA}
+                  spaceHeight={spaceHeight}
+                  zocaloHeight={hasZocalo ? zocaloHeight : 0}
+                  faceColor={faceColor}
+                  faceColorMA={acabados.MA.fach.color}
+                  lineType={lineType}
+                  nombre={cfg.name}
+                  estructura={acabados.MB.est.color}
+                  producto={productoActivo?.nombre ?? null}
+                  onGuardar={productoActivo ? async (url, tipo) => { await subirDocumentos(productoActivo.id, [{ tipo, nombre: `${tipo === 'render' ? 'Render' : 'Foto_IA'}_${productoActivo.nombre.replace(/\s+/g, '_')}.png`, archivo: archivoDeDataURL(url) }], false); } : undefined}
+                />
+              )}
+
+              {activeTab === 'planos' && (
+                lista.piezas.length > 0 ? (
+                  <PlanosEnsamble boxes={boxes} ctx={{ lineType, faceColor }} proyecto={cfg.name} />
+                ) : (
+                  <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm p-8 text-center text-sm font-medium text-slate-500">
+                    Todavía no hay piezas para dibujar. En cocinas, convierte los cubos a módulos en Diseño 3D.
+                  </div>
+                )
+              )}
+
+              {activeTab === 'laminas' && (
+                lista.piezas.length > 0 ? (
+                  <Optimizador piezas={lista.piezas} />
+                ) : (
+                  <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm p-8 text-center text-sm font-medium text-slate-500">
+                    Todavía no hay piezas para acomodar. En cocinas, convierte los cubos a módulos en Diseño 3D.
+                  </div>
+                )
+              )}
+
+              {activeTab === 'listado' && (
+                lista.piezas.length > 0 ? (
+                  <div className="space-y-4">
+                    {/* lista de piezas única (fase 0): sale de las mismas piezas que se dibujan en 3D */}
+                    {lista.piezas.some(p => p.confirmar) && (
+                      <div className="text-xs font-medium text-amber-900 bg-amber-50 border border-amber-200/70 rounded-xl px-4 py-2.5">Las filas con ● tienen canto o veta por confirmar.</div>
+                    )}
+                    <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200/80">
+                              <th className="px-3 py-2.5 text-left font-semibold text-slate-700">ITEM</th>
+                              <th className="px-3 py-2.5 text-left font-semibold text-slate-700">PARTE</th>
+                              <th className="px-3 py-2.5 text-center font-semibold text-slate-700">C/D</th>
+                              <th className="px-3 py-2.5 text-right font-semibold text-slate-700">LAR</th>
+                              <th className="px-3 py-2.5 text-right font-semibold text-slate-700">AN</th>
+                              <th className="px-3 py-2.5 text-right font-semibold text-slate-700">CAL</th>
+                              <th className="px-3 py-2.5 text-left font-semibold text-slate-700">COLOR</th>
+                              <th className="px-3 py-2.5 text-left font-semibold text-slate-700">CANTO</th>
+                              <th className="px-2 py-2.5 text-left font-semibold text-slate-500">L1</th>
+                              <th className="px-2 py-2.5 text-left font-semibold text-slate-500">L2</th>
+                              <th className="px-2 py-2.5 text-left font-semibold text-slate-500">a1</th>
+                              <th className="px-2 py-2.5 text-left font-semibold text-slate-500">a2</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {lista.piezas.map(piece => (
+                              <tr key={piece.item} className="hover:bg-slate-50/70" title={`Sale de: ${piece.modulos.join(', ')}`}>
+                                <td className="px-3 py-2 font-semibold text-slate-900">{piece.item}</td>
+                                <td className="px-3 py-2 text-slate-700 max-w-xs truncate">{piece.name}{piece.confirmar && <span className="ml-1 text-amber-500" title="Canto o veta por confirmar">●</span>}</td>
+                                <td className="px-3 py-2 text-center font-semibold text-slate-800">{piece.quantity}</td>
+                                <td className="px-3 py-2 text-right text-slate-600">{piece.length}</td>
+                                <td className="px-3 py-2 text-right text-slate-600">{piece.width}</td>
+                                <td className="px-3 py-2 text-right text-slate-600">{piece.thickness}</td>
+                                <td className="px-3 py-2 text-slate-600">{piece.color}</td>
+                                <td className="px-3 py-2 text-slate-600">{piece.edgeType || '—'}</td>
+                                {(() => { const b = bordesDeCanto(piece.edgeType || '', piece.color); return [b.l1, b.l2, b.a1, b.a2].map((t, i) => <td key={i} className="px-2 py-2 text-[11px] text-slate-500 whitespace-nowrap">{t}</td>); })()}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                    {lista.herrajes.length > 0 && (
+                      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 space-y-1.5">
+                        <div className="text-xs font-semibold text-slate-900">Herrajes</div>
+                        {lista.herrajes.map((h, i) => <div key={i} className="text-xs text-slate-600 font-medium">{h.cant} × {h.nombre}{h.medida ? ` (${h.medida})` : ''}</div>)}
+                      </div>
+                    )}
+                    <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-200">
+                      <p className="text-sm font-semibold text-slate-900">Total: <span className="text-indigo-600">{lista.piezas.reduce((a, p) => a + p.quantity, 0)} piezas</span> en {lista.piezas.length} referencias</p>
+                    </div>
+                  </div>
+                ) : bom && bom.pieces.length > 0 ? (
+                  <div className="space-y-4">
+                    <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200/80">
+                              <th className="px-3 py-2.5 text-left font-semibold text-slate-700">ITEM</th>
+                              <th className="px-3 py-2.5 text-left font-semibold text-slate-700">PARTE</th>
+                              <th className="px-3 py-2.5 text-center font-semibold text-slate-700">C/D</th>
+                              <th className="px-3 py-2.5 text-right font-semibold text-slate-700">LAR</th>
+                              <th className="px-3 py-2.5 text-right font-semibold text-slate-700">AN</th>
+                              <th className="px-3 py-2.5 text-right font-semibold text-slate-700">CAL</th>
+                              <th className="px-3 py-2.5 text-left font-semibold text-slate-700">COLOR</th>
+                              <th className="px-3 py-2.5 text-left font-semibold text-slate-700">CANTO</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {bom.pieces.map(piece => (
+                              <tr key={`${piece.item}-${piece.name}`} className="hover:bg-slate-50/70">
+                                <td className="px-3 py-2 font-semibold text-slate-900">{piece.item}</td>
+                                <td className="px-3 py-2 text-slate-700 max-w-xs truncate">{piece.name}</td>
+                                <td className="px-3 py-2 text-center font-semibold text-slate-800">{piece.quantity}</td>
+                                <td className="px-3 py-2 text-right text-slate-600">{piece.length}</td>
+                                <td className="px-3 py-2 text-right text-slate-600">{piece.width}</td>
+                                <td className="px-3 py-2 text-right text-slate-600">{piece.thickness}</td>
+                                <td className="px-3 py-2 text-slate-600">{piece.color}</td>
+                                <td className="px-3 py-2 text-slate-600">{piece.edgeType || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                    <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-200">
+                      <p className="text-sm font-semibold text-slate-900">Total: <span className="text-indigo-600">{bom.totalPieces} piezas</span> · Muro: <span className="text-indigo-600">{bom.kitchenConfig.wallWidth}mm</span> · Línea: <span className="text-indigo-600">{bom.kitchenConfig.lineType}</span> · Color: <span className="text-indigo-600">{bom.kitchenConfig.faceColor}</span></p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm p-8 text-center text-sm font-medium text-slate-500">
+                    Agrega módulos en Diseño 3D para generar el listado.
+                  </div>
+                )
+              )}
             </div>
-            {lista.piezas.length > 0 ? (
-              <div className="space-y-3">
-                {/* lista de piezas única (fase 0): sale de las mismas piezas que se dibujan en 3D */}
-                {lista.piezas.some(p => p.confirmar) && (
-                  <div className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">Las filas marcadas con ● tienen canto o veta por confirmar con el carpintero.</div>
-                )}
-                <div className="bg-slate-100 rounded-2xl overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-slate-200">
-                          <th className="px-3 py-2 text-left font-black text-slate-700">ITEM</th>
-                          <th className="px-3 py-2 text-left font-black text-slate-700">PARTE</th>
-                          <th className="px-3 py-2 text-center font-black text-slate-700">C/D</th>
-                          <th className="px-3 py-2 text-right font-black text-slate-700">LAR</th>
-                          <th className="px-3 py-2 text-right font-black text-slate-700">AN</th>
-                          <th className="px-3 py-2 text-right font-black text-slate-700">CAL</th>
-                          <th className="px-3 py-2 text-left font-black text-slate-700">COLOR</th>
-                          <th className="px-3 py-2 text-left font-black text-slate-700">CANTO</th>
-                          <th className="px-2 py-2 text-left font-black text-slate-500">L1</th>
-                          <th className="px-2 py-2 text-left font-black text-slate-500">L2</th>
-                          <th className="px-2 py-2 text-left font-black text-slate-500">a1</th>
-                          <th className="px-2 py-2 text-left font-black text-slate-500">a2</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200">
-                        {lista.piezas.map(piece => (
-                          <tr key={piece.item} className="hover:bg-slate-50" title={`Sale de: ${piece.modulos.join(', ')}`}>
-                            <td className="px-3 py-2 font-black text-slate-700">{piece.item}</td>
-                            <td className="px-3 py-2 text-slate-600 max-w-xs truncate">{piece.name}{piece.confirmar && <span className="ml-1 text-amber-500" title="Canto o veta por confirmar">●</span>}</td>
-                            <td className="px-3 py-2 text-center font-bold text-slate-700">{piece.quantity}</td>
-                            <td className="px-3 py-2 text-right text-slate-600">{piece.length}</td>
-                            <td className="px-3 py-2 text-right text-slate-600">{piece.width}</td>
-                            <td className="px-3 py-2 text-right text-slate-600">{piece.thickness}</td>
-                            <td className="px-3 py-2 text-slate-600">{piece.color}</td>
-                            <td className="px-3 py-2 text-slate-600">{piece.edgeType || '—'}</td>
-                            {(() => { const b = bordesDeCanto(piece.edgeType || '', piece.color); return [b.l1, b.l2, b.a1, b.a2].map((t, i) => <td key={i} className="px-2 py-2 text-[10px] text-slate-500 whitespace-nowrap">{t}</td>); })()}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-                {lista.herrajes.length > 0 && (
-                  <div className="bg-white rounded-2xl border border-slate-200 p-4">
-                    <div className="text-[11px] font-black text-slate-500 uppercase mb-2">Herrajes</div>
-                    {lista.herrajes.map((h, i) => <div key={i} className="text-xs text-slate-700 font-bold">{h.cant} × {h.nombre}{h.medida ? ` (${h.medida})` : ''}</div>)}
-                  </div>
-                )}
-                <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-200">
-                  <p className="text-sm font-black text-slate-700">Total: <span className="text-indigo-600">{lista.piezas.reduce((a, p) => a + p.quantity, 0)} piezas</span> en {lista.piezas.length} referencias</p>
-                </div>
-              </div>
-            ) : bom && bom.pieces.length > 0 ? (
-              <div className="space-y-3">
-                <div className="bg-slate-100 rounded-2xl overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-slate-200">
-                          <th className="px-3 py-2 text-left font-black text-slate-700">ITEM</th>
-                          <th className="px-3 py-2 text-left font-black text-slate-700">PARTE</th>
-                          <th className="px-3 py-2 text-center font-black text-slate-700">C/D</th>
-                          <th className="px-3 py-2 text-right font-black text-slate-700">LAR</th>
-                          <th className="px-3 py-2 text-right font-black text-slate-700">AN</th>
-                          <th className="px-3 py-2 text-right font-black text-slate-700">CAL</th>
-                          <th className="px-3 py-2 text-left font-black text-slate-700">COLOR</th>
-                          <th className="px-3 py-2 text-left font-black text-slate-700">CANTO</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200">
-                        {bom.pieces.map(piece => (
-                          <tr key={`${piece.item}-${piece.name}`} className="hover:bg-slate-50">
-                            <td className="px-3 py-2 font-black text-slate-700">{piece.item}</td>
-                            <td className="px-3 py-2 text-slate-600 max-w-xs truncate">{piece.name}</td>
-                            <td className="px-3 py-2 text-center font-bold text-slate-700">{piece.quantity}</td>
-                            <td className="px-3 py-2 text-right text-slate-600">{piece.length}</td>
-                            <td className="px-3 py-2 text-right text-slate-600">{piece.width}</td>
-                            <td className="px-3 py-2 text-right text-slate-600">{piece.thickness}</td>
-                            <td className="px-3 py-2 text-slate-600">{piece.color}</td>
-                            <td className="px-3 py-2 text-slate-600">{piece.edgeType || '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-                <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-200">
-                  <p className="text-sm font-black text-slate-700">📊 Total: <span className="text-indigo-600">{bom.totalPieces} piezas</span> • 📏 Muro: <span className="text-indigo-600">{bom.kitchenConfig.wallWidth}mm</span> • 🎨 Línea: <span className="text-indigo-600">{bom.kitchenConfig.lineType}</span> • 🌈 Color: <span className="text-indigo-600">{bom.kitchenConfig.faceColor}</span></p>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-64 text-center">
-                <p className="text-slate-400 font-bold uppercase">Agrega módulos para generar el listado</p>
-              </div>
-            )}
           </div>
         )}
         {activeTab === 'proyectos' && (
-          <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
-            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-1">Proyectos</h2>
-            <p className="text-xs font-bold text-slate-400 mb-6">Tus clientes y los diseños guardados de cada uno.</p>
-            <Proyectos seccion={section} diseñoActual={() => latestSnapshot.current.snapshot}
-              documentos={docsDelDiseno}
-              onProductoActivo={p => { setProductoActivo(p); setAprobadoKey(null); if (p) setFotoBoceto(null); }}
-              onAbrir={(sec, datos, prod) => { switchSection(sec); applySnapshot(datos as DesignSnapshot); bumpHistory(); setProductoActivo(prod); setAprobadoKey(null); aprobadoAlAbrir.current = !!prod.aprobado; setFotoBoceto(null); setActiveTab('design'); }} />
-            <div className="mt-8">
-              <Biblioteca recargar={bibRecargar} onUsar={(sec, datos, nombre) => abrirDeBiblioteca(sec, datos, nombre)} onAbrir={(sec, datos) => abrirDeBiblioteca(sec, datos)} />
+          <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 px-6 py-6 pb-12">
+            <div className="max-w-5xl mx-auto space-y-6">
+              <div>
+                <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Proyectos</h2>
+                <p className="text-sm text-slate-500 mt-1">Tus clientes y los diseños guardados de cada uno.</p>
+              </div>
+              <Proyectos seccion={section} diseñoActual={() => latestSnapshot.current.snapshot}
+                documentos={docsDelDiseno}
+                nuevoTrigger={nuevoProyectoTick}
+                onProductoActivo={p => { setProductoActivo(p); setAprobadoKey(null); if (p) setFotoBoceto(null); }}
+                onAbrir={abrirProductoGuardado} />
+              <div className="pt-2">
+                <Biblioteca recargar={bibRecargar} onUsar={(sec, datos, nombre) => abrirDeBiblioteca(sec, datos, nombre)} onAbrir={(sec, datos) => abrirDeBiblioteca(sec, datos)} />
+              </div>
             </div>
           </div>
         )}
         {activeTab === 'inicio' && (
-          <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24">
-            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-1">Inicio</h2>
-            <p className="text-xs font-bold text-slate-400 mb-6">Elige el producto y la fase en la que quieres trabajar.</p>
-            <Inicio section={section} icons={SECTION_ICONS} onProducto={id => switchSection(id)} onFase={f => setActiveTab(f)}
-              avance={{ producto: productoActivo?.nombre ?? null, cliente: productoActivo?.cliente ?? null, bosquejo: bosquejoListo, modulos: labeledModules.length, piezas: lista.piezas.length, aprobado: aprobadoKey !== null && aprobadoKey === snapshotKey }} />
+          <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 px-6 py-6 pb-12">
+            <div className="max-w-6xl mx-auto">
+              <Inicio
+                section={section}
+                icons={SECTION_ICONS}
+                correoSesion={correoSesion}
+                onProducto={id => switchSection(id)}
+                onAbrirCategoria={id => { switchSection(id); setActiveTab('design'); }}
+                onFase={f => setActiveTab(f)}
+                onCrearDesdeCero={() => {
+                  setProductoActivo(null);
+                  setAprobadoKey(null);
+                  setBosquejoListo(false);
+                  setFotoBoceto(null);
+                  setEvidenciasBoceto(null);
+                  applySnapshot(makeSectionDefaults(section));
+                  bumpHistory();
+                  setActiveTab('design');
+                  setIsWorkspaceModalOpen(true);
+                }}
+                onIrProyectos={() => setActiveTab('proyectos')}
+                onAbrirProyecto={abrirProductoGuardado}
+                avance={{
+                  producto: productoActivo?.nombre ?? null,
+                  cliente: productoActivo?.cliente ?? null,
+                  bosquejo: bosquejoListo,
+                  modulos: labeledModules.length,
+                  piezas: lista.piezas.length,
+                  aprobado: aprobadoKey !== null && aprobadoKey === snapshotKey,
+                  preview: {
+                    layout,
+                    wallA,
+                    wallB,
+                    wallC,
+                    faceColor,
+                    modules: labeledModules.map(m => ({ wall: m.wall, type: m.type, positionX: m.positionX, width: m.width })),
+                  },
+                }}
+              />
+            </div>
           </div>
         )}
         {activeTab === 'bosquejo' && (
-          <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
-            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-1">Bosquejo</h2>
-            <p className="text-xs font-bold text-slate-400 mb-6">Adjunta la foto del boceto a mano alzada, revisa lo que se entendió y acéptalo o corrígelo.</p>
-            {bosquejoListo && labeledModules.length > 0 && (
-              <div className="mb-4 space-y-3 max-w-6xl">
-                <PlanoLimpio boxes={boxes} modules={labeledModules} onCambiar={(id, cambios) => setModules(prev => prev.map(m => (m.uniqueId === id ? { ...m, ...cambios } : m)))} />
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => setActiveTab('design')} className="rounded-xl px-5 py-2.5 text-sm font-black bg-indigo-600 text-white">Ir a Diseño</button>
-                  <button onClick={() => setBosquejoListo(false)} className="rounded-xl px-5 py-2.5 text-sm font-black border border-slate-200 text-slate-700">Volver a mi boceto y notas</button>
+          <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 px-6 py-6 pb-12">
+            <div className="max-w-6xl mx-auto space-y-6">
+              <div>
+                <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Boceto</h2>
+                <p className="text-sm text-slate-500 mt-1">Sube la foto de tu boceto a mano y revisa la lectura automática antes de pasar al 3D.</p>
+              </div>
+              {bosquejoListo && labeledModules.length > 0 && (
+                <div className="space-y-3">
+                  <PlanoLimpio boxes={boxes} modules={labeledModules} onCambiar={(id, cambios) => setModules(prev => prev.map(m => (m.uniqueId === id ? { ...m, ...cambios } : m)))} />
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => setActiveTab('design')} className="rounded-xl px-5 py-2.5 text-sm font-semibold bg-slate-900 hover:bg-slate-800 text-white transition-colors shadow-sm">Ver mi diseño en 3D →</button>
+                    <button onClick={() => setBosquejoListo(false)} className="rounded-xl px-5 py-2.5 text-sm font-medium bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition-colors">Volver a mi boceto y notas</button>
+                  </div>
                 </div>
+              )}
+              {!bosquejoListo && labeledModules.length > 0 && (fotoBoceto || evidenciasBoceto) && (
+                <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3">
+                  <button onClick={() => setBosquejoListo(true)} className="rounded-xl px-4 py-2 text-xs font-medium bg-slate-900 hover:bg-slate-800 text-white transition-colors">Ver resumen en limpio</button>
+                  <span className="text-xs font-medium text-indigo-700">Aquí están tu foto y tus notas. Se guardan como evidencias cuando agregas el diseño a un proyecto.</span>
+                </div>
+              )}
+              <div className={bosquejoListo && labeledModules.length > 0 ? 'hidden' : ''}><Bosquejo actual={section} onCrear={crearDesdeBosquejo} /></div>
+            </div>
+          </div>
+        )}
+        {activeTab === 'config' && (
+          <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 px-6 py-6 pb-12">
+            <div className="max-w-3xl mx-auto space-y-5">
+              <div>
+                <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Configuración</h2>
+                <p className="text-sm text-slate-500 mt-1">Ajustes generales del espacio, línea de producto y herrajes.</p>
               </div>
-            )}
-            {!bosquejoListo && labeledModules.length > 0 && (fotoBoceto || evidenciasBoceto) && (
-              <div className="mb-4 max-w-6xl flex flex-wrap items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
-                <button onClick={() => setBosquejoListo(true)} className="rounded-xl px-4 py-2 text-xs font-black bg-indigo-600 text-white">Volver al boceto en limpio</button>
-                <span className="text-[11px] font-bold text-indigo-900">Aquí están tu foto y tus notas. Se guardan como evidencias del proyecto cuando agregas el diseño a un proyecto.</span>
+              <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm p-6 space-y-5">
+                <label className="block">
+                  <span className="text-xs font-medium text-slate-600 block mb-1.5">Largo muro A (mm)</span>
+                  <input type="number" value={wallA} onChange={e => setWallA(parseInt(e.target.value))} className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-500" />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-slate-600 block mb-1.5">Línea de producto</span>
+                  <select value={lineType} onChange={e => setLineType(e.target.value as any)} className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-500">
+                    <option>Básica</option>
+                    <option>Media</option>
+                    <option>Alta</option>
+                  </select>
+                </label>
+                <div className="pt-2 border-t border-slate-100 space-y-2.5">
+                  <div className="text-sm font-semibold tracking-tight text-slate-900">Corredera de los cajones</div>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => setCorredera({ tipo: 'full' })} className={`rounded-xl px-3.5 py-2 text-xs font-medium border transition-colors ${corredera.tipo === 'full' ? 'text-indigo-600 bg-indigo-50 border-indigo-200 font-semibold' : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'}`}>Full extensión</button>
+                    <button onClick={() => setCorredera(c => ({ ...c, tipo: 'oculta' }))} className={`rounded-xl px-3.5 py-2 text-xs font-medium border transition-colors ${corredera.tipo === 'oculta' ? 'text-indigo-600 bg-indigo-50 border-indigo-200 font-semibold' : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'}`}>Oculta</button>
+                    {corredera.tipo === 'oculta' && (
+                      <>
+                        <button onClick={() => setCorredera(c => ({ ...c, menos10: !c.menos10 }))} className={`rounded-xl px-3.5 py-2 text-xs font-medium border transition-colors ${!!corredera.menos10 ? 'text-indigo-600 bg-indigo-50 border-indigo-200 font-semibold' : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'}`}>Descontar 10 mm al largo</button>
+                        <button onClick={() => setCorredera(c => ({ ...c, fondo15: !c.fondo15 }))} className={`rounded-xl px-3.5 py-2 text-xs font-medium border transition-colors ${!!corredera.fondo15 ? 'text-indigo-600 bg-indigo-50 border-indigo-200 font-semibold' : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'}`}>Fondo de 15</button>
+                      </>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500">Full extensión: 13 mm de luz por lado. Oculta: 6 mm por lado y lateral en medidas de 50 en 50; algunas marcas piden 10 mm menos de largo.</p>
+                </div>
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold tracking-tight text-slate-900">Costados internos más cortos</div>
+                    <div className="text-xs text-slate-500 mt-0.5">Con puente en L de melamina corrido entre varios bajos: los costados internos van 80 mm más cortos y no se les hace la caja.</div>
+                  </div>
+                  <button onClick={() => setAcabados(a => ({ ...a, golaCorrida: !a.golaCorrida }))} className={`w-11 h-6 rounded-full relative shrink-0 transition-all ${costadosCortos ? 'bg-indigo-600' : 'bg-slate-200'}`}><div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${costadosCortos ? 'left-[22px]' : 'left-0.5'}`} /></button>
+                </div>
+                <label className="block pt-2 border-t border-slate-100">
+                  <span className="text-xs font-medium text-slate-600 block mb-1.5">Color de fachada</span>
+                  <input type="text" value={faceColor} onChange={e => setFaceColor(e.target.value)} placeholder="Ej: Blanco, Ámbar, Gris" className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-500" />
+                </label>
               </div>
-            )}
-            <div className={bosquejoListo && labeledModules.length > 0 ? 'hidden' : ''}><Bosquejo actual={section} onCrear={crearDesdeBosquejo} /></div>
+            </div>
           </div>
         )}
-        {/* cada fase en su sección: láminas (optimización), planos de ensamble y render */}
-        {activeTab === 'laminas' && (
-          <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
-            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-6">Láminas</h2>
-            {lista.piezas.length > 0 ? <Optimizador piezas={lista.piezas} /> : <div className="text-sm font-bold text-slate-400">Todavía no hay piezas para acomodar. En cocinas, convierte los cubos a módulos en Diseño.</div>}
-          </div>
-        )}
-        {activeTab === 'planos' && (
-          <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
-            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-6">Planos de ensamble</h2>
-            {lista.piezas.length > 0 ? <PlanosEnsamble boxes={boxes} ctx={{ lineType, faceColor }} proyecto={cfg.name} /> : <div className="text-sm font-bold text-slate-400">Todavía no hay piezas para dibujar. En cocinas, convierte los cubos a módulos en Diseño.</div>}
-          </div>
-        )}
-        {activeTab === 'render' && (
-          <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button>
-            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-6">Render</h2>
-            <RenderVista key={`${faceColor}|${acabados.MB.est.color}`} boxes={boxes} faceColor={faceColor} lineType={lineType} nombre={cfg.name} estructura={acabados.MB.est.color} producto={productoActivo?.nombre ?? null}
-              onGuardar={productoActivo ? async (url, tipo) => { await subirDocumentos(productoActivo.id, [{ tipo, nombre: `${tipo === 'render' ? 'Render' : 'Foto_IA'}_${productoActivo.nombre.replace(/\s+/g, '_')}.png`, archivo: archivoDeDataURL(url) }], false); } : undefined} />
-          </div>
-        )}
-        {activeTab === 'config' && (<div className="flex-1 min-h-0 overflow-y-auto p-6 pb-24"><button onClick={() => setActiveTab('inicio')} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100"><Home size={14} />Inicio</button><h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-4">Ajustes</h2><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Largo Muro A (mm)</span><input type="number" value={wallA} onChange={e => setWallA(parseInt(e.target.value))} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Línea de Producto</span><select value={lineType} onChange={e => setLineType(e.target.value as any)} className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800"><option>Básica</option><option>Media</option><option>Alta</option></select></label><div className="mb-4 bg-white border rounded-2xl p-4 space-y-2"><div className="text-sm font-black text-slate-800">Corredera de los cajones</div><div className="flex flex-wrap gap-2"><button onClick={() => setCorredera({ tipo: 'full' })} className={`rounded-xl px-3 py-2 text-xs font-black border ${corredera.tipo === 'full' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Full extensión</button><button onClick={() => setCorredera(c => ({ ...c, tipo: 'oculta' }))} className={`rounded-xl px-3 py-2 text-xs font-black border ${corredera.tipo === 'oculta' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Oculta</button>{corredera.tipo === 'oculta' && <><button onClick={() => setCorredera(c => ({ ...c, menos10: !c.menos10 }))} className={`rounded-xl px-3 py-2 text-xs font-black border ${!!corredera.menos10 ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Descontar 10 mm al largo</button><button onClick={() => setCorredera(c => ({ ...c, fondo15: !c.fondo15 }))} className={`rounded-xl px-3 py-2 text-xs font-black border ${!!corredera.fondo15 ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>Fondo de 15</button></>}</div><div className="text-[11px] font-bold text-slate-400">Full extensión: 13 mm de luz por lado. Oculta: 6 mm por lado y lateral en medidas de 50 en 50; algunas marcas piden 10 mm menos de largo.</div></div><div className="mb-4 flex items-center justify-between gap-4 bg-white border rounded-2xl p-4"><div><div className="text-sm font-black text-slate-800">Costados internos más cortos</div><div className="text-[11px] font-bold text-slate-400">Con puente en L de melamina corrido entre varios bajos: los costados internos van 80 mm más cortos y no se les hace la caja.</div></div><button onClick={() => setAcabados(a => ({ ...a, golaCorrida: !a.golaCorrida }))} className={`w-12 h-6 rounded-full relative shrink-0 transition-all ${costadosCortos ? 'bg-indigo-600' : 'bg-slate-200'}`}><div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${costadosCortos ? 'left-6' : 'left-0.5'}`} /></button></div><label className="block mb-4"><span className="text-[10px] font-black text-slate-400 uppercase block mb-2 px-1">Color de Fachada</span><input type="text" value={faceColor} onChange={e => setFaceColor(e.target.value)} placeholder="Ej: Blanco, Ámbar, Gris" className="w-full bg-white border rounded-2xl p-4 font-black text-slate-800" /></label></div>)}
       </main>
-      <nav className="h-20 bg-white border-t border-slate-200 flex items-center px-4 pb-2 shadow-2xl z-[70]"><BottomNavItem active={activeTab === 'inicio'} onClick={() => setActiveTab('inicio')} icon={<Home />} label="INICIO" /><BottomNavItem active={activeTab === 'proyectos'} onClick={() => setActiveTab('proyectos')} icon={<FolderOpen />} label="PROYECTOS" /><BottomNavItem active={activeTab === 'bosquejo'} onClick={() => setActiveTab('bosquejo')} icon={<Pencil />} label="BOSQUEJO" /><BottomNavItem active={activeTab === 'design'} onClick={() => setActiveTab('design')} icon={<Layout />} label="DISEÑO" /><BottomNavItem active={activeTab === 'catalog'} onClick={() => setActiveTab('catalog')} icon={<Component />} label="MIS MÓDULOS" /><BottomNavItem active={activeTab === 'quote'} onClick={() => setActiveTab('quote')} icon={<ShoppingCart />} label="PRECIOS" /><BottomNavItem active={activeTab === 'listado'} onClick={() => setActiveTab('listado')} icon={<Table />} label="LISTADO" badge={lista.piezas.length > 0 ? lista.piezas.reduce((a, p) => a + p.quantity, 0).toString() : bom ? bom.pieces.length.toString() : undefined} /><BottomNavItem active={activeTab === 'laminas'} onClick={() => setActiveTab('laminas')} icon={<LayoutGrid />} label="LÁMINAS" /><BottomNavItem active={activeTab === 'planos'} onClick={() => setActiveTab('planos')} icon={<FileText />} label="PLANOS" /><BottomNavItem active={activeTab === 'render'} onClick={() => setActiveTab('render')} icon={<ImageIcon />} label="RENDER" /><BottomNavItem active={activeTab === 'config'} onClick={() => setActiveTab('config')} icon={<Settings />} label="AJUSTES" /></nav>
     </div>
   );
 }

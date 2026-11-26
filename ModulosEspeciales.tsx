@@ -30,17 +30,17 @@ const Num: React.FC<{ label: string; value: number; onChange: (n: number) => voi
   const [txt, setTxt] = useState<string | null>(null);
   return (
     <label className="block">
-      <span className="text-[9px] font-black text-slate-400 uppercase block mb-1">{label}</span>
+      <span className="text-xs font-medium text-slate-600 block mb-1">{label}</span>
       <input type="text" inputMode="numeric" value={txt ?? String(value)}
         onChange={e => setTxt(e.target.value.replace(/[^\d]/g, ''))}
         onBlur={() => { if (txt !== null) { const n = parseInt(txt, 10); onChange(isNaN(n) ? 0 : n); setTxt(null); } }}
         onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-slate-800" />
+        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-500" />
     </label>
   );
 };
 const Chip: React.FC<{ on: boolean; onClick: () => void; children: React.ReactNode }> = ({ on, onClick, children }) => (
-  <button type="button" onClick={onClick} className={`rounded-xl px-3 py-2 text-xs font-black border ${on ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{children}</button>
+  <button type="button" onClick={onClick} className={`rounded-xl px-3 py-1.5 text-xs border transition-colors ${on ? 'text-indigo-600 bg-indigo-50 border-indigo-200 font-semibold' : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 font-medium'}`}>{children}</button>
 );
 
 const nuevo = (): ModuloEspecial => ({ id: '', nombre: '', nivel: 'LOWER', ancho: 600, alto: 800, fondo: 570, frente: 'puertas', cajones: 3, platero: false });
@@ -71,16 +71,16 @@ export const ModulosEspeciales: React.FC<{
   };
 
   return (
-    <div className="max-w-4xl space-y-6">
-      <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
+    <div className="space-y-6">
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 space-y-4">
         <div>
-          <div className="text-sm font-black text-slate-800 uppercase tracking-tight">{editando ? 'Editar módulo' : 'Crear un módulo a tu medida'}</div>
-          <div className="text-[11px] font-bold text-slate-400">Ponle nombre, medidas y qué lleva el frente; se guarda aquí para usarlo en cualquier diseño.</div>
+          <div className="text-base font-semibold tracking-tight text-slate-900">{editando ? 'Editar módulo' : 'Crear un módulo a tu medida'}</div>
+          <div className="text-xs text-slate-500 mt-0.5">Ponle nombre, medidas y qué lleva el frente; se guarda aquí para usarlo en cualquier diseño.</div>
         </div>
         <label className="block">
-          <span className="text-[9px] font-black text-slate-400 uppercase block mb-1">Nombre</span>
+          <span className="text-xs font-medium text-slate-600 block mb-1">Nombre</span>
           <input value={f.nombre} onChange={e => setF(x => ({ ...x, nombre: e.target.value }))} placeholder="Ej: Cajonero de 45, Torre de despensa, Bar"
-            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-slate-800" />
+            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-500" />
         </label>
         <div className="flex flex-wrap gap-2">
           {(Object.keys(NIVELES) as NivelEspecial[]).map(n => <Chip key={n} on={f.nivel === n} onClick={() => cambiarNivel(n)}>{NIVELES[n].nombre}</Chip>)}
@@ -91,44 +91,44 @@ export const ModulosEspeciales: React.FC<{
           <Num label="Fondo (mm)" value={f.fondo} onChange={n => setF(x => ({ ...x, fondo: n }))} />
         </div>
         <div className="space-y-2">
-          <div className="text-[9px] font-black text-slate-400 uppercase">Qué lleva el frente</div>
+          <div className="text-xs font-medium text-slate-600">Qué lleva el frente</div>
           <div className="flex flex-wrap items-center gap-2">
             {(Object.keys(FRENTES) as FrenteEspecial[]).map(k => <Chip key={k} on={f.frente === k} onClick={() => setF(x => ({ ...x, frente: k }))}>{FRENTES[k]}</Chip>)}
             {f.nivel === 'UPPER' && f.frente === 'puertas' && <Chip on={f.platero} onClick={() => setF(x => ({ ...x, platero: !x.platero }))}>Con platero</Chip>}
           </div>
         </div>
         <div className="flex flex-wrap gap-2 pt-1">
-          <button disabled={!valido} onClick={guardarForm} className="rounded-xl px-5 py-2.5 text-sm font-black bg-indigo-600 text-white disabled:opacity-40">{editando ? 'Guardar cambios' : 'Guardar en Mis módulos'}</button>
-          {(editando || f.nombre) && <button onClick={() => setF(nuevo())} className="rounded-xl px-5 py-2.5 text-sm font-black border border-slate-200 text-slate-700">Limpiar</button>}
+          <button disabled={!valido} onClick={guardarForm} className="rounded-xl px-5 py-2.5 text-sm font-medium bg-slate-900 hover:bg-slate-800 text-white disabled:opacity-40 transition-colors">{editando ? 'Guardar cambios' : 'Guardar en biblioteca'}</button>
+          {(editando || f.nombre) && <button onClick={() => setF(nuevo())} className="rounded-xl px-5 py-2.5 text-sm font-medium bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 transition-colors">Limpiar</button>}
         </div>
       </div>
 
       <div className="space-y-3">
-        <div className="text-[10px] font-black text-slate-400 uppercase px-1">Guardados · {lista.length}</div>
-        {lista.length === 0 && <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-6 text-center text-[12px] font-bold text-slate-400">Aún no hay módulos guardados. Crea uno arriba, o guarda uno de tu diseño.</div>}
+        <div className="text-xs font-semibold tracking-tight text-slate-900 px-1">Guardados · {lista.length}</div>
+        {lista.length === 0 && <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-6 text-center text-xs text-slate-500">Aún no hay módulos guardados. Crea uno arriba, o guarda uno de tu diseño.</div>}
         {lista.map(m => (
-          <div key={m.id} className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-wrap items-center gap-3">
+          <div key={m.id} className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 flex flex-wrap items-center gap-3">
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-black text-slate-800 uppercase tracking-tight truncate">{m.nombre}</div>
-              <div className="text-[11px] font-bold text-slate-400">{NIVELES[m.nivel].nombre} · {fmt(m.ancho)} × {fmt(m.alto)} × {fmt(m.fondo)} mm · {FRENTES[m.frente].toLowerCase()}{m.platero ? ' con platero' : ''}</div>
+              <div className="text-sm font-semibold text-slate-900 truncate">{m.nombre}</div>
+              <div className="text-xs text-slate-500">{NIVELES[m.nivel].nombre} · {fmt(m.ancho)} × {fmt(m.alto)} × {fmt(m.fondo)} mm · {FRENTES[m.frente].toLowerCase()}{m.platero ? ' con platero' : ''}</div>
             </div>
-            <button onClick={() => onAgregar(m)} className="rounded-xl px-4 py-2 text-xs font-black bg-indigo-600 text-white">Agregar al diseño</button>
-            <button onClick={() => { setF(m); window.scrollTo?.({ top: 0 }); }} className="rounded-xl px-3 py-2 text-xs font-black border border-slate-200 text-slate-700">Editar</button>
-            <button onClick={() => setLista(l => l.filter(x => x.id !== m.id))} className="rounded-xl px-3 py-2 text-xs font-black text-rose-600">Quitar</button>
+            <button onClick={() => onAgregar(m)} className="rounded-xl px-4 py-2 text-xs font-medium bg-slate-900 hover:bg-slate-800 text-white transition-colors">Agregar al diseño</button>
+            <button onClick={() => { setF(m); window.scrollTo?.({ top: 0 }); }} className="rounded-xl px-3 py-2 text-xs font-medium bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 transition-colors">Editar</button>
+            <button onClick={() => setLista(l => l.filter(x => x.id !== m.id))} className="rounded-xl px-3 py-2 text-xs font-medium text-rose-600 hover:text-rose-700">Quitar</button>
           </div>
         ))}
       </div>
 
       {delDiseno.length > 0 && (
         <div className="space-y-2">
-          <div className="text-[10px] font-black text-slate-400 uppercase px-1">Guardar uno del diseño abierto</div>
+          <div className="text-xs font-semibold tracking-tight text-slate-900 px-1">Guardar uno del diseño abierto</div>
           <div className="flex flex-wrap gap-2">
             {delDiseno.map(d => (
               <button key={d.uniqueId} onClick={() => desdeDiseno(d)} title={`${d.name} · ${Math.round(d.width)} × ${Math.round(d.height)} × ${Math.round(d.depth)} mm`}
-                className="rounded-xl px-3 py-2 text-xs font-black border border-slate-200 bg-white text-slate-700 hover:border-indigo-400">{d.label ?? ''} {Math.round(d.width)}×{Math.round(d.height)}</button>
+                className="rounded-xl px-3 py-2 text-xs font-medium border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors">{d.label ?? ''} {Math.round(d.width)}×{Math.round(d.height)}</button>
             ))}
           </div>
-          <div className="text-[10px] font-bold text-slate-400 px-1">Al elegirlo se carga arriba con sus medidas: ajústalo, ponle nombre y guárdalo.</div>
+          <div className="text-xs text-slate-500 px-1">Al elegirlo se carga arriba con sus medidas: ajústalo, ponle nombre y guárdalo.</div>
         </div>
       )}
     </div>

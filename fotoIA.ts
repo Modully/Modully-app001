@@ -1,51 +1,82 @@
+import { GoogleGenAI } from '@google/genai';
 import { ia, iaDisponible } from './nube';
 
 /**
- * Fase 4 · Foto con IA: convierte la vista del render en una foto realista.
- * La imagen del diseño sale hacia el servicio de Gemini (Google) con la clave GEMINI_API_KEY de `.env.local`; cada imagen tiene costo.
+ * Fase 4 · Foto con IA: convierte la vista 3D del render en una fotografía arquitectónica realista.
+ * Usa la clave GEMINI_API_KEY de `.env.local` / `VITE_GEMINI_API_KEY` si está configurada, o el proxy de Supabase si no.
  */
 
-// se prueban en orden: si la cuenta no tiene acceso al primero, se intenta con el siguiente
+// Se prueban en orden: si la cuenta no tiene acceso al primero, se intenta con el siguiente
 const MODELOS = ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview'];
 
-export const claveIAConfigurada = (): boolean => iaDisponible(); // la clave ahora vive en el servidor (Supabase)
+const claveLocal = (): string => (
+  (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) ||
+  process.env.GEMINI_API_KEY ||
+  process.env.API_KEY ||
+  ''
+).trim();
 
-export interface PedidoFoto { imagenPng: string; producto: string; fachada: string; meson: string; ambiente: string; extra?: string }
+export const claveIAConfigurada = (): boolean => Boolean(claveLocal()) || iaDisponible();
 
-export function instruccionFoto(p: Omit<PedidoFoto, 'imagenPng'>): string {
-  return [
-    `Convierte esta imagen 3D de ${p.producto} en una fotografía de interiorismo realista.`,
-    'Conserva EXACTAMENTE la geometría: la misma cantidad de módulos, puertas y cajones, las mismas proporciones, la misma posición de cada mueble y el mismo punto de vista de la cámara. No agregues ni quites muebles.',
-    `Fachadas (puertas y frentes) en melamina ${p.fachada}, con su veta y textura reales.`,
-    p.meson ? `Mesón en ${p.meson}.` : '',
-    `Ambiente: ${p.ambiente}. Luz natural suave, sombras reales, piso y pared con materiales creíbles.`,
-    'Puedes agregar detalles pequeños que no cambien el mueble: manijas o perfil de agarre discretos, grifería, algún objeto decorativo.',
-    p.extra ?? '',
-    'Sin texto, sin cotas, sin marcas de agua.',
-  ].filter(Boolean).join(' ');
+export interface PedidoFoto {
+  imagenPng: string;
+  pisoPrompt?: string;
+  luzPrompt?: string;
+  producto?: string;
+  fachada?: string;
+  meson?: string;
+  ambiente?: string;
+  extra?: string;
 }
 
-/** Devuelve la foto como data URL (PNG o JPG) */
+export function instruccionFoto(p: Omit<PedidoFoto, 'imagenPng'>): string {
+  const valorPiso = p.pisoPrompt || 'porcelanato beige mate de formato grande';
+  const valorLuz = p.luzPrompt || 'iluminación natural diurna suave entrando desde un lateral';
+  return [
+    'Convierte esta vista 3D de mobiliario en una fotografía arquitectónica fotorrealista de catálogo europeo.',
+    'REGLAS ESTRICTAS:',
+    '- Mantén EXACTAMENTE la misma geometría, cantidad de puertas, distribución, electrodomésticos y colores de los muebles de la imagen original. No agregues ni quites módulos, ni pongas decoración, platos ni plantas extra.',
+    '- Mejora los materiales a acabado real: melamina mate con textura sutil, veta de madera natural realista, acero inoxidable cepillado en nevera/campana, y mesón de cuarzo con brillo suave.',
+    `- Aplica un piso de ${valorPiso} con reflejos suaves y sombras de contacto reales debajo de los muebles.`,
+    `- Usa ${valorLuz} más luz LED cálida (3000K) continua y realista debajo de los muebles altos.`,
+    '- Nitidez fotográfica, encuadre limpio, estilo revista de diseño interior.',
+    p.extra?.trim() ? `- Nota adicional: ${p.extra.trim()}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+/** Devuelve la foto generada como data URL (PNG o JPG) */
 export async function fotoConIA(p: PedidoFoto): Promise<string> {
-  if (!claveIAConfigurada()) throw new Error('Falta configurar Supabase en .env.local.');
-  const ai = ia; // Gemini por el servidor: la clave no viaja en la app
+  const apiKey = claveLocal();
+  if (!apiKey && !iaDisponible()) {
+    throw new Error('Configura GEMINI_API_KEY en .env.local o conecta Supabase para generar fotos con IA.');
+  }
+
   const data = p.imagenPng.replace(/^data:image\/\w+;base64,/, '');
+  const prompt = instruccionFoto(p);
+  const contents = [{ role: 'user', parts: [{ inlineData: { mimeType: 'image/png', data } }, { text: prompt }] }];
+  const directAI = apiKey ? new GoogleGenAI({ apiKey }) : null;
+
   let ultimo: unknown = null;
   for (const model of MODELOS) {
     try {
-      const r = await ai.models.generateContent({
-        model,
-        contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'image/png', data } }, { text: instruccionFoto(p) }] }],
-      });
+      const r = directAI
+        ? await directAI.models.generateContent({ model, contents, config: { responseModalities: ['IMAGE', 'TEXT'] } })
+        : await ia.models.generateContent({ model, contents });
       const parte = r.candidates?.[0]?.content?.parts?.find(x => x.inlineData?.data);
       if (parte?.inlineData?.data) return `data:${parte.inlineData.mimeType ?? 'image/png'};base64,${parte.inlineData.data}`;
       ultimo = new Error('El servicio respondió sin imagen.');
-    } catch (e) { ultimo = e; }
+    } catch (e) {
+      ultimo = e;
+    }
   }
+
   const msg = ultimo instanceof Error ? ultimo.message : String(ultimo);
-  // la cuenta gratuita de Gemini no incluye generación de imágenes (cuota 0): hay que activar la facturación
-  if (/429|quota|RESOURCE_EXHAUSTED/i.test(msg)) throw new Error('Tu clave funciona, pero la cuenta gratuita de Gemini no incluye generar imágenes (cuota en 0). Activa la facturación del proyecto en Google AI Studio y vuelve a intentar.');
-  if (/API key not valid|PERMISSION_DENIED/i.test(msg)) throw new Error('Gemini rechazó la clave del servidor. Revísala en Supabase → Edge Functions → Secrets.');
+  if (/429|quota|RESOURCE_EXHAUSTED/i.test(msg)) {
+    throw new Error('La cuota de generación de imágenes en Gemini está en 0 o agotada (429). Verifica la facturación del proyecto en Google AI Studio.');
+  }
+  if (/API key not valid|API_KEY_INVALID|PERMISSION_DENIED/i.test(msg)) {
+    throw new Error('Gemini rechazó la clave API configurada. Verifica GEMINI_API_KEY en .env.local.');
+  }
   if (/Entra con tu cuenta|no está puesta en el servidor|Supabase/i.test(msg)) throw new Error(msg);
   throw new Error(`No se pudo generar la foto: ${msg.slice(0, 300)}`);
 }

@@ -2,8 +2,11 @@
 import React, { useMemo, useRef, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Canvas, useFrame, useThree, ThreeEvent } from '@react-three/fiber';
-import { OrbitControls, Grid, Environment, Text, Edges, PerspectiveCamera, OrthographicCamera, Html as DreiHtml, Line } from '@react-three/drei';
+import { OrbitControls, Grid, Environment, Lightformer, ContactShadows, Text, Edges, PerspectiveCamera, OrthographicCamera, Html as DreiHtml, Line } from '@react-three/drei';
 import * as THREE from 'three';
+import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
+
+RectAreaLightUniformsLib.init();
 import { IslandItem, KitchenModule, Appliance, ApplianceType, LayoutType, WallName } from './types';
 import type { CounterEdge, CounterExtras, closetDerived } from './boxes';
 import { closetSectionOf, closetCajoneroIndex, closetTorreIndex, fitRows, fitCells, fitInsets, fitBodyParts, doorOpening } from './boxes';
@@ -20,10 +23,20 @@ const fachadaDe = (colores: { fachada: string; fachadaMA?: string; fachadaAL?: s
       : colores?.puentes?.includes(id) ? colores.fachadaPU ?? colores.fachadaMA ?? colores.fachada
         : aereo ? colores?.fachadaMA ?? colores?.fachada : colores?.fachada;
 
-/** Material con veta: se vuelve a crear cuando cambia entre liso y con veta (three no recompila el material al agregarle la textura) */
-const MatVeta: React.FC<{ hex: string } & Record<string, any>> = ({ hex, ...resto }) => {
-  const p = vetaProps(hex);
-  return <meshStandardMaterial key={p.map ? 'veta' : 'liso'} {...p} {...resto} />;
+/** Material con veta: melamina mate (#F4F4F2, sin quemarse) o veta de madera vertical (roughness 0.65) */
+const normBlanco = (hex: string) => (/^#(ffffff|f8fafc|f4f4f1|f9fafb)$/i.test(hex.trim()) ? '#F4F4F2' : hex);
+const MatVeta: React.FC<{ hex: string } & Record<string, any>> = ({ hex, roughness, metalness, ...resto }) => {
+  const safeHex = normBlanco(hex);
+  const p = vetaProps(safeHex);
+  return (
+    <meshStandardMaterial
+      key={p.map ? 'veta' : 'liso'}
+      {...p}
+      roughness={p.map ? 0.65 : (roughness ?? 0.72)}
+      metalness={p.map ? 0.0 : (metalness ?? 0.02)}
+      {...resto}
+    />
+  );
 };
 import { PUNTO_INFO, PuntoAdecuacion, cotasPorElectro, siglaPunto } from './puntos';
 import { X, Plus, Ruler, ArrowUp, ArrowLeft, ArrowRight, ArrowDownLeft } from 'lucide-react';
@@ -1532,9 +1545,9 @@ const JunctionControl3D: React.FC<JunctionControl3DProps> = ({ leftModule, right
 };
 
 const Appliance3D: React.FC<{ appliance: Appliance, position: [number, number, number], rotation?: [number, number, number], spaceHeight: number, zh: number, basinDepth?: number, faucetFront?: boolean, onGrab?: (e: ThreeEvent<PointerEvent>) => void }> = ({ appliance, position, rotation = [0, 0, 0], spaceHeight, zh, basinDepth = 0.02, faucetFront = false, onGrab }) => {
-  const color = appliance.type === 'fridge' ? COLORS.FRIDGE : (appliance.type === 'stove' ? '#0a0a0a' : appliance.type === 'pantry' ? '#d1d5db' : COLORS.SINK);
-  const metalness = (appliance.type === 'fridge' || appliance.type === 'sink') ? 0.6 : 0.4;
-  const roughness = 0.2;
+  const color = appliance.type === 'fridge' ? COLORS.FRIDGE : (appliance.type === 'stove' ? '#0a0a0a' : appliance.type === 'pantry' ? '#d1d5db' : '#B8BCC0');
+  const metalness = (appliance.type === 'fridge' || appliance.type === 'sink') ? 0.75 : 0.4;
+  const roughness = (appliance.type === 'fridge' || appliance.type === 'sink') ? 0.32 : 0.2;
 
   const isDetailed = ['hood-under', 'hood-island', 'sink', 'stove', 'pantry'].includes(appliance.type);
 
@@ -1622,7 +1635,7 @@ const Appliance3D: React.FC<{ appliance: Appliance, position: [number, number, n
         const bh = Math.max(basinDepth - 0.002, 0.01);
         const t = 0.002;                            // espesor de la lámina
         const rim = 0.02;                           // ancho del borde que apoya sobre el mesón
-        const steel = <meshStandardMaterial color="#c9ced4" metalness={0.85} roughness={0.25} />;
+        const steel = <meshStandardMaterial color="#B8BCC0" metalness={0.75} roughness={0.32} />;
         return (
           <group>
             {/* Cubeta: fondo y cuatro paredes */}
@@ -1638,10 +1651,10 @@ const Appliance3D: React.FC<{ appliance: Appliance, position: [number, number, n
             <mesh position={[-cw / 2 - rim / 2, 0.002, 0]}><boxGeometry args={[rim, 0.004, cd]} />{steel}</mesh>
             {/* Grifería detrás de la cubeta (contra el muro). En la isla o península va al frente, vuelta hacia adentro: el pico apunta al muro A */}
             <group position={[0, 0, (faucetFront ? 1 : -1) * (cd / 2 + rim + 0.03)]} rotation={[0, faucetFront ? Math.PI : 0, 0]}>
-              <mesh><cylinderGeometry args={[0.035, 0.04, 0.04, 16]} /><meshStandardMaterial color="#eee" metalness={1} /></mesh>
-              <mesh position={[0, 0.17, 0]}><cylinderGeometry args={[0.015, 0.015, 0.34, 16]} /><meshStandardMaterial color="#eee" metalness={1} /></mesh>
-              <mesh position={[0, 0.34, 0.07]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.012, 0.012, 0.14, 16]} /><meshStandardMaterial color="#eee" metalness={1} /></mesh>
-              <mesh position={[0.05, 0.08, 0]} rotation={[0, 0, Math.PI / 2]}><boxGeometry args={[0.03, 0.08, 0.02]} /><meshStandardMaterial color="#ccc" metalness={0.8} /></mesh>
+              <mesh><cylinderGeometry args={[0.035, 0.04, 0.04, 16]} /><meshStandardMaterial color="#C8CCD0" metalness={0.8} roughness={0.25} /></mesh>
+              <mesh position={[0, 0.17, 0]}><cylinderGeometry args={[0.015, 0.015, 0.34, 16]} /><meshStandardMaterial color="#C8CCD0" metalness={0.8} roughness={0.25} /></mesh>
+              <mesh position={[0, 0.34, 0.07]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.012, 0.012, 0.14, 16]} /><meshStandardMaterial color="#C8CCD0" metalness={0.8} roughness={0.25} /></mesh>
+              <mesh position={[0.05, 0.08, 0]} rotation={[0, 0, Math.PI / 2]}><boxGeometry args={[0.03, 0.08, 0.02]} /><meshStandardMaterial color="#B8BCC0" metalness={0.75} roughness={0.32} /></mesh>
             </group>
           </group>
         );
@@ -3501,7 +3514,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   return (
     // z-0 + isolate crean un contexto de apilamiento propio: las capas altas de los controles Html (hasta 100)
     // quedan contenidas dentro de la escena y no se pintan por encima de los paneles de herramientas (z-45).
-    <div className="absolute inset-0 z-0 isolate overflow-hidden bg-slate-100">
+    <div className="absolute inset-0 z-0 isolate overflow-hidden bg-[#F3F4F6]">
       {fitApi && fitForm && boxes.some(x => x.id === fitForm) && (
         <FitBodyForm
           key={fitForm}
@@ -3519,7 +3532,18 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         />
       )}
       <Canvas
-        shadows
+        shadows="soft"
+        gl={{
+          antialias: true,
+          preserveDrawingBuffer: true,
+          toneMapping: THREE.ACESFilmicToneMapping,
+          toneMappingExposure: 1.05,
+          outputColorSpace: THREE.SRGBColorSpace,
+        }}
+        onCreated={({ gl }) => {
+          gl.shadowMap.enabled = true;
+          gl.shadowMap.type = THREE.PCFSoftShadowMap;
+        }}
         camera={{ position: [5, 4, 5], fov: 45 }}
         onPointerMissed={(e) => {
           // Un clic en vacío deselecciona; los clics sobre los controles HTML (editor, flechas) no cuentan
@@ -3539,7 +3563,18 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         {isOrtho
           ? <OrthographicCamera makeDefault position={[0, 10, 0]} near={0.1} far={100} />
           : <PerspectiveCamera makeDefault position={[5, 4, 5]} fov={45} />}
-        <ambientLight intensity={0.6} /><directionalLight position={[5, 10, 5]} intensity={1.5} castShadow shadow-mapSize={[1024, 1024]} /><Environment preset="apartment" /><CameraController viewMode={viewMode} plan={planFrame} frontal={frontalFrame} />
+        <color attach="background" args={[viewMode === 'plan' ? '#ffffff' : '#EDEBE6']} />
+        <hemisphereLight args={['#fffdf9', '#d8d1c7', 0.48]} />
+        <directionalLight position={[5.5, 9.5, 6.5]} intensity={1.35} castShadow shadow-mapSize={[2048, 2048]} shadow-bias={-0.0005} shadow-radius={4}>
+          <orthographicCamera attach="shadow-camera" args={[-8, 8, 8, -8, 0.1, 30]} />
+        </directionalLight>
+        <Environment frames={1} resolution={256} environmentIntensity={0.45}>
+          <color attach="background" args={['#e5e3de']} />
+          <Lightformer form="rect" intensity={1.6} color="#fffaf2" position={[0, 6, 1]} rotation={[Math.PI / 2, 0, 0]} scale={[12, 6, 1]} />
+          <Lightformer form="rect" intensity={0.9} color="#eef4fb" position={[-6, 3, -2]} rotation={[0, Math.PI / 2, 0]} scale={[6, 4, 1]} />
+          <Lightformer form="rect" intensity={0.8} color="#fff7ed" position={[6, 3, -2]} rotation={[0, -Math.PI / 2, 0]} scale={[6, 4, 1]} />
+        </Environment>
+        <CameraController viewMode={viewMode} plan={planFrame} frontal={frontalFrame} />
         {/* Planta: con puntos de adecuación visibles, sus cotas desde el 0 (con el nombre del electrodoméstico) reemplazan las cotas
             de los electrodomésticos y la del muro; sin puntos queda la cota del muro (editable con un clic) */}
         {viewMode === 'plan' && !(vis.puntos !== false && puntos.length > 0) && <WallDimensions layout={layout} lArm={lArm} appliances={[]} wallA={wallA} wallB={wallB} wallC={wallC} offsetZ={offsetZ} onEditWall={onEditWall} />}
@@ -3555,9 +3590,28 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           <>
             <mesh position={[slabX, -0.06, slabZ]} receiveShadow>
               <boxGeometry args={[slabW, 0.12, slabD]} />
-              <meshStandardMaterial color="#f1f5f9" roughness={0.8} />
-              {viewMode !== 'frontal' && <Edges color="#cbd5e1" />}
+              <meshStandardMaterial color="#EDEBE6" roughness={0.88} metalness={0.0} />
+              {viewMode !== 'frontal' && <Edges color="#d6d3cb" />}
             </mesh>
+            <ContactShadows position={[slabX, 0.002, slabZ]} scale={Math.max(slabW, slabD, 3) * 2.2} blur={2.4} opacity={0.25} far={1.2} />
+            {vis.upper !== false && boxes.filter(b => b.kind === 'upper').map((u, idx) => {
+              const alongA = u.wall === 'A';
+              const cx = u.x + u.sx / 2;
+              const cy = u.wall === 'A' ? u.y + 45 : u.wall === 'B' ? u.y + u.sy / 2 : u.y + u.sy / 2;
+              const cxB = u.wall === 'B' ? u.x + 45 : u.wall === 'C' ? u.x + u.sx - 45 : cx;
+              const [lx, lz] = toWorldXZ(cxB, cy);
+              const rotY = u.wall === 'B' ? Math.PI / 2 : u.wall === 'C' ? -Math.PI / 2 : 0;
+              const wLen = Math.max(0.12, (alongA ? u.sx : u.sy) / 1000 - 0.02);
+              return (
+                <group key={`led-u-${idx}`} position={[lx, u.z / 1000 - 0.003, lz]} rotation={[0, rotY, 0]}>
+                  <mesh>
+                    <boxGeometry args={[wLen, 0.004, 0.014]} />
+                    <meshBasicMaterial color="#FFE8C8" />
+                  </mesh>
+                  <rectAreaLight color="#FFE8C8" intensity={1.35} width={wLen} height={0.045} position={[0, -0.004, 0]} rotation={[-Math.PI / 2 + 0.2, 0, 0]} />
+                </group>
+              );
+            })}
             {/* El techo es translúcido: no tapa las herramientas y medidas (no cuenta al ocultar lo que no se ve). En la vista frontal no se dibuja: solo sumaba líneas */}
             {viewMode !== 'frontal' && (
               // solo el contorno: con relleno blanco translúcido, sobre los muebles altos (la sobrenevera) parecía una tabla flotando encima
@@ -4781,7 +4835,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
 
         <mesh position={[0, -0.001, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
           <planeGeometry args={[50, 50]} />
-          <meshStandardMaterial color={viewMode === 'plan' ? '#ffffff' : '#f8fafc'} />
+          <meshStandardMaterial color={viewMode === 'plan' ? '#ffffff' : '#EDEBE6'} roughness={0.9} metalness={0.0} />
         </mesh>
         <OrbitControls ref={controlsRef} makeDefault enableDamping dampingFactor={0.1} maxPolarAngle={Math.PI / 2.1} />
         {measureMode && <MeasureTool corners={measureCorners} measures={measures} onChange={setMeasures} />}

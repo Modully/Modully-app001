@@ -50,7 +50,7 @@ export const COLORS = {
   UPPER: '#A67C52',
   LOWER: '#8B7355',
   TALL: '#6F5436',
-  FRIDGE: '#E8E8E8',
+  FRIDGE: '#B8BCC0',
   STOVE: '#2C2C2C',
   SINK: '#C0C0C0',
   ISLAND: '#7A5C3D',

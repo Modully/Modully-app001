@@ -9,13 +9,13 @@ const Num: React.FC<{ label: string; value: number; min?: number; onChange: (n: 
   const [txt, setTxt] = useState<string | null>(null);
   return (
     <label className="block">
-      <span className="text-[9px] font-black text-slate-400 uppercase block mb-1">{label}</span>
+      <span className="text-xs font-medium text-slate-600 block mb-1">{label}</span>
       <input
         type="text" inputMode="numeric" value={txt ?? String(value)}
         onChange={e => setTxt(e.target.value.replace(/[^\d]/g, ''))}
         onBlur={() => { if (txt !== null) { const n = parseInt(txt, 10); if (!isNaN(n) && n >= min) onChange(n); setTxt(null); } }}
         onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-slate-800"
+        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-500"
       />
     </label>
   );
@@ -75,22 +75,22 @@ export const Optimizador: React.FC<{ piezas: Pieza[] }> = ({ piezas }) => {
   const totalLaminas = resultados.reduce((a, x) => a + x.r.laminas.length, 0);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4">
+    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 space-y-4">
       <div>
-        <div className="text-sm font-black text-slate-800 uppercase tracking-tight">Optimización de lámina</div>
-        <div className="text-[11px] font-bold text-slate-400">Cortes de lado a lado (guillotina). El largo de cada pieza va en el sentido de la veta de la lámina.</div>
+        <div className="text-base font-semibold tracking-tight text-slate-900">Optimización de lámina</div>
+        <div className="text-xs text-slate-500">Cortes de lado a lado (guillotina). El largo de cada pieza va en el sentido de la veta de la lámina.</div>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
         <Num label="Largo de lámina (mm)" value={base.largo} min={300} onChange={n => setBase(b => ({ ...b, largo: n }))} />
         <Num label="Ancho de lámina (mm)" value={base.ancho} min={300} onChange={n => setBase(b => ({ ...b, ancho: n }))} />
         <Num label="Sierra (mm)" value={base.sierra} onChange={n => setBase(b => ({ ...b, sierra: n }))} />
         <Num label="Refilado por borde (mm)" value={base.refilado} onChange={n => setBase(b => ({ ...b, refilado: n }))} />
-        <button onClick={() => setBase(b => ({ ...b, respetarVeta: !b.respetarVeta }))} className={`rounded-xl px-3 py-2 text-xs font-black border ${base.respetarVeta ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>
+        <button onClick={() => setBase(b => ({ ...b, respetarVeta: !b.respetarVeta }))} className={`rounded-xl px-3 py-2 text-xs border transition-colors ${base.respetarVeta ? 'text-indigo-600 bg-indigo-50 border-indigo-200 font-semibold' : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 font-medium'}`}>
           {base.respetarVeta ? 'Respeta la veta' : 'Gira piezas (sin veta)'}
         </button>
       </div>
 
-      <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2 text-sm font-black text-slate-700">
+      <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-900">
         Total: <span className="text-indigo-600">{totalLaminas} {totalLaminas === 1 ? 'lámina' : 'láminas'}</span> en {resultados.length} {resultados.length === 1 ? 'material' : 'materiales'}
       </div>
 

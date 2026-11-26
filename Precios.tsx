@@ -11,8 +11,8 @@ import { guardarPerfilCostos, leerPerfilCostos, nubeConfigurada, sesionActual } 
  */
 
 const CLAVE_LOCAL = 'modully.costos.v1';
-const campo = 'w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-indigo-500';
-const titulo = 'text-[10px] font-black text-slate-400 uppercase tracking-widest';
+const campo = 'w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500';
+const titulo = 'text-xs font-semibold tracking-tight text-slate-900';
 const pct = (f: number) => (f * 100).toLocaleString('es-CO', { maximumFractionDigits: 1 });
 
 /** Número que se escribe con libertad y se aplica al salir del campo o con Enter */
@@ -43,7 +43,8 @@ export const Precios: React.FC<{
   nombreResto: string;                 // nombre de lo que no es un módulo: "Zócalo, rellenos y mesón", "Closet"…
   datos: ProductoCotizacion;           // cliente, proyecto y producto de lo que está abierto
   onGuardarCotizacion?: (archivo: Blob, nombre: string) => Promise<void>; // guardarla en el producto del proyecto
-}> = ({ boxes, ctx, lista, modulos, nombreResto, datos, onGuardarCotizacion }) => {
+  onContinuarEntregables?: () => void; // pasa al Paso 4 (Entregables)
+}> = ({ boxes, ctx, lista, modulos, nombreResto, datos, onGuardarCotizacion, onContinuarEntregables }) => {
   const [vista, setVista] = useState<'costeo' | 'costos' | 'cotizacion'>('costeo');
   const [tabla, setTabla] = useState<TablaCostos>(COSTOS_INICIALES);
   const [empresa, setEmpresa] = useState<Empresa>(EMPRESA_INICIAL);
@@ -93,83 +94,107 @@ export const Precios: React.FC<{
   const sinPiezas = lista.piezas.length === 0;
 
   return (
-    <div className="space-y-4 max-w-5xl">
-      <div className="flex flex-wrap gap-2">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
         {([['costeo', 'Costeo'], ['costos', 'Mis costos'], ['cotizacion', 'Cotización']] as const).map(([k, l]) => (
-          <button key={k} onClick={() => setVista(k)} className={`rounded-xl px-4 py-2 text-xs font-black border ${vista === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{l}</button>
+          <button key={k} onClick={() => setVista(k)} className={`rounded-xl px-4 py-2 text-xs border transition-colors ${vista === k ? 'text-indigo-600 bg-indigo-50 border-indigo-200 font-semibold' : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 font-medium'}`}>{l}</button>
         ))}
-        {estadoGuardado && <span className="self-center text-[10px] font-bold text-slate-400">{estadoGuardado}</span>}
+        {estadoGuardado && <span className="self-center text-xs text-slate-500 ml-1">{estadoGuardado}</span>}
       </div>
 
       {costeo.faltan.length > 0 && !sinPiezas && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-900 space-y-1">
-          <div>Faltan precios que este diseño usa (cuentan como $0): {costeo.faltan.join(' · ')}.</div>
-          {vista !== 'costos' && <button onClick={() => setVista('costos')} className="font-black text-amber-900 underline">Completar en Mis costos</button>}
+        <div className="rounded-2xl border border-amber-200/70 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-900 flex flex-wrap items-center justify-between gap-2">
+          <span>Faltan precios para este diseño ({costeo.faltan.join(' · ')}). Se calculan en $0.</span>
+          {vista !== 'costos' && <button onClick={() => setVista('costos')} className="font-semibold text-amber-900 underline shrink-0">Completar en Mis costos</button>}
         </div>
       )}
 
       {vista === 'costeo' && (sinPiezas ? (
-        <div className="rounded-2xl bg-white border border-slate-200 p-5 text-sm font-bold text-slate-500">Para costear, convierte el diseño a módulos en Diseño: el costo sale de sus piezas reales.</div>
-      ) : <VistaCosteo costeo={costeo} ganancia={tablaOk.ganancia} onGanancia={g => setT({ ganancia: g })} />)}
+        <div className="rounded-2xl bg-white border border-slate-200/80 shadow-sm p-6 text-sm text-slate-500">Para costear, convierte el diseño a módulos en Diseño 3D: el costo sale de sus piezas reales.</div>
+      ) : <VistaCosteo costeo={costeo} ganancia={tablaOk.ganancia} onGanancia={g => setT({ ganancia: g })} onContinuarEntregables={onContinuarEntregables} />)}
 
       {vista === 'costos' && <VistaCostos tabla={tablaOk} setT={setT} setTabla={setTabla} empresa={empresa} setEmpresa={setEmpresa} />}
 
       {vista === 'cotizacion' && (sinPiezas ? (
-        <div className="rounded-2xl bg-white border border-slate-200 p-5 text-sm font-bold text-slate-500">Convierte el diseño a módulos para armar la cotización.</div>
+        <div className="rounded-2xl bg-white border border-slate-200/80 shadow-sm p-6 text-sm text-slate-500">Convierte el diseño a módulos para armar la cotización.</div>
       ) : <VistaCotizacion costeo={costeo} empresa={empresa} datos={datos} onGuardar={onGuardarCotizacion} />)}
     </div>
   );
 };
 
 /* ---------------- Costeo ---------------- */
-const VistaCosteo: React.FC<{ costeo: ReturnType<typeof costear>; ganancia: number; onGanancia: (g: number) => void }> = ({ costeo, ganancia, onGanancia }) => {
+const VistaCosteo: React.FC<{ costeo: ReturnType<typeof costear>; ganancia: number; onGanancia: (g: number) => void; onContinuarEntregables?: () => void }> = ({ costeo, ganancia, onGanancia, onContinuarEntregables }) => {
   const [abierto, setAbierto] = useState<string | null>(null);
   const t = costeo.totales;
+  const margenPct = pct(t.precio > 0 ? t.ganancia / t.precio : 0);
   const partes = ([['Lámina', t.material, '#6366f1'], ['Canto', t.canto, '#a78bfa'], ['Herrajes', t.herraje, '#0ea5e9'], ['Mesón', t.meson, '#14b8a6'], ['Corte', t.corte, '#94a3b8'], ['Fabricación', t.fabricacion, '#f59e0b'], ['Instalación', t.instalacion, '#f97316']] as [string, number, string][]).filter(p => p[1] > 0);
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="rounded-2xl bg-white border border-slate-200 p-4"><div className={titulo}>Nos cuesta</div><div className="text-2xl font-black text-slate-800">{pesos(t.costo)}</div></div>
-        <div className="rounded-2xl bg-indigo-600 text-white p-4"><div className="text-[10px] font-black uppercase tracking-widest opacity-80">Precio de venta</div><div className="text-2xl font-black">{pesos(t.precio)}</div></div>
-        <div className="rounded-2xl bg-white border border-slate-200 p-4">
-          <div className={titulo}>Ganancia</div><div className="text-2xl font-black text-emerald-700">{pesos(t.ganancia)}</div>
-          <div className="text-[11px] font-bold text-slate-500">Ganas el {pct(t.precio > 0 ? t.ganancia / t.precio : 0)} % de lo que cobras <span className="text-slate-400">(equivale a +{pct(t.costo > 0 ? t.ganancia / t.costo : 0)} % sobre el costo)</span></div>
-          <label className="mt-1 flex items-center gap-2 text-[11px] font-bold text-slate-500">Ganancia sobre el precio de venta <span className="w-20"><Num value={Math.round(ganancia * 1000) / 10} onChange={n => onGanancia(Math.min(95, Math.max(0, n)) / 100)} sufijo="%" aria="Ganancia sobre el precio de venta" /></span></label>
+        <div className="rounded-2xl bg-white border border-slate-200/80 shadow-sm p-5">
+          <div className={titulo}>Nos cuesta</div>
+          <div className="text-2xl font-semibold tracking-tight text-slate-900 mt-1.5">{pesos(t.costo)}</div>
+        </div>
+        <div className="rounded-2xl bg-white border border-slate-200/80 shadow-sm p-5 flex flex-col justify-between gap-3">
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <span className={titulo}>Precio de venta</span>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                Margen {margenPct} %
+              </span>
+            </div>
+            <div className="text-3xl font-semibold tracking-tight text-slate-900 mt-1.5">{pesos(t.precio)}</div>
+          </div>
+          {onContinuarEntregables && (
+            <button
+              type="button"
+              onClick={onContinuarEntregables}
+              className="w-full rounded-xl px-4 py-2.5 text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white transition-colors shadow-sm"
+            >
+              Continuar a Entregables →
+            </button>
+          )}
+        </div>
+        <div className="rounded-2xl bg-white border border-slate-200/80 shadow-sm p-5">
+          <div className={titulo}>Ganancia</div>
+          <div className="text-2xl font-semibold tracking-tight text-emerald-700 mt-1.5">{pesos(t.ganancia)}</div>
+          <div className="text-xs text-slate-500 mt-0.5">Equivale a +{pct(t.costo > 0 ? t.ganancia / t.costo : 0)} % sobre el costo</div>
+          <label className="mt-2.5 flex items-center gap-2 text-xs text-slate-600">Margen deseado <span className="w-20"><Num value={Math.round(ganancia * 1000) / 10} onChange={n => onGanancia(Math.min(95, Math.max(0, n)) / 100)} sufijo="%" aria="Ganancia sobre el precio de venta" /></span></label>
         </div>
       </div>
 
-      <div className="rounded-2xl bg-white border border-slate-200 p-4 space-y-2">
+      <div className="rounded-2xl bg-white border border-slate-200/80 shadow-sm p-4 space-y-2.5">
         <div className={titulo}>De dónde sale el costo</div>
         <div className="flex h-3 rounded-full overflow-hidden bg-slate-100">{partes.map(([n, v, c]) => <div key={n} style={{ width: `${(v / (t.costo || 1)) * 100}%`, background: c }} title={`${n}: ${pesos(v)}`} />)}</div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-bold text-slate-600">{partes.map(([n, v, c]) => <span key={n} className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: c }} />{n} {pesos(v)} · {Math.round((v / (t.costo || 1)) * 100)} %</span>)}</div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">{partes.map(([n, v, c]) => <span key={n} className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: c }} />{n} {pesos(v)} · {Math.round((v / (t.costo || 1)) * 100)} %</span>)}</div>
       </div>
 
-      <div className="rounded-2xl bg-white border border-slate-200 p-4 space-y-2">
+      <div className="rounded-2xl bg-white border border-slate-200/80 shadow-sm p-4 space-y-2.5">
         <div className={titulo}>Láminas reales (del optimizador)</div>
         <div className="overflow-x-auto"><table className="w-full text-xs">
-          <thead><tr className="text-left text-[10px] uppercase text-slate-400"><th className="py-1">Material</th><th>Precio usado</th><th className="text-right">Láminas</th><th className="text-right">Aprovechamiento</th><th className="text-right">Costo</th></tr></thead>
+          <thead><tr className="text-left text-xs font-medium text-slate-500"><th className="py-1.5">Material</th><th>Precio usado</th><th className="text-right">Láminas</th><th className="text-right">Aprovechamiento</th><th className="text-right">Costo</th></tr></thead>
           <tbody>{costeo.materiales.map(m => (
-            <tr key={m.material} className="border-t border-slate-100 font-bold text-slate-700">
-              <td className="py-1.5">{m.material}</td>
+            <tr key={m.material} className="border-t border-slate-100 font-medium text-slate-700">
+              <td className="py-2">{m.material}</td>
               <td className={m.lamina?.precio ? '' : 'text-amber-700'}>{m.lamina ? `${m.lamina.nombre} ${String(m.lamina.cal).replace('.', ',')} · ${pesos(m.lamina.precio)}` : 'sin precio'}</td>
-              <td className="text-right">{m.laminas}</td><td className="text-right">{Math.round(m.uso * 100)} %</td><td className="text-right">{pesos(m.costo)}</td>
+              <td className="text-right">{m.laminas}</td><td className="text-right">{Math.round(m.uso * 100)} %</td><td className="text-right font-semibold text-slate-900">{pesos(m.costo)}</td>
             </tr>
           ))}</tbody>
         </table></div>
-        <p className="text-[10px] font-bold text-slate-400">El costo de cada lámina se reparte entre sus piezas según su área: el desperdicio ya va incluido en cada pieza.</p>
+        <p className="text-xs text-slate-500">El costo de cada lámina se reparte entre sus piezas según su área: el desperdicio ya va incluido en cada pieza.</p>
       </div>
 
       <Unitarios costeo={costeo} ganancia={ganancia} />
 
-      <div className="rounded-2xl bg-white border border-slate-200 overflow-hidden">
-        <div className="px-4 pt-4 pb-2 flex items-baseline justify-between"><span className={titulo}>Por módulo</span><span className="text-[10px] font-bold text-slate-400">Toca uno para ver sus piezas</span></div>
+      <div className="rounded-2xl bg-white border border-slate-200/80 shadow-sm overflow-hidden">
+        <div className="px-4 pt-4 pb-2 flex items-baseline justify-between"><span className={titulo}>Por módulo</span><span className="text-xs text-slate-400">Toca uno para ver sus piezas</span></div>
         <div className="divide-y divide-slate-100">
           {costeo.grupos.map(g => (
             <div key={g.id}>
-              <button onClick={() => setAbierto(a => (a === g.id ? null : g.id))} className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex flex-wrap items-center gap-x-4 gap-y-1">
-                <span className="mr-auto min-w-0"><span className="text-sm font-black text-slate-800">{g.nombre}</span>{g.detalle && <span className="ml-2 text-[11px] font-bold text-slate-400">{g.detalle}</span>}</span>
-                <span className="text-[11px] font-bold text-slate-500">costo {pesos(g.costo)}</span>
-                <span className="text-sm font-black text-indigo-700">{pesos(g.precio)}</span>
+              <button onClick={() => setAbierto(a => (a === g.id ? null : g.id))} className="w-full text-left px-4 py-3 hover:bg-slate-50 flex flex-wrap items-center gap-x-4 gap-y-1 transition-colors">
+                <span className="mr-auto min-w-0"><span className="text-sm font-semibold text-slate-900">{g.nombre}</span>{g.detalle && <span className="ml-2 text-xs text-slate-400">{g.detalle}</span>}</span>
+                <span className="text-xs text-slate-500">costo {pesos(g.costo)}</span>
+                <span className="text-sm font-semibold text-indigo-600">{pesos(g.precio)}</span>
               </button>
               {abierto === g.id && (
                 <div className="px-4 pb-3 space-y-2">
@@ -213,8 +238,8 @@ const Unitarios: React.FC<{ costeo: ReturnType<typeof costear>; ganancia: number
   const resto = costeo.grupos.find(g => g.id === '__resto');
   if (mb.n && resto) mb.costo += Math.max(0, resto.costo - resto.meson);
   const coma = (n: number) => n.toFixed(2).replace('.', ',');
-  if (mb.n) filas.push(fila('Muebles bajos (MB)', `${coma(mb.m)} m`, 'm lineal', mb.costo, mb.m));
-  if (ma.n) filas.push(fila('Muebles aéreos (MA)', `${coma(ma.m)} m`, 'm lineal', ma.costo, ma.m));
+  if (mb.n) filas.push(fila('Muebles bajos', `${coma(mb.m)} m`, 'm lineal', mb.costo, mb.m));
+  if (ma.n) filas.push(fila('Muebles altos', `${coma(ma.m)} m`, 'm lineal', ma.costo, ma.m));
   if (alto.n) filas.push(fila('Muebles altos', `${alto.n} ${alto.n === 1 ? 'unidad' : 'unidades'}`, 'unidad', alto.costo, alto.n));
   const mesonMl = costeo.grupos.reduce((a, g) => a + g.mesonMl, 0);
   if (mesonMl > 0) filas.push(fila('Mesón', `${coma(mesonMl)} m`, 'm lineal', costeo.totales.meson, mesonMl));
@@ -295,7 +320,7 @@ const VistaCostos: React.FC<{ tabla: TablaCostos; setT: (p: Partial<TablaCostos>
         <div className={tarjeta}>
           <div className={titulo}>Mano de obra por módulo</div>
           <div className="grid grid-cols-[1fr_100px_100px] gap-2 text-[10px] font-black text-slate-400 uppercase"><span /><span className="text-right">Fabricación</span><span className="text-right">Instalación</span></div>
-          {([['MA', 'Aéreo'], ['MB', 'Bajo'], ['alto', 'Alto (torre, alacena)'], ['otro', 'Otro']] as const).map(([k, l]) => (
+          {([['MA', 'Muebles altos'], ['MB', 'Muebles bajos'], ['alto', 'Alto (torre, alacena)'], ['otro', 'Otro']] as const).map(([k, l]) => (
             <div key={k} className="grid grid-cols-[1fr_100px_100px] gap-2 items-center text-xs font-bold text-slate-600">
               <span>{l}</span>
               <Num value={tabla.fabricacion[k]} onChange={n => setT({ fabricacion: { ...tabla.fabricacion, [k]: n } })} />
@@ -364,12 +389,12 @@ const VistaCotizacion: React.FC<{ costeo: ReturnType<typeof costear>; empresa: E
             ))}</div>
           </div>
         </div>
-        {!empresa.nombre && <p className="text-[11px] font-bold text-amber-700">Pon el nombre de tu empresa en Mis costos para que salga en la cotización.</p>}
+        {!empresa.nombre && <div className="rounded-xl border border-amber-200/70 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">Agrega el nombre de tu empresa en Mis costos para incluirlo aquí.</div>}
         <div className="flex flex-wrap gap-2">
-          <button onClick={descargar} className="rounded-xl px-4 py-2 text-xs font-black bg-indigo-600 text-white">Descargar</button>
-          <button onClick={() => marco.current?.contentWindow?.print()} className="rounded-xl px-4 py-2 text-xs font-black border border-slate-200 text-slate-700">Imprimir o PDF</button>
-          {onGuardar && <button onClick={async () => { setAviso('Guardando…'); try { await onGuardar(new Blob([html], { type: 'text/html' }), nombreArchivo); setAviso('Quedó en los documentos del producto (Proyectos).'); } catch (e) { setAviso(e instanceof Error ? e.message : String(e)); } }} className="rounded-xl px-4 py-2 text-xs font-black bg-emerald-600 text-white">Guardar en el proyecto</button>}
-          {aviso && <span className="self-center text-[11px] font-bold text-slate-500">{aviso}</span>}
+          <button onClick={descargar} className="rounded-xl px-4 py-2 text-xs font-medium bg-slate-900 hover:bg-slate-800 text-white transition-colors">Descargar</button>
+          <button onClick={() => marco.current?.contentWindow?.print()} className="rounded-xl px-4 py-2 text-xs font-medium bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 transition-colors">Imprimir o PDF</button>
+          {onGuardar && <button onClick={async () => { setAviso('Guardando…'); try { await onGuardar(new Blob([html], { type: 'text/html' }), nombreArchivo); setAviso('Quedó en los documentos del producto (Proyectos).'); } catch (e) { setAviso(e instanceof Error ? e.message : String(e)); } }} className="rounded-xl px-4 py-2 text-xs font-medium bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 transition-colors">Guardar en el proyecto</button>}
+          {aviso && <span className="self-center text-xs text-slate-500">{aviso}</span>}
         </div>
       </div>
       <iframe ref={marco} title="Vista de la cotización" srcDoc={html} className="w-full h-[900px] rounded-2xl border border-slate-200 bg-slate-100" />

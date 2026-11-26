@@ -179,7 +179,11 @@ export const PlanosEnsamble: React.FC<{ boxes: Box[]; ctx: ContextoPiezas; proye
   const [empresa, setEmpresa] = useState(() => { try { return localStorage.getItem('modully-empresa') ?? ''; } catch { return ''; } });
   const [logo, setLogo] = useState<string | null>(() => { try { return localStorage.getItem('modully-logo'); } catch { return null; } });
   const hojas = useRef<HTMLDivElement>(null);
-  if (gs.length === 0) return null;
+  if (gs.length === 0) return (
+    <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm p-8 text-center text-sm font-medium text-slate-500">
+      Todavía no hay módulos convertidos para generar planos de ensamble.
+    </div>
+  );
 
   const cargarLogo = (f?: File) => {
     if (!f) return;
@@ -201,24 +205,24 @@ export const PlanosEnsamble: React.FC<{ boxes: Box[]; ctx: ContextoPiezas; proye
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4">
+    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <div className="mr-auto">
-          <div className="text-sm font-black text-slate-800 uppercase tracking-tight">Planos de ensamble</div>
-          <div className="text-[11px] font-bold text-slate-400">{gs.length} {gs.length === 1 ? 'hoja' : 'hojas'}: vista frontal, corte, isométrica, cotas, lista de partes y rótulo.</div>
+          <div className="text-base font-semibold tracking-tight text-slate-900">Planos de ensamble</div>
+          <div className="text-xs text-slate-500">{gs.length} {gs.length === 1 ? 'hoja' : 'hojas'}: vista frontal, corte, isométrica, cotas, lista de partes y rótulo.</div>
         </div>
-        <button onClick={() => setVer(v => !v)} className="rounded-xl px-4 py-2 text-xs font-black border border-slate-200 text-slate-700">{ver ? 'Ocultar planos' : 'Ver planos'}</button>
-        <button onClick={() => { if (!ver) { setVer(true); setTimeout(exportar, 400); } else exportar(); }} className="rounded-xl px-4 py-2 text-xs font-black bg-indigo-600 text-white">Exportar a PDF</button>
+        <button onClick={() => setVer(v => !v)} className="rounded-xl px-4 py-2 text-xs font-medium bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 transition-colors">{ver ? 'Ocultar planos' : 'Ver planos'}</button>
+        <button onClick={() => { if (!ver) { setVer(true); setTimeout(exportar, 400); } else exportar(); }} className="rounded-xl px-4 py-2 text-xs font-medium bg-slate-900 hover:bg-slate-800 text-white transition-colors">Exportar a PDF</button>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <label className="block"><span className="text-[9px] font-black text-slate-400 uppercase block mb-1">Empresa</span>
-          <input value={empresa} onChange={e => { setEmpresa(e.target.value); try { localStorage.setItem('modully-empresa', e.target.value); } catch { /* nada */ } }} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-800" /></label>
-        <label className="block"><span className="text-[9px] font-black text-slate-400 uppercase block mb-1">Cliente</span>
-          <input value={cliente} onChange={e => setCliente(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-800" /></label>
-        <label className="block"><span className="text-[9px] font-black text-slate-400 uppercase block mb-1">Logo del rótulo</span>
+        <label className="block"><span className="text-xs font-medium text-slate-600 block mb-1">Empresa</span>
+          <input value={empresa} onChange={e => { setEmpresa(e.target.value); try { localStorage.setItem('modully-empresa', e.target.value); } catch { /* nada */ } }} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-500" /></label>
+        <label className="block"><span className="text-xs font-medium text-slate-600 block mb-1">Cliente</span>
+          <input value={cliente} onChange={e => setCliente(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-500" /></label>
+        <label className="block"><span className="text-xs font-medium text-slate-600 block mb-1">Logo del rótulo</span>
           <span className="flex items-center gap-2">
-            <input type="file" accept="image/*" onChange={e => cargarLogo(e.target.files?.[0])} className="text-[11px] font-bold text-slate-600 w-full" />
-            {logo && <button onClick={() => { setLogo(null); try { localStorage.removeItem('modully-logo'); } catch { /* nada */ } }} className="text-[11px] font-black text-rose-600 whitespace-nowrap">Quitar</button>}
+            <input type="file" accept="image/*" onChange={e => cargarLogo(e.target.files?.[0])} className="text-xs text-slate-600 w-full" />
+            {logo && <button onClick={() => { setLogo(null); try { localStorage.removeItem('modully-logo'); } catch { /* nada */ } }} className="text-xs font-medium text-rose-600 whitespace-nowrap">Quitar</button>}
           </span></label>
       </div>
       {ver && (

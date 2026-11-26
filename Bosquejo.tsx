@@ -45,20 +45,20 @@ const Num: React.FC<{ label: string; value: number; onChange: (n: number) => voi
   const [txt, setTxt] = useState<string | null>(null);
   return (
     <label className="block">
-      <span className="text-[9px] font-black text-slate-400 uppercase block mb-1">{label}</span>
+      <span className="text-xs font-medium text-slate-600 block mb-1">{label}</span>
       <input
         type="text" inputMode="numeric" value={txt ?? String(value)}
         onChange={e => setTxt(e.target.value.replace(/[^\d]/g, ''))}
         onBlur={() => { if (txt !== null) { const n = parseInt(txt, 10); onChange(isNaN(n) ? 0 : n); setTxt(null); } }}
         onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-slate-800"
+        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-500"
       />
     </label>
   );
 };
 
 const Chip: React.FC<{ on: boolean; onClick: () => void; children: React.ReactNode }> = ({ on, onClick, children }) => (
-  <button onClick={onClick} className={`rounded-xl px-3 py-2 text-xs font-black border ${on ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{children}</button>
+  <button onClick={onClick} className={`rounded-xl px-3 py-1.5 text-xs border transition-colors ${on ? 'text-indigo-600 bg-indigo-50 border-indigo-200 font-semibold' : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 font-medium'}`}>{children}</button>
 );
 
 /** Si el boceto acota los anchos de abajo (con o sin el espacio de la nevera) y coinciden en cantidad con los módulos dibujados, cada uno toma su cota */
@@ -427,16 +427,18 @@ export const Bosquejo: React.FC<{ actual: SectionId; onCrear: (d: DatosBosquejo,
   const [fotos, setFotos] = useState<{ vista: string; ia: string }[]>([]);
   const [pistas, setPistas] = useState<Pistas>(PISTAS_AUTO);
   const [limpiar, setLimpiar] = useState(true);
+  const [ajustesAbiertos, setAjustesAbiertos] = useState(false);
   const [lectura, setLectura] = useState<{ estado: 'nada' | 'leyendo' | 'lista' | 'error'; r?: LecturaBoceto; error?: string }>({ estado: 'nada' });
   const [datos, setDatos] = useState<DatosBosquejo[]>([]);
   const [editados, setEditados] = useState<Record<number, string[]>>({}); // datos de la lista que el carpintero corrigió a mano, por mueble
+  const [editarCard, setEditarCard] = useState<number | null>(null);
   const [corrigiendo, setCorrigiendo] = useState<number | null>(null);
   const [verGuia, setVerGuia] = useState(false); // normas y ejemplos del boceto: contraídos, al final de la página
   const abrirGuia = () => { setVerGuia(true); setTimeout(() => document.getElementById('guia-boceto')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); };
 
   const leer = async () => {
     if (!fotos.length) return;
-    setLectura({ estado: 'leyendo' }); setDatos([]); setCorrigiendo(null); setEditados({});
+    setLectura({ estado: 'leyendo' }); setDatos([]); setCorrigiendo(null); setEditarCard(null); setEditados({});
     try {
       const r = await leerBoceto(fotos.map(f => (limpiar ? f.ia : f.vista)), pistas);
       setLectura({ estado: 'lista', r });
@@ -470,128 +472,227 @@ export const Bosquejo: React.FC<{ actual: SectionId; onCrear: (d: DatosBosquejo,
   const entrada = <input type="file" accept="image/*" multiple data-boceto className="hidden" onChange={e => { agregar(e.target.files); e.target.value = ''; }} />;
   const foto = fotos[0]?.vista ?? null;
 
-  return (
-    <div className="space-y-4 max-w-4xl">
-      {/* 1 · las imágenes (el boceto y todo lo que ayude: fotos del sitio, medidas, listas) y las pistas */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4">
-        {!fotos.length ? (
-          <div className="space-y-2">
-            <label className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 px-6 py-10 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/40">
-              <span className="text-sm font-black text-slate-800">Adjunta el boceto</span>
-              <span className="text-[11px] font-bold text-slate-400 max-w-md">Puedes subir varias imágenes: el boceto, fotos del sitio, medidas escritas o una lista de lo que se pide. Se envían al servicio de Gemini (Google) para leerlas.</span>
-              <span className="mt-2 rounded-xl px-4 py-2 text-xs font-black bg-indigo-600 text-white">Elegir imágenes</span>
-              {entrada}
-            </label>
-            <button onClick={abrirGuia} className="w-full text-center text-[11px] font-black text-indigo-700">¿Cómo dibujar el boceto? Ver ejemplo y normas</button>
-          </div>
-        ) : (
-          <div className="flex flex-wrap gap-3">
-            {fotos.map((f, i) => (
-              <div key={i} className="relative">
-                <img src={f.vista} alt={`Imagen ${i + 1}`} className="h-36 w-auto max-w-[14rem] object-contain rounded-xl border border-slate-200 bg-slate-50" />
-                <span className="absolute left-1.5 top-1.5 rounded-md bg-slate-900/70 text-white text-[10px] font-black px-1.5">{i === 0 ? 'Boceto' : `Imagen ${i + 1}`}</span>
-                <button onClick={() => { setFotos(fs => fs.filter((_, j) => j !== i)); setLectura({ estado: 'nada' }); setDatos([]); }} title="Quitar esta imagen" className="absolute right-1.5 top-1.5 w-5 h-5 rounded-full bg-white/90 text-slate-600 text-xs font-black leading-none shadow">×</button>
-              </div>
-            ))}
-            {fotos.length < 6 && <label className="h-36 w-28 flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-slate-300 text-center cursor-pointer hover:border-indigo-400"><span className="text-xl font-black text-indigo-600">+</span><span className="text-[10px] font-black text-slate-500">Agregar otra imagen</span>{entrada}</label>}
-          </div>
-        )}
+  const hayResultados = datos.length > 0;
+  const esAuto = pistas.dibujo === 'auto' && pistas.unidades === 'auto' && !pistas.notas.trim();
 
-        {fotos.length > 0 && (
-          <div className="space-y-3 border-t border-slate-100 pt-3">
-            <div className="space-y-1.5">
-              <div className="text-[10px] font-black text-slate-400 uppercase">¿Qué dibujaste?</div>
-              <div className="flex flex-wrap gap-2">{OPC_DIBUJO.map(([v, t]) => <Chip key={v} on={pistas.dibujo === v} onClick={() => setPistas(p => ({ ...p, dibujo: v }))}>{t}</Chip>)}</div>
+  return (
+    <div className="space-y-6">
+      <div className={hayResultados ? 'grid grid-cols-1 lg:grid-cols-12 gap-6 items-start' : 'max-w-3xl'}>
+        {/* 1 · Imagen del boceto, acordeón discreto de lectura y botón único "Analizar boceto" */}
+        <div className={`${hayResultados ? 'lg:col-span-5' : ''} bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 space-y-4`}>
+          {!fotos.length ? (
+            <div className="space-y-3">
+              <label className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 px-6 py-12 text-center cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors">
+                <span className="text-base font-semibold tracking-tight text-slate-900">Sube la foto de tu boceto</span>
+                <span className="text-xs text-slate-500 max-w-md">Puede ser un dibujo a mano alzada, una foto con medidas o notas del cliente.</span>
+                <span className="mt-2 rounded-xl px-5 py-2.5 text-xs font-medium bg-slate-900 hover:bg-slate-800 text-white transition-colors">Elegir imagen</span>
+                {entrada}
+              </label>
+              <button onClick={abrirGuia} className="w-full text-center text-xs font-medium text-indigo-600 hover:underline">¿Cómo dibujar el boceto? Ver ejemplo</button>
             </div>
-            <div className="space-y-1.5">
-              <div className="text-[10px] font-black text-slate-400 uppercase">¿En qué unidades están las medidas?</div>
-              <div className="flex flex-wrap gap-2">{OPC_UNIDADES.map(([v, t]) => <Chip key={v} on={pistas.unidades === v} onClick={() => setPistas(p => ({ ...p, unidades: v }))}>{t}</Chip>)}</div>
-            </div>
-            <label className="block">
-              <span className="text-[10px] font-black text-slate-400 uppercase block mb-1">Notas para la lectura (opcional)</span>
-              <textarea value={pistas.notas} onChange={e => setPistas(p => ({ ...p, notas: e.target.value }))} rows={2} placeholder="Ej: cocina en L con el brazo a la izquierda; el gas y el agua están en centímetros; la nevera es de 70 de ancho"
-                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-800" />
-            </label>
-            <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer">
-              <input type="checkbox" checked={limpiar} onChange={e => setLimpiar(e.target.checked)} className="accent-indigo-600 w-4 h-4" />
-              Limpiar las fotos antes de leerlas (quita cuadrícula, marcas de agua y sombras)
-            </label>
-            <div className="flex flex-wrap items-center gap-2">
-              <button disabled={lectura.estado === 'leyendo'} onClick={leer} className="rounded-xl px-5 py-2.5 text-sm font-black bg-indigo-600 text-white disabled:opacity-50">{lectura.estado === 'nada' ? 'Leer el boceto' : 'Leer otra vez con estas pistas'}</button>
-              <button onClick={() => { setFotos([]); setLectura({ estado: 'nada' }); setDatos([]); }} className="rounded-xl px-4 py-2.5 text-xs font-black border border-slate-200 text-slate-700">Empezar de nuevo</button>
-              <button onClick={abrirGuia} className="text-[11px] font-black text-indigo-700">¿Cómo dibujar el boceto?</button>
-              {lectura.estado === 'leyendo' && <span className="text-sm font-black text-indigo-700">Leyendo… (puede tardar unos segundos)</span>}
-            </div>
-            {lectura.estado === 'error' && <div className="text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{lectura.error}</div>}
-            {lectura.estado === 'lista' && lectura.r && <div className="text-sm font-bold text-slate-700">{lectura.r.resumen}{lectura.r.modelo && <span className="ml-2 text-[10px] font-bold text-slate-400">leído con {lectura.r.modelo}</span>}</div>}
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-3">
+                {fotos.map((f, i) => (
+                  <div key={i} className="relative">
+                    <img src={f.vista} alt={`Imagen ${i + 1}`} className="h-40 w-auto max-w-[15rem] object-contain rounded-xl border border-slate-200 bg-slate-50" />
+                    <span className="absolute left-1.5 top-1.5 rounded-md bg-slate-900/75 text-white text-[10px] font-medium px-1.5 py-0.5">{i === 0 ? 'Boceto' : `Imagen ${i + 1}`}</span>
+                    <button onClick={() => { setFotos(fs => fs.filter((_, j) => j !== i)); setLectura({ estado: 'nada' }); setDatos([]); }} title="Quitar esta imagen" className="absolute right-1.5 top-1.5 w-5 h-5 rounded-full bg-white/95 text-slate-600 text-xs font-semibold leading-none shadow-sm border border-slate-200">×</button>
+                  </div>
+                ))}
+                {fotos.length < 6 && (
+                  <label className="h-40 w-28 flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-slate-300 text-center cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors">
+                    <span className="text-xl font-semibold text-indigo-600">+</span>
+                    <span className="text-[11px] font-medium text-slate-600">Otra foto</span>
+                    {entrada}
+                  </label>
+                )}
+              </div>
+
+              {/* Acordeón discreto: oculto por defecto, con Auto-detectar activo */}
+              <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setAjustesAbiertos(o => !o)}
+                  className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100/60 transition-colors"
+                >
+                  <span>⚙ Ajustar lectura (unidades y vista)</span>
+                  <span className="inline-flex items-center gap-2 shrink-0">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-50 text-indigo-600 border border-indigo-200">
+                      {esAuto ? 'Auto-detectar' : 'Personalizado'}
+                    </span>
+                    <span className="text-slate-400">{ajustesAbiertos ? '▴' : '▾'}</span>
+                  </span>
+                </button>
+                {ajustesAbiertos && (
+                  <div className="p-3.5 pt-2 border-t border-slate-200/80 bg-white space-y-3">
+                    <div className="space-y-1.5">
+                      <div className="text-xs font-medium text-slate-600">Tipo de dibujo</div>
+                      <div className="flex flex-wrap gap-1.5">{OPC_DIBUJO.map(([v, t]) => <Chip key={v} on={pistas.dibujo === v} onClick={() => setPistas(p => ({ ...p, dibujo: v }))}>{v === 'auto' ? 'Auto-detectar' : t}</Chip>)}</div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="text-xs font-medium text-slate-600">Unidades de las medidas</div>
+                      <div className="flex flex-wrap gap-1.5">{OPC_UNIDADES.map(([v, t]) => <Chip key={v} on={pistas.unidades === v} onClick={() => setPistas(p => ({ ...p, unidades: v }))}>{v === 'auto' ? 'Auto-detectar' : t}</Chip>)}</div>
+                    </div>
+                    <label className="block">
+                      <span className="text-xs font-medium text-slate-600 block mb-1">Notas opcionales</span>
+                      <textarea value={pistas.notas} onChange={e => setPistas(p => ({ ...p, notas: e.target.value }))} rows={2} placeholder="Ej: cocina en L, medidas en centímetros…"
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 outline-none focus:border-indigo-500" />
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                      <input type="checkbox" checked={limpiar} onChange={e => setLimpiar(e.target.checked)} className="accent-indigo-600 w-4 h-4" />
+                      Mejorar contraste del trazo antes de analizar
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2.5 pt-1">
+                <button
+                  type="button"
+                  disabled={lectura.estado === 'leyendo'}
+                  onClick={leer}
+                  className="w-full rounded-xl px-5 py-3 text-sm font-semibold bg-slate-900 hover:bg-slate-800 text-white disabled:opacity-50 transition-colors shadow-sm"
+                >
+                  {lectura.estado === 'leyendo' ? 'Analizando boceto…' : hayResultados ? 'Volver a analizar boceto' : 'Analizar boceto'}
+                </button>
+                <div className="flex items-center justify-between text-xs">
+                  <button type="button" onClick={() => { setFotos([]); setLectura({ estado: 'nada' }); setDatos([]); }} className="font-medium text-slate-500 hover:text-slate-800">Cambiar imagen</button>
+                  <button type="button" onClick={abrirGuia} className="font-medium text-indigo-600 hover:underline">Ver ejemplo de boceto</button>
+                </div>
+              </div>
+
+              {lectura.estado === 'error' && <div className="text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{lectura.error}</div>}
+            </>
+          )}
+        </div>
+
+        {/* 2 · Tarjeta limpia a la derecha con los datos clave y CTA directo al 3D */}
+        {hayResultados && (
+          <div className="lg:col-span-7 space-y-4">
+            {datos.map((d, k) => {
+              const q = lectura.r?.productos[k];
+              const avisos = avisosDe(d), bloquea = avisos.some(a => a.bloquea);
+              const setD: SetD = f => setDatos(ds => ds.map((x, i) => (i === k ? f(x) : x)));
+              const marcar = (clave: string) => setEditados(e => ({ ...e, [k]: [...new Set([...(e[k] ?? []), clave])] }));
+              const editando = editarCard === k;
+              const modCount = d.bajos?.length || d.modulos.length;
+
+              return (
+                <div key={k} className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6 space-y-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-indigo-50 text-indigo-600 border border-indigo-200">
+                        Lectura lista
+                      </span>
+                      <h3 className="text-lg font-semibold tracking-tight text-slate-900 mt-2">
+                        {q?.nombre ?? SECTIONS[d.producto].name}
+                      </h3>
+                      {lectura.r?.resumen && k === 0 && (
+                        <p className="text-xs text-slate-500 mt-0.5">{lectura.r.resumen}</p>
+                      )}
+                    </div>
+                    <select
+                      value={d.producto}
+                      onChange={e => setD(x => ({ ...x, producto: e.target.value as SectionId, modulos: e.target.value === 'cocinas' ? x.modulos : [] }))}
+                      aria-label="Tipo de mueble"
+                      className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-indigo-500"
+                    >
+                      {ORDEN.map(p => <option key={p} value={p}>{SECTIONS[p].name}</option>)}
+                    </select>
+                  </div>
+
+                  {/* Datos clave detectados */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-3">
+                      <div className="text-[11px] text-slate-500">Tipo de mueble</div>
+                      <div className="text-sm font-semibold text-slate-900 mt-0.5">{d.producto === 'puertas' ? 'Puerta' : FORMAS[d.forma]}</div>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-3">
+                      <div className="text-[11px] text-slate-500">Ancho muro principal</div>
+                      <div className="text-sm font-semibold text-slate-900 mt-0.5">{fmt(d.A)} mm</div>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-3">
+                      <div className="text-[11px] text-slate-500">Altura total</div>
+                      <div className="text-sm font-semibold text-slate-900 mt-0.5">{fmt(d.alto)} mm</div>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-3">
+                      <div className="text-[11px] text-slate-500">{conB(d) || conC(d) ? 'Muros laterales' : 'Módulos'}</div>
+                      <div className="text-sm font-semibold text-slate-900 mt-0.5">
+                        {conB(d) ? `B ${fmt(d.B)} mm` : conC(d) ? `C ${fmt(d.C)} mm` : modCount > 0 ? `${modCount} detectados` : 'Automáticos'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {d.producto === 'cocinas' && d.nevera !== 'no' && (
+                    <div className="rounded-xl bg-indigo-50/60 border border-indigo-200 p-3.5 space-y-2">
+                      <div className="text-xs font-semibold text-slate-900">Medidas de la nevera</div>
+                      <div className="grid grid-cols-3 gap-2.5">
+                        <Num label="Ancho (mm)" value={d.neveraAncho ?? 0} onChange={v => setD(x => ({ ...x, neveraAncho: v > 0 ? v : undefined }))} />
+                        <Num label="Alto (mm)" value={d.neveraAlto ?? 0} onChange={v => setD(x => ({ ...x, neveraAlto: v > 0 ? v : undefined }))} />
+                        <Num label="Espacio (mm)" value={d.neveraEspacio ?? 0} onChange={v => setD(x => ({ ...x, neveraEspacio: v > 0 ? v : undefined }))} />
+                      </div>
+                    </div>
+                  )}
+
+                  {avisos.filter(a => a.bloquea).map((a, i) => (
+                    <div key={i} className="text-xs font-medium rounded-xl px-3.5 py-2.5 border text-rose-700 bg-rose-50 border-rose-200">{a.texto}</div>
+                  ))}
+
+                  {/* Botón principal grande + ajuste opcional */}
+                  <div className="space-y-2.5">
+                    <button
+                      type="button"
+                      disabled={bloquea}
+                      onClick={() => {
+                        const unid = { auto: 'la app decide', cm: 'centímetros', mm: 'milímetros', m: 'metros' }[pistas.unidades] ?? pistas.unidades;
+                        const notas = [
+                          pistas.notas.trim() ? `Notas del carpintero:\n${pistas.notas.trim()}` : '',
+                          `Tipo de dibujo: ${pistas.dibujo === 'auto' ? 'la app decide' : pistas.dibujo}. Unidades: ${unid}.`,
+                          q?.nombre ? `Mueble: ${q.nombre}` : '',
+                          lectura.r?.resumen ? `Lo que se entendió: ${lectura.r.resumen}` : '',
+                          q?.detalle ? `Detalle leído dentro de los muebles: ${q.detalle}` : '',
+                          q && q.dudas.length ? `Dudas de la lectura:\n- ${q.dudas.join('\n- ')}` : '',
+                          (editados[k] ?? []).length ? `Datos corregidos a mano: ${(editados[k] ?? []).join(', ')}` : '',
+                        ].filter(Boolean).join('\n\n');
+                        onCrear(d, foto ?? undefined, { fotos: fotos.map(f => f.vista), notas });
+                      }}
+                      className="w-full rounded-xl px-5 py-3.5 text-sm font-semibold bg-slate-900 hover:bg-slate-800 text-white disabled:opacity-40 transition-colors shadow-sm"
+                    >
+                      Ver mi diseño en 3D →
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => { setEditarCard(editando ? null : k); setCorrigiendo(null); }}
+                      className="w-full rounded-xl px-4 py-2 text-xs font-medium bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 transition-colors"
+                    >
+                      {editando ? 'Ocultar edición de medidas' : 'Editar medidas o detalles detectados'}
+                    </button>
+                  </div>
+
+                  {editando && (
+                    <div className="pt-3 border-t border-slate-100 space-y-4">
+                      {corrigiendo === k ? (
+                        <Corregir d={d} set={setD} onListo={() => setCorrigiendo(null)} />
+                      ) : (
+                        <>
+                          <ListaChequeo items={checklist(d, q, editados[k] ?? [], setD, marcar, () => setCorrigiendo(k))} />
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <button type="button" onClick={() => setCorrigiendo(k)} className="text-xs font-medium text-indigo-600 hover:underline">Editar todo manualmente</button>
+                            {q?.detalle && <span className="text-[11px] text-slate-400">{q.detalle}</span>}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* 2 · lo que se entendió de cada mueble, para aceptar o corregir */}
-      {datos.map((d, k) => {
-        const q = lectura.r?.productos[k];
-        const avisos = avisosDe(d), bloquea = avisos.some(a => a.bloquea);
-        const setD: SetD = f => setDatos(ds => ds.map((x, i) => (i === k ? f(x) : x)));
-        const marcar = (clave: string) => setEditados(e => ({ ...e, [k]: [...new Set([...(e[k] ?? []), clave])] }));
-        return (
-          <div key={k} className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-            <div className="flex flex-wrap items-baseline gap-2">
-              <span className="text-sm font-black text-slate-800 uppercase tracking-tight">{q?.nombre ?? 'Mueble'}</span>
-              <span className="text-[11px] font-black text-indigo-600">{SECTIONS[d.producto].name}{q && !q.producto ? ' · no se identificó, revísalo' : ''}</span>
-              <span className="flex gap-1 ml-auto">{ORDEN.map(p => <button key={p} onClick={() => setD(x => ({ ...x, producto: p, modulos: p === 'cocinas' ? x.modulos : [] }))} className={`rounded-lg px-2 py-0.5 text-[10px] font-black border ${d.producto === p ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-400 border-transparent hover:text-slate-600'}`}>{SECTIONS[p].name.split(' ')[0]}</button>)}</span>
-            </div>
-            <ListaChequeo items={checklist(d, q, editados[k] ?? [], setD, marcar, () => setCorrigiendo(k))} />
-            {q?.detalle && <details className="text-[11px] font-bold text-slate-400"><summary className="cursor-pointer text-indigo-700 font-black">Ver lo que se leyó dentro de los muebles</summary><div className="pt-1">{q.detalle}</div></details>}
-            {q && q.dudas.length > 0 && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 space-y-0.5">
-                <div className="text-[10px] font-black text-amber-700 uppercase">Revisa esto</div>
-                {q.dudas.map((t, i) => <div key={i} className="text-[11px] font-bold text-amber-800">• {t}</div>)}
-              </div>
-            )}
-            {d.producto === 'cocinas' && d.nevera !== 'no' && corrigiendo !== k && (
-              <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 space-y-2">
-                <div className="text-xs font-black text-slate-800">¿Qué medidas tiene la nevera?</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  <Num label="Ancho de la nevera (mm)" value={d.neveraAncho ?? 0} onChange={v => setD(x => ({ ...x, neveraAncho: v > 0 ? v : undefined }))} />
-                  <Num label="Alto de la nevera (mm)" value={d.neveraAlto ?? 0} onChange={v => setD(x => ({ ...x, neveraAlto: v > 0 ? v : undefined }))} />
-                  <Num label="Espacio para la nevera (mm)" value={d.neveraEspacio ?? 0} onChange={v => setD(x => ({ ...x, neveraEspacio: v > 0 ? v : undefined }))} />
-                </div>
-                <div className="text-[10px] font-bold text-slate-400">La nevera va centrada en su espacio, con 5 cm libres a cada lado como mínimo. Encima va la sobrenevera.</div>
-              </div>
-            )}
-            {normasDelTaller(d).length > 0 && (
-              <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 space-y-0.5">
-                <div className="text-[10px] font-black text-indigo-700 uppercase">Normas del taller que se aplican</div>
-                {normasDelTaller(d).map((t, i) => <div key={i} className="text-[11px] font-bold text-indigo-900">• {t}</div>)}
-              </div>
-            )}
-            {avisos.map((a, i) => <div key={i} className={`text-[11px] font-bold rounded-xl px-3 py-2 border ${a.bloquea ? 'text-rose-700 bg-rose-50 border-rose-200' : 'text-amber-800 bg-amber-50 border-amber-200'}`}>{a.texto}</div>)}
-            {corrigiendo === k
-              ? <Corregir d={d} set={setD} onListo={() => setCorrigiendo(null)} />
-              : (
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <button disabled={bloquea} onClick={() => {
-                    // evidencias del proyecto: todas las fotos del boceto y las notas (lo que escribió el carpintero, lo que se entendió, las dudas y lo corregido a mano)
-                    const unid = { auto: 'la app decide', cm: 'centímetros', mm: 'milímetros', m: 'metros' }[pistas.unidades] ?? pistas.unidades;
-                    const notas = [
-                      pistas.notas.trim() ? `Notas del carpintero:\n${pistas.notas.trim()}` : '',
-                      `Tipo de dibujo: ${pistas.dibujo === 'auto' ? 'la app decide' : pistas.dibujo}. Unidades: ${unid}.`,
-                      q?.nombre ? `Mueble: ${q.nombre}` : '',
-                      lectura.r?.resumen ? `Lo que se entendió: ${lectura.r.resumen}` : '',
-                      q?.detalle ? `Detalle leído dentro de los muebles: ${q.detalle}` : '',
-                      q && q.dudas.length ? `Dudas de la lectura:\n- ${q.dudas.join('\n- ')}` : '',
-                      (editados[k] ?? []).length ? `Datos corregidos a mano: ${(editados[k] ?? []).join(', ')}` : '',
-                    ].filter(Boolean).join('\n\n');
-                    onCrear(d, foto ?? undefined, { fotos: fotos.map(f => f.vista), notas });
-                  }} className="rounded-xl px-5 py-2.5 text-sm font-black bg-indigo-600 text-white disabled:opacity-40">Aceptar</button>
-                  <button onClick={() => setCorrigiendo(k)} className="rounded-xl px-5 py-2.5 text-sm font-black border border-slate-200 text-slate-700">Corregir todo</button>
-                  <span className="text-[11px] font-bold text-slate-400">Aceptar arma el diseño de {SECTIONS[d.producto].name} (reemplaza el que haya).</span>
-                </div>
-              )}
-          </div>
-        );
-      })}
       <GuiaBoceto abierta={verGuia} onCambiar={setVerGuia} producto={datos[0]?.producto ?? actual} />
     </div>
   );
