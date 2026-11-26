@@ -24,7 +24,7 @@ import { listaDePiezas, exportarListadoDeCorte, bordesDeCanto, archivoListadoDeC
 import { Optimizador } from './PanelLaminas';
 import { PlanosEnsamble } from './PlanosEnsamble';
 import { RenderVista } from './RenderVista';
-import { Bosquejo, DatosBosquejo, tramoModulos, anchosFila, HOLGURA_MURO } from './Bosquejo';
+import { Bosquejo, DatosBosquejo, EvidenciasBoceto, tramoModulos, anchosFila, anchoComun, estrategiaPorAncho, HOLGURA_MURO } from './Bosquejo';
 import { Inicio } from './Inicio';
 import { EsquemaModulos, EsquemaCorredera, Foco } from './EsquemaModulos';
 import { VistaLateral, TramoAltura } from './VistaLateral';
@@ -1518,9 +1518,28 @@ export default function App() {
               ...specialModulesActiveForWall.map(m => ({ distance: m.positionX, width: m.width }))
             ];
 
-        const solveGap = (gapWidth: number, startX: number, isUpper: boolean) => {
-          let remaining = gapWidth; 
+        const solveGap = (gapWidth: number, startX: number, isUpper: boolean): void => {
+          let remaining = gapWidth;
           let x = startX;
+
+          // Rincón de una L o U (muro A): el brazo tapa los primeros 570 mm del frente del módulo bajo que llega al rincón, así que ese módulo
+          // necesita mínimo 880 mm para tener puerta útil (esquinero recto). Se arma primero, de hasta 900 mm (o todo el tramo si es de hasta 1.200),
+          // y el resto del tramo se reparte aparte. Los aéreos siguen los bordes de los bajos.
+          if (!isUpper && currentWall === 'A' && gapWidth >= 880 && !(cortesA && cortesA.length > 0)) {
+            const alInicio = (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')) && startX <= startGap + 1;
+            const alFinal = !alInicio && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')) && startX + gapWidth >= usableEnd - 1;
+            if (alInicio || alFinal) {
+              const esq = gapWidth <= 1200 ? gapWidth : 900;
+              const xEsq = alInicio ? startX : startX + gapWidth - esq;
+              const tpl = MODULE_TEMPLATES.find(t => t.type === 'LOWER' && t.width === esq) || MODULE_TEMPLATES.find(t => t.type === 'LOWER')!;
+              newModules.push({
+                ...tpl, name: `Bajo ${esq}mm`, uniqueId: Math.random().toString(36).substr(2, 9), wall: currentWall, positionX: xEsq, width: esq, height: currentBaseModuleHeight, quantity: 1,
+                doorType: 'vertical', configType: 'doors', hasPlateRack: false, drawerCount: 0,
+              });
+              if (gapWidth > esq) solveGap(gapWidth - esq, alInicio ? startX + esq : startX, false);
+              return;
+            }
+          }
           
           // Bosquejo: si el boceto trae los anchos de los módulos del muro A, el espacio se parte en esas divisiones (no con los anchos de la estrategia)
           // regla del carpintero: el MA va alineado con el MB, así que los aéreos se parten en las mismas divisiones de los bajos de ese muro
@@ -1561,6 +1580,8 @@ export default function App() {
             return;
           }
           
+          const inicioTramo = newModules.length; // para rehacer el tramo si queda un sobrante chico
+          const gapTotal = remaining;
           while (remaining >= prioritizedWidths[prioritizedWidths.length - 1]) {
             let bestWidth = prioritizedWidths.find(w => w <= remaining) || prioritizedWidths[prioritizedWidths.length - 1];
             const template = MODULE_TEMPLATES.find(t => t.type === (isUpper ? 'UPPER' : 'LOWER') && t.width === bestWidth) || MODULE_TEMPLATES.find(t => t.type === (isUpper ? 'UPPER' : 'LOWER'))!;
@@ -1583,6 +1604,28 @@ export default function App() {
             remaining -= bestWidth;
           }
           
+          // Sobrante menor de 300 mm en un tramo de 300 mm o más: en vez de un módulo de 140, se reparte todo el tramo en módulos
+          // iguales (entre 300 y 900 mm, cerca del ancho de la estrategia), de 5 en 5 mm
+          if (remaining > 0 && gapTotal >= 300) {
+            newModules.length = inicioTramo;
+            const base = prioritizedWidths[0];
+            let n = Math.max(Math.ceil(gapTotal / 900), Math.round(gapTotal / base), 1);
+            while (n > 1 && gapTotal / n < 300) n--;
+            const w0 = Math.floor(gapTotal / n / 5) * 5;
+            const finalH = isUpper ? currentUpperModuleHeight : currentBaseModuleHeight;
+            let xx = x - (gapTotal - remaining);
+            for (let k = 0; k < n; k++) {
+              const w = k === n - 1 ? Math.round(gapTotal - w0 * (n - 1)) : w0;
+              const template = MODULE_TEMPLATES.find(t => t.type === (isUpper ? 'UPPER' : 'LOWER') && t.width === w) || MODULE_TEMPLATES.find(t => t.type === (isUpper ? 'UPPER' : 'LOWER'))!;
+              newModules.push({
+                ...template, name: `${isUpper ? 'Aéreo' : 'Bajo'} ${w}mm`, uniqueId: Math.random().toString(36).substr(2, 9), wall: currentWall, positionX: xx, width: w, height: finalH, quantity: 1,
+                doorType: 'vertical', configType: w > 300 ? 'drawers' : 'doors', hasPlateRack: false, drawerCount: w > 300 ? 3 : 0,
+              });
+              xx += w;
+            }
+            remaining = 0;
+          }
+
           // Manejar el espacio restante
           if (remaining > 0) {
             if (remaining >= 120) {
@@ -1695,7 +1738,8 @@ export default function App() {
     newModules.forEach(m => { m.name = m.name.replace(/^Bajo/, cfg.lowerName).replace(/^Aéreo/, cfg.upperName); });
     const capped: KitchenModule[] = [];
     newModules.forEach(m => {
-      if (m.width <= MAX_MODULE_WIDTH || m.type === 'TALL') { capped.push(m); return; }
+      const enRincon = m.type === 'LOWER' && m.wall === 'A' && m.width <= 1200 && ((m.positionX <= 60 && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left'))) || (m.positionX + m.width >= wallA - 60 && (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right'))));
+      if (m.width <= MAX_MODULE_WIDTH || m.type === 'TALL' || enRincon) { capped.push(m); return; }
       const n = Math.ceil(m.width / MAX_MODULE_WIDTH);
       const part = Math.floor(m.width / n / 5) * 5;
       let x = m.positionX;
@@ -1707,6 +1751,65 @@ export default function App() {
     });
     newModules.length = 0;
     newModules.push(...capped);
+
+    // Módulo del rincón de una L o U (muro A): el brazo tapa los primeros 570 mm del frente de los bajos y 330 mm de los aéreos, así que ese módulo
+    // necesita puerta útil: abajo 310 mm (ancho mínimo 880) y arriba 350 mm (mínimo 680). Si quedó más angosto (por ejemplo, con los anchos del boceto)
+    // se une con el siguiente hasta llegar al mínimo (hasta 1.200 mm). Los aéreos se alinean con el corte de los bajos si éste no es menor a 680.
+    const rincones: ('izq' | 'der')[] = [];
+    if (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')) rincones.push('izq');
+    if (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')) rincones.push('der');
+    const equiposA = currentAppliances.filter(a => a.active && a.wall === 'A' && (a.type === 'stove' || a.type === 'sink' || a.type === 'hood-under'));
+    const fijo = (m: KitchenModule) => !!m.isFridgeCabinet || !!m.isHood || !!m.depthOffset || equiposA.some(a => Math.min(a.distance + a.width, m.positionX + m.width) - Math.max(a.distance, m.positionX) > 1);
+    const arreglarRincon = (tipo: 'LOWER' | 'UPPER', lado: 'izq' | 'der', minimo: number) => {
+      const fila = () => newModules.filter(m => m.wall === 'A' && m.type === tipo).sort((p, q) => p.positionX - q.positionX);
+      const rename = (m: KitchenModule) => { m.name = m.name.replace(/d+mm/, `${Math.round(m.width)}mm`); };
+      for (let it = 0; it < 6; it++) {
+        const f = fila();
+        const esq = lado === 'izq' ? f[0] : f[f.length - 1], sig = lado === 'izq' ? f[1] : f[f.length - 2];
+        if (!esq || esq.width >= minimo || fijo(esq)) return;
+        const alBorde = lado === 'izq' ? esq.positionX <= 60 : esq.positionX + esq.width >= wallA - 60;
+        if (!alBorde) return;
+        const pegado = sig && Math.abs(lado === 'izq' ? sig.positionX - (esq.positionX + esq.width) : esq.positionX - (sig.positionX + sig.width)) <= 5;
+        if (!pegado || fijo(sig)) { // no hay con quién unirlo: se ensancha hacia adentro si hay lugar
+          const libre = lado === 'izq' ? (sig ? sig.positionX : wallA) - esq.positionX : esq.positionX + esq.width - (sig ? sig.positionX + sig.width : 0);
+          const w = Math.min(libre, minimo); if (w <= esq.width) return;
+          if (lado === 'der') esq.positionX = esq.positionX + esq.width - w;
+          esq.width = w; rename(esq); return;
+        }
+        const total = esq.width + sig.width, ini = Math.min(esq.positionX, sig.positionX);
+        if (total <= 1200 && (total <= MAX_MODULE_WIDTH || total - minimo < 300)) {
+          esq.positionX = ini; esq.width = total; rename(esq);
+          newModules.splice(newModules.indexOf(sig), 1);
+          // el frente dibujado del módulo absorbido se quita de la lista para que los demás frentes sigan en su módulo
+          const lista = frentes ? (tipo === 'LOWER' ? frentes.bajos : frentes.altos) : undefined;
+          if (lista && lista.length > 1) lista.splice(lado === 'izq' ? 1 : lista.length - 2, 1);
+          if (total >= minimo) return;
+        } else {
+          const w1 = Math.ceil(minimo / 5) * 5, w2 = total - w1;
+          if (lado === 'izq') { esq.positionX = ini; esq.width = w1; sig.positionX = ini + w1; sig.width = w2; }
+          else { sig.positionX = ini; sig.width = w2; esq.positionX = ini + w2; esq.width = w1; }
+          rename(esq); rename(sig); return;
+        }
+      }
+    };
+    rincones.forEach(lado => {
+      arreglarRincon('LOWER', lado, CORNER_BLIND_OFFSET + 310);
+      const bajos = newModules.filter(m => m.wall === 'A' && m.type === 'LOWER').sort((p, q) => p.positionX - q.positionX);
+      const bajoEsq = lado === 'izq' ? bajos[0] : bajos[bajos.length - 1];
+      const alineado = bajoEsq && bajoEsq.width <= MAX_MODULE_WIDTH ? bajoEsq.width : 0;
+      arreglarRincon('UPPER', lado, Math.max(UPPER_DEPTH + 350, alineado));
+    });
+
+    // Regla: ningún módulo se sale del muro. En A el largo es el del muro; en los brazos B y C se cuenta desde donde empiezan los módulos (tras los 570 mm del rincón)
+    for (let i = newModules.length - 1; i >= 0; i--) {
+      const m = newModules[i];
+      if (m.type === 'TALL') continue;
+      const largoMuro = (m.wall === 'A' ? wallA : m.wall === 'B' ? wallB : wallC) - (m.wall === 'A' ? 0 : CORNER_BLIND_OFFSET);
+      if (m.positionX + m.width <= largoMuro + 1) continue;
+      if (largoMuro - m.positionX < 120) { newModules.splice(i, 1); continue; }
+      m.width = Math.floor((largoMuro - m.positionX) / 5) * 5;
+      m.name = m.name.replace(/d+mm/, `${m.width}mm`);
+    }
 
     // Bosquejo: cada módulo lleva el frente que se dibujó (puertas, cajones, abierto, platero), de izquierda a derecha en el muro A
     if (frentes) {
@@ -1722,6 +1825,20 @@ export default function App() {
         m.detailed = true;
         m.frontsLayout = m.isHood ? 'hood' : f === 'abierto' ? 'open' : m.width < 450 ? 'upper-door1' : 'upper-door2-v';
         m.hasPlateRack = f === 'platero';
+      });
+      // Brazos B y C: los mismos frentes que se sugieren en el muro A (los bajos con cajones o con puertas según predominen en A; la estufa con cajones,
+      // la poceta con puertas; los aéreos con una o dos puertas según su ancho)
+      const propios = frentes.bajos.filter(f => f !== 'estufa' && f !== 'poceta');
+      const conCajones = propios.filter(f => f === 'cajones').length > propios.length / 2;
+      newModules.filter(m => m.wall !== 'A' && (m.type === 'LOWER' || m.type === 'UPPER') && !m.isFridgeCabinet && !m.cornerArm).forEach(m => {
+        m.detailed = true;
+        if (m.type === 'LOWER') {
+          const cajones = m.isStoveCabinet || (!m.isSinkCabinet && conCajones);
+          m.frontsLayout = cajones ? 'drawers' : m.width <= 450 ? 'door1' : 'door2';
+          m.configType = cajones ? 'drawers' : 'doors'; m.drawerCount = cajones ? 3 : 0;
+        } else {
+          m.frontsLayout = m.isHood ? 'hood' : m.width < 450 ? 'upper-door1' : 'upper-door2-v';
+        }
       });
       newModules.filter(m => m.isFridgeCabinet).forEach(m => { m.detailed = true; m.frontsLayout = m.width < 450 ? 'upper-door1' : 'upper-door2-h'; });
     }
@@ -1786,6 +1903,7 @@ export default function App() {
   // y el resto se llena con la modulación automática (se lanza en el siguiente render, cuando ya están puestas las medidas nuevas)
   const [bosquejoPend, setBosquejoPend] = useState(false);
   const [bosquejoListo, setBosquejoListo] = useState(false);
+  const [evidenciasBoceto, setEvidenciasBoceto] = useState<EvidenciasBoceto | null>(null); // todas las fotos y las notas del boceto: evidencias del proyecto
   const [fotoBoceto, setFotoBoceto] = useState<string | null>(null); // foto del boceto con que se armó el diseño abierto: se guarda con el producto
   const [productoActivo, setProductoActivo] = useState<ProductoActivo | null>(null);
   // aprobación del diseño abierto: el diseño (su clave) que se aprobó; si se cambia algo, vuelve a quedar sin aprobar
@@ -1800,6 +1918,7 @@ export default function App() {
   const [nombreAprobar, setNombreAprobar] = useState<string | undefined>(undefined); // nombre del producto traído de la biblioteca
   const huellaBiblioteca = useRef<string | null>(null); // diseño tal como salió de la biblioteca: no se ofrece guardarlo otra vez
   const aprobadoAlAbrir = useRef(false); // producto del proyecto abierto ahora (render y fotos se guardan en él) // ya se aceptó un boceto: se muestra pasado en limpio
+  useEffect(() => { if (!fotoBoceto) setEvidenciasBoceto(null); }, [fotoBoceto]);
   useEffect(() => { if (aprobadoAlAbrir.current) { aprobadoAlAbrir.current = false; setAprobadoKey(snapshotKey); } }, [snapshotKey]);
   // documentos del producto: Excel de corte (lista de partes, CorteCloud y herrajes), láminas y planos; con el boceto si se armó desde uno
   const docsDelDiseno = (nombre: string, cliente: string, nuevo: boolean): DocumentoNuevo[] => {
@@ -1810,7 +1929,12 @@ export default function App() {
       docs.push({ tipo: 'laminas', nombre: `Laminas_${base}.html`, archivo: new Blob([htmlLaminas(lista.piezas, nombre)], { type: 'text/html' }) });
       docs.push({ tipo: 'planos', nombre: `Planos_${base}.html`, archivo: new Blob([htmlPlanos(boxes, { lineType, faceColor }, nombre, cliente)], { type: 'text/html' }) });
     }
-    if (nuevo && fotoBoceto) docs.push({ tipo: 'boceto', nombre: `Boceto_${base}.jpg`, archivo: archivoDeDataURL(fotoBoceto) });
+    // evidencias del boceto: cada foto y las notas
+    if (nuevo && (evidenciasBoceto?.fotos.length || fotoBoceto)) {
+      const fotosB = evidenciasBoceto?.fotos.length ? evidenciasBoceto.fotos : [fotoBoceto!];
+      fotosB.forEach((f, i) => docs.push({ tipo: 'boceto', nombre: `Boceto_${base}${i ? `_${i + 1}` : ''}.jpg`, archivo: archivoDeDataURL(f) }));
+      if (evidenciasBoceto?.notas) docs.push({ tipo: 'notas', nombre: `Notas_boceto_${base}.txt`, archivo: new Blob([evidenciasBoceto.notas], { type: 'text/plain;charset=utf-8' }) });
+    }
     return docs;
   };
   // Aprobar diseño: guarda el diseño abierto en su producto, crea sus documentos y lo marca aprobado
@@ -1860,8 +1984,8 @@ export default function App() {
     setActiveTab('design');
     if (usarComo !== undefined) { setNombreAprobar(usarComo); setAprobando('dialogo'); }
   };
-  const crearDesdeBosquejo = (d: DatosBosquejo, foto?: string) => {
-    setFotoBoceto(foto ?? null); setProductoActivo(null);
+  const crearDesdeBosquejo = (d: DatosBosquejo, foto?: string, evidencias?: EvidenciasBoceto) => {
+    setFotoBoceto(foto ?? null); setEvidenciasBoceto(evidencias ?? null); setProductoActivo(null);
     switchSection(d.producto);
     setWallA(d.A); setSpaceHeight(d.alto);
     setBosquejoListo(true); // se queda en Bosquejo y muestra el diseño pasado en limpio
@@ -1871,10 +1995,27 @@ export default function App() {
     if (d.forma === 'STRAIGHT') { setHasLeftClosure(d.muroIzq); setHasRightClosure(d.muroDer); }
     // dilatada contra los muros (regla del carpintero): 2 cm de holgura y dilatada de 7 cm de canto
     if (d.muroIzq || d.muroDer) { setHasDilatation(true); setDilatationGap(HOLGURA_MURO); }
+    // colores nombrados en el boceto o en las notas: se buscan en el catálogo y se aplican al diseño (los que no están en el catálogo quedan como estaban)
+    {
+      const col = (t?: string) => (t ? colorDeCatalogo(t)?.nombre : undefined);
+      const est = col(d.colorEstructura), fach = col(d.colorFachada), fachA = col(d.colorFachadaAereos);
+      if (fach) setFaceColor(fach);
+      if (d.producto === 'cocinas' && (est || fach || fachA)) {
+        setAcabados(prev => {
+          const x = completarAcabados(prev);
+          return {
+            ...x,
+            MA: { ...x.MA, est: est ? { ...x.MA.est, color: est } : x.MA.est, fach: fachA || fach ? { ...x.MA.fach, color: (fachA ?? fach)! } : x.MA.fach },
+            MB: { ...x.MB, est: est ? { ...x.MB.est, color: est } : x.MB.est, fach: fach ? { ...x.MB.fach, color: fach } : x.MB.fach },
+          };
+        });
+      }
+    }
     if (d.producto !== 'cocinas') return;
     const largo = (m: 'A' | 'B' | 'C') => (m === 'A' ? d.A : m === 'B' ? d.B : d.C);
     // el equipo se centra en el punto (su mueble mide mínimo 600), sin salirse del muro
-    const centrar = (pt: { muro: 'A' | 'B' | 'C'; dist: number }, ancho = 600) => Math.max(0, Math.min(Math.round(pt.dist - ancho / 2), largo(pt.muro) - Math.max(600, ancho)));
+    // en los brazos B y C la posición se cuenta desde donde empiezan los módulos (después de los 570 mm del rincón), no desde la esquina
+    const centrar = (pt: { muro: 'A' | 'B' | 'C'; dist: number }, ancho = 600) => { const o = pt.muro === 'A' ? 0 : CORNER_BLIND_OFFSET; return Math.max(0, Math.min(Math.round(pt.dist - ancho / 2) - o, largo(pt.muro) - o - Math.max(600, ancho))); };
     // anchos de módulo del boceto (muro A, de izquierda a derecha): la cocina se parte en esas divisiones, y la poceta y la estufa
     // se acomodan al módulo donde cae su punto
     const mods = d.modulos.filter(w => w > 0);
@@ -1895,9 +2036,17 @@ export default function App() {
     const en = (fila: { x: number; w: number; frente: string }[], f: string) => fila.find(m => m.frente === f);
     const pocetaB = en(bajosX, 'poceta'), estufaB = en(bajosX, 'estufa'), campanaA = estufaB; // la campana va sobre el módulo de la estufa
     setAppliances(prev => prev.map(a => {
+      // la poceta va centrada en el desagüe del boceto (muro A), sin pasar de los muros ni meterse bajo el brazo del rincón
+      if (a.type === 'sink' && d.desague && d.desague.muro === 'A') {
+        const ciegoIzq = d.forma === 'U_SHAPE' || (d.forma === 'L_SHAPE' && d.brazo === 'left') ? CORNER_BLIND_OFFSET : 0;
+        const ciegoDer = d.forma === 'U_SHAPE' || (d.forma === 'L_SHAPE' && d.brazo === 'right') ? CORNER_BLIND_OFFSET : 0;
+        const w = a.width;
+        const dist = Math.round(Math.max(ciegoIzq, Math.min(d.desague.dist - w / 2, d.A - ciegoDer - w)));
+        return { ...a, active: true, wall: 'A', distance: dist, width: w, space: undefined };
+      }
       if (a.type === 'sink') return pocetaB ? { ...a, active: true, wall: 'A', distance: pocetaB.x + Math.max(0, (pocetaB.w - Math.min(a.width, pocetaB.w - 50)) / 2), width: Math.min(a.width, pocetaB.w - 50), space: pocetaB.w } : d.desague ? { ...a, active: true, wall: d.desague.muro, distance: enModulo(d.desague, a.width).distance } : { ...a, active: false };
-      if (a.type === 'stove') return estufaB ? { ...a, active: true, wall: 'A', distance: estufaB.x, width: estufaB.w } : d.gas ? { ...a, active: true, wall: d.gas.muro, ...enModulo(d.gas, 600) } : { ...a, active: false };
-      if (a.type === 'hood-under') return campanaA && (estufaB || d.gas) && d.campana ? { ...a, active: true, wall: 'A', distance: campanaA.x, width: campanaA.w } : d.gas && d.campana ? { ...a, active: true, wall: d.gas.muro, ...enModulo(d.gas, 600) } : { ...a, active: false };
+      if (a.type === 'stove') return estufaB ? { ...a, active: true, wall: 'A', distance: estufaB.x, width: 600 } : d.gas ? { ...a, active: true, wall: d.gas.muro, ...enModulo(d.gas, 600), width: 600 } : { ...a, active: false };
+      if (a.type === 'hood-under') return campanaA && (estufaB || d.gas) && d.campana ? { ...a, active: true, wall: 'A', distance: campanaA.x, width: 600 } : d.gas && d.campana ? { ...a, active: true, wall: d.gas.muro, ...enModulo(d.gas, 600), width: 600 } : { ...a, active: false };
       if (a.type === 'fridge') {
         if (d.nevera === 'no') return { ...a, active: false };
         // espacio de la nevera: el del boceto (o el primer/último módulo); la nevera, con su ancho y alto reales, va centrada en él
@@ -1917,15 +2066,19 @@ export default function App() {
       bosquejoAltos.current = undefined; // los aéreos se alinean con los bajos
       bosquejoFrentes.current = { bajos: bajosX.map(m => m.frente), altos: altosX.map(m => m.frente) };
     } else { bosquejoCortes.current = cortes; bosquejoAltos.current = undefined; bosquejoFrentes.current = undefined; }
+    const anchosA = conFilas ? bajosX.filter(m => m.frente !== 'estufa' && m.frente !== 'poceta').map(m => m.w) : mods;
+    bosquejoEstrategia.current = estrategiaPorAncho(anchoComun(anchosA));
     setBosquejoPend(true);
   };
+  const bosquejoEstrategia = useRef<OptimizationStrategy>('efficiency');
   const bosquejoCortes = useRef<number[]>([]);
   const bosquejoAltos = useRef<number[] | undefined>(undefined);
   const bosquejoFrentes = useRef<{ bajos: string[]; altos: string[] } | undefined>(undefined);
   useEffect(() => {
     if (!bosquejoPend) return;
     setBosquejoPend(false);
-    runAutoModulation(appliances, 'efficiency', bosquejoCortes.current, bosquejoAltos.current, bosquejoFrentes.current);
+    runAutoModulation(appliances, bosquejoEstrategia.current, bosquejoCortes.current, bosquejoAltos.current, bosquejoFrentes.current);
+    bosquejoEstrategia.current = 'efficiency';
     bosquejoCortes.current = []; bosquejoAltos.current = undefined; bosquejoFrentes.current = undefined;
   }, [bosquejoPend, runAutoModulation, appliances]);
 
@@ -5288,7 +5441,7 @@ export default function App() {
               {(
                 <KitchenViewer3D
                   puntos={puntosAdecuacion(appliances, modules, wallA)}
-                  colores={{ al: hexDe(nivelAL.est.color, '#f4f4f1'), fachadaAL: hexDe(nivelAL.fach.color || acabados.MB.fach.color), fondoAL: hexDe(nivelAL.fondo.color, '#e5e7eb'), th: hexDe(nivelTH.est.color, '#f4f4f1'), fachadaTH: hexDe(nivelTH.fach.color || acabados.MB.fach.color), fondoTH: hexDe(nivelTH.fondo.color, '#e5e7eb'), puentes: modules.filter(m => m.esPuente).map(m => m.uniqueId), pu: hexDe(nivelPU.est.color, '#f4f4f1'), fachadaPU: hexDe(nivelPU.fach.color || acabados.MA.fach.color), fondoPU: hexDe(nivelPU.fondo.color, '#e5e7eb'), fachada: hexDe(acabados.MB.fach.color), fachadaMA: hexDe(acabados.MA.fach.color), ma: hexDe(acabados.MA.est.color, '#f4f4f1'), mb: hexDe(acabados.MB.est.color, '#f4f4f1'), otros: hexDe(acabados.MB.est.color, '#f4f4f1'), fondo: hexDe(acabados.MB.fondo.color, '#e5e7eb'), fondoMA: hexDe(acabados.MA.fondo.color, '#e5e7eb') }}
+                  colores={{ cantoFachada: acabados.cantoFachada, al: hexDe(nivelAL.est.color, '#f4f4f1'), fachadaAL: hexDe(nivelAL.fach.color || acabados.MB.fach.color), fondoAL: hexDe(nivelAL.fondo.color, '#e5e7eb'), th: hexDe(nivelTH.est.color, '#f4f4f1'), fachadaTH: hexDe(nivelTH.fach.color || acabados.MB.fach.color), fondoTH: hexDe(nivelTH.fondo.color, '#e5e7eb'), puentes: modules.filter(m => m.esPuente).map(m => m.uniqueId), pu: hexDe(nivelPU.est.color, '#f4f4f1'), fachadaPU: hexDe(nivelPU.fach.color || acabados.MA.fach.color), fondoPU: hexDe(nivelPU.fondo.color, '#e5e7eb'), fachada: hexDe(acabados.MB.fach.color), fachadaMA: hexDe(acabados.MA.fach.color), ma: hexDe(acabados.MA.est.color, '#f4f4f1'), mb: hexDe(acabados.MB.est.color, '#f4f4f1'), otros: hexDe(acabados.MB.est.color, '#f4f4f1'), fondo: hexDe(acabados.MB.fondo.color, '#e5e7eb'), fondoMA: hexDe(acabados.MA.fondo.color, '#e5e7eb') }}
                   wallThickMm={cfg.id === 'puertas' ? puerta.espesor : undefined}
                   puertaApi={cfg.id === 'puertas' ? { cfg: puerta, onChange: setPuerta, onOpenForm: () => setPuertaHidden(false) } : undefined}
                   layout={layout} 
@@ -6026,11 +6179,17 @@ export default function App() {
             <p className="text-xs font-bold text-slate-400 mb-6">Adjunta la foto del boceto a mano alzada, revisa lo que se entendió y acéptalo o corrígelo.</p>
             {bosquejoListo && labeledModules.length > 0 && (
               <div className="mb-4 space-y-3 max-w-6xl">
-                <PlanoLimpio boxes={boxes} modules={labeledModules} />
+                <PlanoLimpio boxes={boxes} modules={labeledModules} onCambiar={(id, cambios) => setModules(prev => prev.map(m => (m.uniqueId === id ? { ...m, ...cambios } : m)))} />
                 <div className="flex flex-wrap gap-2">
                   <button onClick={() => setActiveTab('design')} className="rounded-xl px-5 py-2.5 text-sm font-black bg-indigo-600 text-white">Ir a Diseño</button>
-                  <button onClick={() => setBosquejoListo(false)} className="rounded-xl px-5 py-2.5 text-sm font-black border border-slate-200 text-slate-700">Leer otro boceto</button>
+                  <button onClick={() => setBosquejoListo(false)} className="rounded-xl px-5 py-2.5 text-sm font-black border border-slate-200 text-slate-700">Volver a mi boceto y notas</button>
                 </div>
+              </div>
+            )}
+            {!bosquejoListo && labeledModules.length > 0 && (fotoBoceto || evidenciasBoceto) && (
+              <div className="mb-4 max-w-6xl flex flex-wrap items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
+                <button onClick={() => setBosquejoListo(true)} className="rounded-xl px-4 py-2 text-xs font-black bg-indigo-600 text-white">Volver al boceto en limpio</button>
+                <span className="text-[11px] font-bold text-indigo-900">Aquí están tu foto y tus notas. Se guardan como evidencias del proyecto cuando agregas el diseño a un proyecto.</span>
               </div>
             )}
             <div className={bosquejoListo && labeledModules.length > 0 ? 'hidden' : ''}><Bosquejo actual={section} onCrear={crearDesdeBosquejo} /></div>

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { SECTIONS, SectionId } from './sections';
 import type { LayoutType } from './types';
-import { LecturaBoceto, ModuloDibujado, ProductoLeido, leerBoceto } from './bocetoIA';
+import { LecturaBoceto, ModuloDibujado, Pistas, PISTAS_AUTO, ProductoLeido, leerBoceto } from './bocetoIA';
 import { GuiaBoceto } from './GuiaBoceto';
+import { CATALOGO, colorDeCatalogo } from './colores';
 
 /**
  * Fase 5 · Bosquejo.
@@ -21,6 +22,8 @@ export interface DatosBosquejo {
   A: number; B: number; C: number; alto: number;
   desague: Punto | null;
   gas: Punto | null;
+  agua?: Punto | null;          // punto de agua
+  electricidad?: Punto[];       // tomas o puntos eléctricos
   nevera: 'no' | 'inicio' | 'final';
   campana: boolean;
   modulos: number[]; // cocinas: anchos de los módulos del muro A, de izquierda a derecha (vacío = modulación automática)
@@ -29,6 +32,7 @@ export interface DatosBosquejo {
   neveraAlto?: number;
   bajos?: ModuloDibujado[]; // módulos dibujados en el boceto (de izquierda a derecha): la cocina se arma con ellos, no con la modulación automática
   altos?: ModuloDibujado[];
+  colorEstructura?: string; colorFachada?: string; colorFachadaAereos?: string; // colores nombrados en el boceto o en las notas (se aplican al aceptar)
   muroIzq: boolean; // muro pegado a la izquierda del muro A (el mueble queda entre muros)
   muroDer: boolean; // muro pegado a la derecha
 }
@@ -77,8 +81,9 @@ function aDatos(q: ProductoLeido, actual: SectionId): DatosBosquejo {
   return {
     producto: prod, forma, brazo: q.brazo ?? 'left',
     A: q.muroA ?? df.wallA, B: q.muroB ?? df.wallB, C: q.muroC ?? df.wallC, alto: q.alto ?? df.spaceHeight,
-    desague: cocina ? q.desague : null, gas: cocina ? q.gas : null, nevera: q.nevera ?? 'no', campana: true, modulos: cocina && !q.filaBaja.length ? q.modulos : [],
+    desague: cocina || prod === 'bano' ? q.desague : null, gas: cocina ? q.gas : null, agua: cocina || prod === 'bano' ? q.agua : null, electricidad: cocina || prod === 'tv' ? q.electricidad : [], nevera: q.nevera ?? 'no', campana: true, modulos: cocina && !q.filaBaja.length ? q.modulos : [],
     muroIzq: !!q.muroIzq, muroDer: !!q.muroDer,
+    colorEstructura: q.colores?.estructura, colorFachada: q.colores?.fachada, colorFachadaAereos: q.colores?.fachadaAereos,
     // con los módulos dibujados manda lo dibujado; los anchos acotados (si los hay) pasan a cada módulo dibujado
     bajos: cocina && q.filaBaja.length ? conAnchos(q.filaBaja, q.modulos, q.nevera) : undefined, altos: cocina && q.filaAlta.length ? q.filaAlta : undefined,
     neveraEspacio: cocina && q.nevera && q.nevera !== 'no' ? (q.neveraEspacio ?? (q.modulos.length ? (q.nevera === 'inicio' ? q.modulos[0] : q.modulos[q.modulos.length - 1]) : undefined)) : undefined,
@@ -110,55 +115,166 @@ export function anchosFila(fila: ModuloDibujado[], total: number): number[] {
   return out;
 }
 
+/** Ancho de módulo que más se repite en lo dibujado (a 100 mm): lo usan los brazos B y C, que el boceto no divide, para quedar como el muro A */
+export function anchoComun(anchos: number[]): number {
+  const v = anchos.filter(w => w > 0);
+  if (!v.length) return 900;
+  const cuenta = new Map<number, number>();
+  v.forEach(w => { const k = Math.round(w / 100) * 100; cuenta.set(k, (cuenta.get(k) ?? 0) + 1); });
+  return [...cuenta.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0];
+}
+export const estrategiaPorAncho = (w: number): 'efficiency' | 'standard' | 'detailed' => (w >= 800 ? 'efficiency' : w >= 500 ? 'standard' : 'detailed');
+
+/** Anchos de los módulos de abajo y de arriba tal como los usará la app (los acotados se respetan; el resto se reparte) */
+export function anchosDibujados(d: DatosBosquejo): { bajos: number[]; altos: number[] } {
+  if (d.producto !== 'cocinas') return { bajos: [], altos: [] };
+  const [t0, t1] = tramoModulos(d);
+  if (d.bajos?.length) return { bajos: anchosFila(d.bajos, t1 - t0), altos: anchosFila(d.altos?.length ? d.altos : d.bajos, t1 - t0) };
+  return { bajos: d.modulos, altos: [] };
+}
+
+/** Revisor de normas del taller: lo que la app va a corregir o completar al pasar en limpio (no bloquea; informa para que se sepa) */
+export function normasDelTaller(d: DatosBosquejo): string[] {
+  const out: string[] = [];
+  if (d.producto !== 'cocinas') return out;
+  const { bajos, altos } = anchosDibujados(d);
+  const frentes = d.bajos ?? [];
+  frentes.forEach((m, i) => {
+    const w = bajos[i];
+    if (m.frente === 'estufa' && w && w !== 600) out.push(`La estufa y su campana son de 600 mm: el módulo dibujado de ${fmt(w)} mm se completa con otro módulo al lado.`);
+    if (m.frente === 'poceta' && w && w < 600) out.push(`El mueble de la poceta mide mínimo 600 mm y el dibujado es de ${fmt(w)} mm.`);
+  });
+  const fuera = bajos.filter(w => w > 900 || (w > 0 && w < 300)); // los aéreos se alinean con los bajos: solo cuentan los de abajo
+  if (fuera.length) out.push(`Un módulo mide entre 300 y 900 mm: ${[...new Set(fuera)].map(fmt).join(', ')} mm se parte o se ajusta.`);
+  if (d.altos?.length && d.bajos?.length && d.altos.length !== d.bajos.length) out.push(`Arriba dibujaste ${d.altos.length} módulos y abajo ${d.bajos.length}: los aéreos se alinean con los de abajo.`);
+  if (d.forma !== 'STRAIGHT') {
+    const comun = anchoComun([...bajos].length ? bajos.filter((_, i) => frentes[i]?.frente !== 'estufa' && frentes[i]?.frente !== 'poceta') : d.modulos);
+    out.push(`El boceto divide solo el muro A: los brazos B y C se modulan con módulos de ${fmt(comun)} mm, como el muro A.`);
+  }
+  return out;
+}
+
 const FRENTE: Record<string, string> = { puertas: 'puertas', cajones: 'cajones', abierto: 'abierto', poceta: 'poceta', estufa: 'estufa', campana: 'campana', platero: 'platero' };
 
 const conB = (d: DatosBosquejo) => d.forma === 'U_SHAPE' || (d.forma === 'L_SHAPE' && d.brazo === 'left');
 const conC = (d: DatosBosquejo) => d.forma === 'U_SHAPE' || (d.forma === 'L_SHAPE' && d.brazo === 'right');
 
 type EstadoDato = 'ok' | 'falta' | 'revisar' | 'opcional';
-interface DatoLeido { titulo: string; estado: EstadoDato; valor: string }
+interface DatoLeido { clave: string; titulo: string; estado: EstadoDato; valor: string; editor?: React.ReactNode }
+type SetD = (f: (d: DatosBosquejo) => DatosBosquejo) => void;
 
-/** Lista de chequeo de lo que trae el boceto: qué se leyó, qué falta y qué hay que revisar */
-function checklist(d: DatosBosquejo, q?: ProductoLeido): DatoLeido[] {
+/** Editor de un punto (gas, agua, desagüe, toma): en qué muro está y a cuántos mm del 0 */
+const PuntoEd: React.FC<{ p: Punto | null | undefined; onChange: (p: Punto | null) => void; muros?: MuroPunto[] }> = ({ p, onChange, muros = ['A', 'B', 'C'] }) => (
+  <div className="flex flex-wrap items-end gap-2">
+    <div className="flex gap-1">{muros.map(m => <Chip key={m} on={p?.muro === m} onClick={() => onChange({ muro: m, dist: p?.dist ?? 1000 })}>Muro {m}</Chip>)}</div>
+    <div className="w-32"><Num label="Distancia al 0 (mm)" value={p?.dist ?? 0} onChange={n => onChange(n > 0 ? { muro: p?.muro ?? 'A', dist: n } : null)} /></div>
+    {p && <button onClick={() => onChange(null)} className="text-[11px] font-black text-rose-600 pb-2">Quitar</button>}
+  </div>
+);
+
+/** Lista de chequeo de lo que trae el boceto: qué se leyó, qué falta y qué hay que revisar; cada dato se toca y se edita ahí mismo */
+function checklist(d: DatosBosquejo, q: ProductoLeido | undefined, ed: string[], set: SetD, marcar: (k: string) => void, abrirModulos: () => void): DatoLeido[] {
   const out: DatoLeido[] = [];
   const cocina = d.producto === 'cocinas', puerta = d.producto === 'puertas';
-  const dato = (titulo: string, estado: EstadoDato, valor: string) => out.push({ titulo, estado, valor });
   const punto = (p: { muro: string; dist: number } | null | undefined) => (p ? `muro ${p.muro} a ${fmt(p.dist)} mm` : '');
-  dato(puerta ? 'Largo del muro' : 'Medida total del muro', q?.muroA ? 'ok' : 'falta', q?.muroA ? `${fmt(d.A)} mm` : `no se vio · se usa ${fmt(d.A)} mm`);
-  dato('Altura del piso al techo', q?.alto ? 'ok' : 'falta', q?.alto ? `${fmt(d.alto)} mm` : `no se vio · se usa ${fmt(d.alto)} mm`);
-  if (!puerta) dato('Forma', q?.forma ? 'ok' : 'revisar', `${FORMAS[d.forma]}${q?.forma ? '' : ' (supuesto)'}`);
+  const upd = (f: (x: DatosBosquejo) => DatosBosquejo, k: string) => { set(f); marcar(k); };
+  const dato = (clave: string, titulo: string, estado: EstadoDato, valor: string, editor?: React.ReactNode) => {
+    const editado = ed.includes(clave);
+    out.push({ clave, titulo, estado: editado && estado !== 'opcional' ? 'ok' : editado ? 'ok' : estado, valor: editado ? `${valor} · editado` : valor, editor });
+  };
+  const textoModulos = (clave: string) => (
+    <label className="block max-w-md"><span className="text-[9px] font-black text-slate-400 uppercase block mb-1">Anchos de izquierda a derecha (mm)</span>
+      <input key={d.modulos.join('+')} defaultValue={d.modulos.join(' + ')} placeholder="Vacío = la app los reparte"
+        onBlur={e => { const v = (e.target.value.match(/\d+/g) ?? []).map(Number).filter(n => n > 0); upd(x => ({ ...x, modulos: v }), clave); }}
+        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-slate-800" /></label>
+  );
+
+  dato('A', puerta ? 'Largo del muro' : 'Medida total del muro', q?.muroA ? 'ok' : 'falta', q?.muroA ? `${fmt(d.A)} mm` : `no se vio · se usa ${fmt(d.A)} mm`,
+    <div className="w-40"><Num label="Medida (mm)" value={d.A} onChange={n => upd(x => ({ ...x, A: n }), 'A')} /></div>);
+  dato('alto', 'Altura del piso al techo', q?.alto ? 'ok' : 'falta', q?.alto ? `${fmt(d.alto)} mm` : `no se vio · se usa ${fmt(d.alto)} mm`,
+    <div className="w-40"><Num label="Altura (mm)" value={d.alto} onChange={n => upd(x => ({ ...x, alto: n }), 'alto')} /></div>);
+  if (!puerta) dato('forma', 'Forma', q?.forma ? 'ok' : 'revisar', `${FORMAS[d.forma]}${d.forma === 'L_SHAPE' ? (d.brazo === 'left' ? ' · brazo a la izquierda' : ' · brazo a la derecha') : ''}${q?.forma ? '' : ' (supuesto)'}`,
+    SECTIONS[d.producto].layouts.length > 1 ? (
+      <div className="flex flex-wrap gap-2">
+        {SECTIONS[d.producto].layouts.map(f => <Chip key={f} on={d.forma === f} onClick={() => upd(x => ({ ...x, forma: f }), 'forma')}>{FORMAS[f]}</Chip>)}
+        {d.forma === 'L_SHAPE' && <>
+          <Chip on={d.brazo === 'left'} onClick={() => upd(x => ({ ...x, brazo: 'left' }), 'forma')}>Brazo a la izquierda</Chip>
+          <Chip on={d.brazo === 'right'} onClick={() => upd(x => ({ ...x, brazo: 'right' }), 'forma')}>Brazo a la derecha</Chip></>}
+      </div>) : undefined);
   if (!puerta && d.forma !== 'STRAIGHT') {
     const completa = (!conB(d) || !!q?.muroB) && (!conC(d) || !!q?.muroC);
-    dato('Vista superior (muros B y C)', completa ? 'ok' : 'falta', completa ? `A ${fmt(d.A)}${conB(d) ? ` · B ${fmt(d.B)}` : ''}${conC(d) ? ` · C ${fmt(d.C)}` : ''} mm` : 'dibuja la planta con el muro B o C acotado');
+    dato('brazos', 'Vista superior (muros B y C)', completa ? 'ok' : 'falta', completa ? `A ${fmt(d.A)}${conB(d) ? ` · B ${fmt(d.B)}` : ''}${conC(d) ? ` · C ${fmt(d.C)}` : ''} mm` : 'dibuja la planta con el muro B o C acotado',
+      <div className="flex gap-3">
+        {conB(d) && <div className="w-36"><Num label="Muro B (mm)" value={d.B} onChange={n => upd(x => ({ ...x, B: n }), 'brazos')} /></div>}
+        {conC(d) && <div className="w-36"><Num label="Muro C (mm)" value={d.C} onChange={n => upd(x => ({ ...x, C: n }), 'brazos')} /></div>}
+      </div>);
   } else if (!puerta) {
-    dato('Muros a los lados', 'ok', d.muroIzq && d.muroDer ? 'entre dos muros (dilatada de 7 cm en los dos)' : d.muroIzq ? 'a la izquierda (dilatada de 7 cm)' : d.muroDer ? 'a la derecha (dilatada de 7 cm)' : 'no hay');
+    dato('lados', 'Muros a los lados', 'ok', d.muroIzq && d.muroDer ? 'entre dos muros (dilatada de 7 cm en los dos)' : d.muroIzq ? 'a la izquierda (dilatada de 7 cm)' : d.muroDer ? 'a la derecha (dilatada de 7 cm)' : 'no hay',
+      <div className="flex gap-2">
+        <Chip on={d.muroIzq} onClick={() => upd(x => ({ ...x, muroIzq: !x.muroIzq }), 'lados')}>Muro a la izquierda</Chip>
+        <Chip on={d.muroDer} onClick={() => upd(x => ({ ...x, muroDer: !x.muroDer }), 'lados')}>Muro a la derecha</Chip>
+      </div>);
   }
   if (cocina) {
     const fila = (m: ModuloDibujado[]) => m.map(x => x.frente).join(', ');
-    dato('Módulos de abajo', d.bajos?.length ? 'ok' : 'falta', d.bajos?.length ? `${d.bajos.length}: ${fila(d.bajos)}` : 'no se vieron los frentes dibujados');
-    dato('Módulos de arriba', d.altos?.length ? 'ok' : 'falta', d.altos?.length ? `${d.altos.length}: ${fila(d.altos)}` : 'no se vieron los frentes dibujados');
+    const botonModulos = <button onClick={abrirModulos} className="rounded-xl px-3 py-2 text-xs font-black border border-slate-200 text-slate-700">Editar módulos uno por uno</button>;
+    dato('bajos', 'Módulos de abajo', d.bajos?.length ? 'ok' : 'falta', d.bajos?.length ? `${d.bajos.length}: ${fila(d.bajos)}` : 'no se vieron los frentes dibujados', botonModulos);
+    dato('altos', 'Módulos de arriba', d.altos?.length ? 'ok' : 'falta', d.altos?.length ? `${d.altos.length}: ${fila(d.altos)}` : 'no se vieron los frentes dibujados', botonModulos);
     const suma = (q?.modulos ?? []).reduce((a, w) => a + w, 0);
-    dato('Ancho de cada módulo', !q?.modulos.length ? 'falta' : suma !== d.A ? 'revisar' : 'ok', !q?.modulos.length ? 'sin cotas por módulo: la app los reparte' : `${q.modulos.map(fmt).join(' + ')}${suma !== d.A ? ` = ${fmt(suma)} y el muro mide ${fmt(d.A)}` : ''}`);
-    dato('Espacio de la nevera', d.nevera === 'no' ? 'opcional' : d.neveraEspacio ? 'ok' : 'revisar', d.nevera === 'no' ? 'sin nevera' : `a la ${d.nevera === 'inicio' ? 'izquierda' : 'derecha'}${d.neveraEspacio ? ` · espacio de ${fmt(d.neveraEspacio)} mm` : ' · falta acotar el espacio'}`);
-    dato('Agua', q?.agua ? 'ok' : 'falta', q?.agua ? punto(q.agua) : 'no se ve el punto de agua');
-    dato('Desagüe (poceta)', d.desague ? 'ok' : 'falta', d.desague ? punto(d.desague) : 'no se ve el desagüe');
-    dato('Electricidad', q?.electricidad.length ? 'ok' : 'falta', q?.electricidad.length ? q.electricidad.map(punto).join(' · ') : 'no se ven tomas ni puntos eléctricos');
-    dato('Gas (estufa)', d.gas ? 'ok' : 'falta', d.gas ? punto(d.gas) : 'no se ve el punto de gas');
+    dato('modulos', 'Ancho de cada módulo', !q?.modulos.length ? 'falta' : suma !== d.A ? 'revisar' : 'ok', !d.modulos.length ? 'sin cotas por módulo: la app los reparte' : `${d.modulos.map(fmt).join(' + ')}${d.modulos.reduce((a, w) => a + w, 0) !== d.A ? ` = ${fmt(d.modulos.reduce((a, w) => a + w, 0))} y el muro mide ${fmt(d.A)}` : ''}`, textoModulos('modulos'));
+    dato('nevera', 'Espacio de la nevera', d.nevera === 'no' ? 'opcional' : d.neveraEspacio ? 'ok' : 'revisar', d.nevera === 'no' ? 'sin nevera' : `a la ${d.nevera === 'inicio' ? 'izquierda' : 'derecha'}${d.neveraEspacio ? ` · espacio de ${fmt(d.neveraEspacio)} mm` : ' · falta acotar el espacio'}`,
+      <div className="flex flex-wrap items-end gap-2">
+        <Chip on={d.nevera === 'no'} onClick={() => upd(x => ({ ...x, nevera: 'no' }), 'nevera')}>Sin nevera</Chip>
+        <Chip on={d.nevera === 'inicio'} onClick={() => upd(x => ({ ...x, nevera: 'inicio' }), 'nevera')}>A la izquierda</Chip>
+        <Chip on={d.nevera === 'final'} onClick={() => upd(x => ({ ...x, nevera: 'final' }), 'nevera')}>A la derecha</Chip>
+        {d.nevera !== 'no' && <div className="w-36"><Num label="Espacio (mm)" value={d.neveraEspacio ?? 0} onChange={n => upd(x => ({ ...x, neveraEspacio: n > 0 ? n : undefined }), 'nevera')} /></div>}
+      </div>);
+    {
+      const cat = (t?: string) => (t ? colorDeCatalogo(t) : undefined);
+      const partes = [['estructura', d.colorEstructura], ['fachada', d.colorFachada], ['fachada de los aéreos', d.colorFachadaAereos]].filter(([, v]) => v) as [string, string][];
+      const sinCat = partes.filter(([, v]) => !cat(v));
+      const campo = (rotulo: string, k: 'colorEstructura' | 'colorFachada' | 'colorFachadaAereos') => (
+        <label className="block min-w-[10rem]"><span className="text-[9px] font-black text-slate-400 uppercase block mb-1">{rotulo}</span>
+          <input list="colores-catalogo" defaultValue={d[k] ?? ''} placeholder="Sin cambiar"
+            onBlur={e => upd(x => ({ ...x, [k]: e.target.value.trim() || undefined }), 'colores')}
+            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-slate-800" /></label>
+      );
+      dato('colores', 'Colores de los módulos', !partes.length ? 'opcional' : sinCat.length ? 'revisar' : 'ok',
+        !partes.length ? 'no se nombran: quedan los de Configuración de módulos' : partes.map(([t, v]) => `${t}: ${cat(v)?.nombre ?? `${v} (no está en el catálogo)`}`).join(' · '),
+        <div className="flex flex-wrap gap-3">
+          {campo('Estructura', 'colorEstructura')}{campo('Fachada', 'colorFachada')}{campo('Fachada de los aéreos', 'colorFachadaAereos')}
+          <datalist id="colores-catalogo">{CATALOGO.map(c => <option key={c.nombre} value={c.nombre} />)}</datalist>
+        </div>);
+    }
+    dato('agua', 'Agua', d.agua ? 'ok' : 'falta', d.agua ? punto(d.agua) : 'no se ve el punto de agua', <PuntoEd p={d.agua} onChange={p => upd(x => ({ ...x, agua: p }), 'agua')} />);
+    dato('desague', 'Desagüe (poceta)', d.desague ? 'ok' : 'falta', d.desague ? punto(d.desague) : 'no se ve el desagüe', <PuntoEd p={d.desague} onChange={p => upd(x => ({ ...x, desague: p }), 'desague')} />);
+    dato('luz', 'Electricidad', d.electricidad?.length ? 'ok' : 'falta', d.electricidad?.length ? d.electricidad.map(punto).join(' · ') : 'no se ven tomas ni puntos eléctricos',
+      <div className="space-y-2">
+        {(d.electricidad ?? []).map((p, i) => <PuntoEd key={i} p={p} onChange={n => upd(x => ({ ...x, electricidad: n ? (x.electricidad ?? []).map((y, j) => (j === i ? n : y)) : (x.electricidad ?? []).filter((_, j) => j !== i) }), 'luz')} />)}
+        <button onClick={() => upd(x => ({ ...x, electricidad: [...(x.electricidad ?? []), { muro: 'A', dist: 1000 }] }), 'luz')} className="text-[11px] font-black text-indigo-700">+ Agregar toma</button>
+      </div>);
+    dato('gas', 'Gas (estufa)', d.gas ? 'ok' : 'falta', d.gas ? punto(d.gas) : 'no se ve el punto de gas', <PuntoEd p={d.gas} onChange={p => upd(x => ({ ...x, gas: p }), 'gas')} />);
   }
   const detalleLeido = !!q?.detalle && q.detalle.trim().length > 8;
   if (d.producto === 'closets' || d.producto === 'closetfit' || d.producto === 'walking') {
-    dato('Ancho de cada cuerpo', q?.modulos.length ? 'ok' : 'falta', q?.modulos.length ? q.modulos.map(fmt).join(' + ') + ' mm' : 'sin cotas por cuerpo: la app los reparte');
-    dato('Qué lleva cada cuerpo', detalleLeido ? 'ok' : 'falta', detalleLeido ? 'tubos, entrepaños y cajones leídos (ver detalle)' : 'no se leyeron tubos, entrepaños ni cajones');
+    dato('modulos', 'Ancho de cada cuerpo', q?.modulos.length ? 'ok' : 'falta', d.modulos.length ? d.modulos.map(fmt).join(' + ') + ' mm' : 'sin cotas por cuerpo: la app los reparte', textoModulos('modulos'));
+    dato('detalle', 'Qué lleva cada cuerpo', detalleLeido ? 'ok' : 'falta', detalleLeido ? 'tubos, entrepaños y cajones leídos (ver detalle)' : 'no se leyeron tubos, entrepaños ni cajones');
   } else if (d.producto === 'tv') {
-    dato('Ancho de cada parte', q?.modulos.length ? 'ok' : 'falta', q?.modulos.length ? q.modulos.map(fmt).join(' + ') + ' mm' : 'sin cotas por parte');
-    dato('Qué lleva el mueble', detalleLeido ? 'ok' : 'falta', detalleLeido ? 'leído (ver detalle)' : 'no se leyeron puertas, cajones ni repisas');
-    dato('Electricidad y datos', q?.electricidad.length ? 'ok' : 'falta', q?.electricidad.length ? q.electricidad.map(punto).join(' · ') : 'no se ven la toma del TV ni los datos');
+    dato('modulos', 'Ancho de cada parte', q?.modulos.length ? 'ok' : 'falta', d.modulos.length ? d.modulos.map(fmt).join(' + ') + ' mm' : 'sin cotas por parte', textoModulos('modulos'));
+    dato('detalle', 'Qué lleva el mueble', detalleLeido ? 'ok' : 'falta', detalleLeido ? 'leído (ver detalle)' : 'no se leyeron puertas, cajones ni repisas');
+    dato('luz', 'Electricidad y datos', d.electricidad?.length ? 'ok' : 'falta', d.electricidad?.length ? d.electricidad.map(punto).join(' · ') : 'no se ven la toma del TV ni los datos',
+      <div className="space-y-2">
+        {(d.electricidad ?? []).map((p, i) => <PuntoEd key={i} p={p} onChange={n => upd(x => ({ ...x, electricidad: n ? (x.electricidad ?? []).map((y, j) => (j === i ? n : y)) : (x.electricidad ?? []).filter((_, j) => j !== i) }), 'luz')} />)}
+        <button onClick={() => upd(x => ({ ...x, electricidad: [...(x.electricidad ?? []), { muro: 'A', dist: 1000 }] }), 'luz')} className="text-[11px] font-black text-indigo-700">+ Agregar punto</button>
+      </div>);
   } else if (d.producto === 'bano') {
-    dato('Agua', q?.agua ? 'ok' : 'falta', q?.agua ? punto(q.agua) : 'no se ve el punto de agua');
-    dato('Desagüe', q?.desague ? 'ok' : 'falta', q?.desague ? punto(q.desague) : 'no se ve el desagüe');
-    dato('Qué lleva el mueble', detalleLeido ? 'ok' : 'falta', detalleLeido ? 'puertas y cajones leídos (ver detalle)' : 'no se leyeron puertas ni cajones');
+    dato('agua', 'Agua', d.agua ? 'ok' : 'falta', d.agua ? punto(d.agua) : 'no se ve el punto de agua', <PuntoEd p={d.agua} onChange={p => upd(x => ({ ...x, agua: p }), 'agua')} />);
+    dato('desague', 'Desagüe', d.desague ? 'ok' : 'falta', d.desague ? punto(d.desague) : 'no se ve el desagüe', <PuntoEd p={d.desague} onChange={p => upd(x => ({ ...x, desague: p }), 'desague')} />);
+    dato('detalle', 'Qué lleva el mueble', detalleLeido ? 'ok' : 'falta', detalleLeido ? 'puertas y cajones leídos (ver detalle)' : 'no se leyeron puertas ni cajones');
   }
-  if (!puerta) dato('Fondo', q?.fondo ? 'ok' : 'opcional', q?.fondo ? `${fmt(q.fondo)} mm` : 'el normal del producto');
+  if (!puerta) dato('fondo', 'Fondo', q?.fondo ? 'ok' : 'opcional', q?.fondo ? `${fmt(q.fondo)} mm` : 'el normal del producto');
   return out;
 }
 
@@ -170,19 +286,24 @@ const ICONO: Record<EstadoDato, { ico: string; caja: string }> = {
 };
 
 const ListaChequeo: React.FC<{ items: DatoLeido[] }> = ({ items }) => {
+  const [abierto, setAbierto] = useState<string | null>(null);
   const cuenta = items.filter(i => i.estado !== 'opcional');
   const leidos = cuenta.filter(i => i.estado === 'ok').length;
   return (
     <div className="space-y-2">
-      <div className="text-[10px] font-black text-slate-400 uppercase">Lo que trae el boceto · {leidos} de {cuenta.length} datos leídos</div>
-      <ul className="grid sm:grid-cols-2 gap-x-4 gap-y-1.5">
-        {items.map((it, i) => (
-          <li key={i} className="flex items-start gap-2">
-            <span className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center text-[11px] font-black mt-0.5 ${ICONO[it.estado].caja}`}>{ICONO[it.estado].ico}</span>
-            <span className="min-w-0">
-              <span className="block text-xs font-black text-slate-800">{it.titulo}</span>
-              <span className={`block text-[11px] font-bold ${it.estado === 'falta' ? 'text-rose-600' : it.estado === 'revisar' ? 'text-amber-700' : 'text-slate-500'}`}>{it.valor}</span>
-            </span>
+      <div className="text-[10px] font-black text-slate-400 uppercase">Lo que trae el boceto · {leidos} de {cuenta.length} datos listos · toca un dato para corregirlo</div>
+      <ul className="grid sm:grid-cols-2 gap-x-4 gap-y-1">
+        {items.map(it => (
+          <li key={it.clave} className={`rounded-xl ${abierto === it.clave ? 'bg-slate-50 sm:col-span-2' : ''}`}>
+            <button type="button" onClick={() => it.editor && setAbierto(a => (a === it.clave ? null : it.clave))} className={`w-full flex items-start gap-2 text-left p-1.5 rounded-xl ${it.editor ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default'}`}>
+              <span className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center text-[11px] font-black mt-0.5 ${ICONO[it.estado].caja}`}>{ICONO[it.estado].ico}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-xs font-black text-slate-800">{it.titulo}</span>
+                <span className={`block text-[11px] font-bold ${it.estado === 'falta' ? 'text-rose-600' : it.estado === 'revisar' ? 'text-amber-700' : 'text-slate-500'}`}>{it.valor}</span>
+              </span>
+              {it.editor && <span className="text-[11px] font-black text-indigo-600 shrink-0">{abierto === it.clave ? 'Listo' : 'Editar'}</span>}
+            </button>
+            {abierto === it.clave && it.editor && <div className="px-2 pb-3 pt-1" onClick={e => e.stopPropagation()}>{it.editor}</div>}
           </li>
         ))}
       </ul>
@@ -278,67 +399,131 @@ const Corregir: React.FC<{ d: DatosBosquejo; set: (f: (d: DatosBosquejo) => Dato
   );
 };
 
-export const Bosquejo: React.FC<{ actual: SectionId; onCrear: (d: DatosBosquejo, foto?: string) => void }> = ({ actual, onCrear }) => {
-  const [foto, setFoto] = useState<string | null>(null);
+/** Limpia la foto para leerla mejor: escala de grises y contraste, y borra lo que es más claro que el trazo (cuadrícula, marcas de agua, sombras) */
+function limpiarFoto(c: HTMLCanvasElement): string {
+  const ctx = c.getContext('2d')!;
+  const im = ctx.getImageData(0, 0, c.width, c.height), px = im.data;
+  const grises = new Uint8Array(c.width * c.height);
+  for (let i = 0, j = 0; i < px.length; i += 4, j++) grises[j] = Math.round(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]);
+  const hist = new Array(256).fill(0);
+  grises.forEach(v => hist[v]++);
+  const percentil = (p: number) => { let a = 0; const meta = grises.length * p; for (let v = 0; v < 256; v++) { a += hist[v]; if (a >= meta) return v; } return 255; };
+  const negro = percentil(0.005), papel = percentil(0.6);
+  if (papel - negro < 40) return c.toDataURL('image/jpeg', 0.9); // foto muy pareja: se envía como está
+  const blanco = negro + 0.8 * (papel - negro); // lo más claro que el 80 % del camino entre el trazo y el papel se vuelve papel (el lápiz suave se conserva)
+  for (let i = 0, j = 0; i < px.length; i += 4, j++) {
+    const v = Math.max(0, Math.min(255, ((grises[j] - negro) / (blanco - negro)) * 255));
+    px[i] = px[i + 1] = px[i + 2] = v;
+  }
+  ctx.putImageData(im, 0, 0);
+  return c.toDataURL('image/jpeg', 0.9);
+}
+
+const OPC_DIBUJO: [Pistas['dibujo'], string][] = [['auto', 'Que la app lo decida'], ['frente', 'Vista de frente'], ['planta', 'Vista superior (planta)'], ['ambas', 'Las dos']];
+const OPC_UNIDADES: [Pistas['unidades'], string][] = [['auto', 'Que la app lo decida'], ['cm', 'Centímetros'], ['mm', 'Milímetros'], ['m', 'Metros']];
+
+export interface EvidenciasBoceto { fotos: string[]; notas: string }
+export const Bosquejo: React.FC<{ actual: SectionId; onCrear: (d: DatosBosquejo, foto?: string, evidencias?: EvidenciasBoceto) => void }> = ({ actual, onCrear }) => {
+  const [fotos, setFotos] = useState<{ vista: string; ia: string }[]>([]);
+  const [pistas, setPistas] = useState<Pistas>(PISTAS_AUTO);
+  const [limpiar, setLimpiar] = useState(true);
   const [lectura, setLectura] = useState<{ estado: 'nada' | 'leyendo' | 'lista' | 'error'; r?: LecturaBoceto; error?: string }>({ estado: 'nada' });
   const [datos, setDatos] = useState<DatosBosquejo[]>([]);
+  const [editados, setEditados] = useState<Record<number, string[]>>({}); // datos de la lista que el carpintero corrigió a mano, por mueble
   const [corrigiendo, setCorrigiendo] = useState<number | null>(null);
   const [verGuia, setVerGuia] = useState(false); // normas y ejemplos del boceto: contraídos, al final de la página
   const abrirGuia = () => { setVerGuia(true); setTimeout(() => document.getElementById('guia-boceto')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); };
 
-  const leer = async (img: string) => {
-    setLectura({ estado: 'leyendo' }); setDatos([]); setCorrigiendo(null);
+  const leer = async () => {
+    if (!fotos.length) return;
+    setLectura({ estado: 'leyendo' }); setDatos([]); setCorrigiendo(null); setEditados({});
     try {
-      const r = await leerBoceto(img);
+      const r = await leerBoceto(fotos.map(f => (limpiar ? f.ia : f.vista)), pistas);
       setLectura({ estado: 'lista', r });
       setDatos(r.productos.map(q => aDatos(q, actual)));
     } catch (e) { setLectura({ estado: 'error', error: e instanceof Error ? e.message : String(e) }); }
   };
-  const cargarFoto = (f?: File) => {
-    if (!f) return;
+  const cargarFoto = (f: File) => new Promise<{ vista: string; ia: string } | null>(res => {
     const lector = new FileReader();
     lector.onload = () => {
-      // se achica a 1600 px de lado mayor: suficiente para leer la letra y más liviano de enviar; se lee apenas se adjunta
+      // se achica a 1600 px de lado mayor: suficiente para leer la letra y más liviano de enviar
       const img = new Image();
       img.onload = () => {
         const k = Math.min(1, 1600 / Math.max(img.width, img.height));
         const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
         c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
-        const url = c.toDataURL('image/jpeg', 0.88);
-        setFoto(url); leer(url);
+        const vista = c.toDataURL('image/jpeg', 0.88);
+        res({ vista, ia: limpiarFoto(c) });
       };
+      img.onerror = () => res(null);
       img.src = String(lector.result);
     };
+    lector.onerror = () => res(null);
     lector.readAsDataURL(f);
+  });
+  const agregar = async (lista: FileList | null) => {
+    if (!lista?.length) return;
+    const nuevas = (await Promise.all([...lista].slice(0, 6).map(cargarFoto))).filter((x): x is { vista: string; ia: string } => !!x);
+    setFotos(fs => [...fs, ...nuevas].slice(0, 6));
+    setLectura({ estado: 'nada' }); setDatos([]);
   };
-  const entrada = <input type="file" accept="image/*" data-boceto className="hidden" onChange={e => { cargarFoto(e.target.files?.[0]); e.target.value = ''; }} />;
+  const entrada = <input type="file" accept="image/*" multiple data-boceto className="hidden" onChange={e => { agregar(e.target.files); e.target.value = ''; }} />;
+  const foto = fotos[0]?.vista ?? null;
 
   return (
     <div className="space-y-4 max-w-4xl">
-      {/* 1 · la foto del boceto */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4">
-        {!foto ? (
+      {/* 1 · las imágenes (el boceto y todo lo que ayude: fotos del sitio, medidas, listas) y las pistas */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4">
+        {!fotos.length ? (
           <div className="space-y-2">
-          <label className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 px-6 py-12 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/40">
-            <span className="text-sm font-black text-slate-800">Adjunta la foto del boceto</span>
-            <span className="text-[11px] font-bold text-slate-400 max-w-md">Una hoja con el dibujo a mano y sus medidas; puede traer varios muebles. La foto se envía al servicio de Gemini (Google) para leerla.</span>
-            <span className="mt-2 rounded-xl px-4 py-2 text-xs font-black bg-indigo-600 text-white">Elegir foto</span>
-            {entrada}
-          </label>
-          <button onClick={abrirGuia} className="w-full text-center text-[11px] font-black text-indigo-700">¿Cómo dibujar el boceto? Ver ejemplo y normas</button>
+            <label className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 px-6 py-10 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/40">
+              <span className="text-sm font-black text-slate-800">Adjunta el boceto</span>
+              <span className="text-[11px] font-bold text-slate-400 max-w-md">Puedes subir varias imágenes: el boceto, fotos del sitio, medidas escritas o una lista de lo que se pide. Se envían al servicio de Gemini (Google) para leerlas.</span>
+              <span className="mt-2 rounded-xl px-4 py-2 text-xs font-black bg-indigo-600 text-white">Elegir imágenes</span>
+              {entrada}
+            </label>
+            <button onClick={abrirGuia} className="w-full text-center text-[11px] font-black text-indigo-700">¿Cómo dibujar el boceto? Ver ejemplo y normas</button>
           </div>
         ) : (
-          <div className="flex flex-wrap items-start gap-4">
-            <img src={foto} alt="Boceto adjunto" className="w-full sm:w-64 max-h-72 object-contain rounded-xl border border-slate-200 bg-slate-50" />
-            <div className="flex-1 min-w-[200px] space-y-3">
-              {lectura.estado === 'leyendo' && <div className="text-sm font-black text-indigo-700">Leyendo el boceto…</div>}
-              {lectura.estado === 'error' && <div className="text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{lectura.error}</div>}
-              {lectura.estado === 'lista' && lectura.r && <div className="text-sm font-bold text-slate-700">{lectura.r.resumen}</div>}
-              <div className="flex flex-wrap gap-2">
-                <label className="rounded-xl px-4 py-2 text-xs font-black border border-slate-200 text-slate-700 cursor-pointer">Cambiar foto{entrada}</label>
-                {lectura.estado !== 'leyendo' && <button onClick={() => leer(foto)} className="rounded-xl px-4 py-2 text-xs font-black border border-slate-200 text-slate-700">Leer otra vez</button>}
+          <div className="flex flex-wrap gap-3">
+            {fotos.map((f, i) => (
+              <div key={i} className="relative">
+                <img src={f.vista} alt={`Imagen ${i + 1}`} className="h-36 w-auto max-w-[14rem] object-contain rounded-xl border border-slate-200 bg-slate-50" />
+                <span className="absolute left-1.5 top-1.5 rounded-md bg-slate-900/70 text-white text-[10px] font-black px-1.5">{i === 0 ? 'Boceto' : `Imagen ${i + 1}`}</span>
+                <button onClick={() => { setFotos(fs => fs.filter((_, j) => j !== i)); setLectura({ estado: 'nada' }); setDatos([]); }} title="Quitar esta imagen" className="absolute right-1.5 top-1.5 w-5 h-5 rounded-full bg-white/90 text-slate-600 text-xs font-black leading-none shadow">×</button>
               </div>
+            ))}
+            {fotos.length < 6 && <label className="h-36 w-28 flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-slate-300 text-center cursor-pointer hover:border-indigo-400"><span className="text-xl font-black text-indigo-600">+</span><span className="text-[10px] font-black text-slate-500">Agregar otra imagen</span>{entrada}</label>}
+          </div>
+        )}
+
+        {fotos.length > 0 && (
+          <div className="space-y-3 border-t border-slate-100 pt-3">
+            <div className="space-y-1.5">
+              <div className="text-[10px] font-black text-slate-400 uppercase">¿Qué dibujaste?</div>
+              <div className="flex flex-wrap gap-2">{OPC_DIBUJO.map(([v, t]) => <Chip key={v} on={pistas.dibujo === v} onClick={() => setPistas(p => ({ ...p, dibujo: v }))}>{t}</Chip>)}</div>
             </div>
+            <div className="space-y-1.5">
+              <div className="text-[10px] font-black text-slate-400 uppercase">¿En qué unidades están las medidas?</div>
+              <div className="flex flex-wrap gap-2">{OPC_UNIDADES.map(([v, t]) => <Chip key={v} on={pistas.unidades === v} onClick={() => setPistas(p => ({ ...p, unidades: v }))}>{t}</Chip>)}</div>
+            </div>
+            <label className="block">
+              <span className="text-[10px] font-black text-slate-400 uppercase block mb-1">Notas para la lectura (opcional)</span>
+              <textarea value={pistas.notas} onChange={e => setPistas(p => ({ ...p, notas: e.target.value }))} rows={2} placeholder="Ej: cocina en L con el brazo a la izquierda; el gas y el agua están en centímetros; la nevera es de 70 de ancho"
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-800" />
+            </label>
+            <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer">
+              <input type="checkbox" checked={limpiar} onChange={e => setLimpiar(e.target.checked)} className="accent-indigo-600 w-4 h-4" />
+              Limpiar las fotos antes de leerlas (quita cuadrícula, marcas de agua y sombras)
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <button disabled={lectura.estado === 'leyendo'} onClick={leer} className="rounded-xl px-5 py-2.5 text-sm font-black bg-indigo-600 text-white disabled:opacity-50">{lectura.estado === 'nada' ? 'Leer el boceto' : 'Leer otra vez con estas pistas'}</button>
+              <button onClick={() => { setFotos([]); setLectura({ estado: 'nada' }); setDatos([]); }} className="rounded-xl px-4 py-2.5 text-xs font-black border border-slate-200 text-slate-700">Empezar de nuevo</button>
+              <button onClick={abrirGuia} className="text-[11px] font-black text-indigo-700">¿Cómo dibujar el boceto?</button>
+              {lectura.estado === 'leyendo' && <span className="text-sm font-black text-indigo-700">Leyendo… (puede tardar unos segundos)</span>}
+            </div>
+            {lectura.estado === 'error' && <div className="text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{lectura.error}</div>}
+            {lectura.estado === 'lista' && lectura.r && <div className="text-sm font-bold text-slate-700">{lectura.r.resumen}{lectura.r.modelo && <span className="ml-2 text-[10px] font-bold text-slate-400">leído con {lectura.r.modelo}</span>}</div>}
           </div>
         )}
       </div>
@@ -347,13 +532,16 @@ export const Bosquejo: React.FC<{ actual: SectionId; onCrear: (d: DatosBosquejo,
       {datos.map((d, k) => {
         const q = lectura.r?.productos[k];
         const avisos = avisosDe(d), bloquea = avisos.some(a => a.bloquea);
+        const setD: SetD = f => setDatos(ds => ds.map((x, i) => (i === k ? f(x) : x)));
+        const marcar = (clave: string) => setEditados(e => ({ ...e, [k]: [...new Set([...(e[k] ?? []), clave])] }));
         return (
           <div key={k} className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
             <div className="flex flex-wrap items-baseline gap-2">
               <span className="text-sm font-black text-slate-800 uppercase tracking-tight">{q?.nombre ?? 'Mueble'}</span>
               <span className="text-[11px] font-black text-indigo-600">{SECTIONS[d.producto].name}{q && !q.producto ? ' · no se identificó, revísalo' : ''}</span>
+              <span className="flex gap-1 ml-auto">{ORDEN.map(p => <button key={p} onClick={() => setD(x => ({ ...x, producto: p, modulos: p === 'cocinas' ? x.modulos : [] }))} className={`rounded-lg px-2 py-0.5 text-[10px] font-black border ${d.producto === p ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-400 border-transparent hover:text-slate-600'}`}>{SECTIONS[p].name.split(' ')[0]}</button>)}</span>
             </div>
-            <ListaChequeo items={checklist(d, q)} />
+            <ListaChequeo items={checklist(d, q, editados[k] ?? [], setD, marcar, () => setCorrigiendo(k))} />
             {q?.detalle && <details className="text-[11px] font-bold text-slate-400"><summary className="cursor-pointer text-indigo-700 font-black">Ver lo que se leyó dentro de los muebles</summary><div className="pt-1">{q.detalle}</div></details>}
             {q && q.dudas.length > 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 space-y-0.5">
@@ -365,20 +553,39 @@ export const Bosquejo: React.FC<{ actual: SectionId; onCrear: (d: DatosBosquejo,
               <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 space-y-2">
                 <div className="text-xs font-black text-slate-800">¿Qué medidas tiene la nevera?</div>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  <Num label="Ancho de la nevera (mm)" value={d.neveraAncho ?? 0} onChange={v => setDatos(ds => ds.map((x, i) => (i === k ? { ...x, neveraAncho: v > 0 ? v : undefined } : x)))} />
-                  <Num label="Alto de la nevera (mm)" value={d.neveraAlto ?? 0} onChange={v => setDatos(ds => ds.map((x, i) => (i === k ? { ...x, neveraAlto: v > 0 ? v : undefined } : x)))} />
-                  <Num label="Espacio para la nevera (mm)" value={d.neveraEspacio ?? 0} onChange={v => setDatos(ds => ds.map((x, i) => (i === k ? { ...x, neveraEspacio: v > 0 ? v : undefined } : x)))} />
+                  <Num label="Ancho de la nevera (mm)" value={d.neveraAncho ?? 0} onChange={v => setD(x => ({ ...x, neveraAncho: v > 0 ? v : undefined }))} />
+                  <Num label="Alto de la nevera (mm)" value={d.neveraAlto ?? 0} onChange={v => setD(x => ({ ...x, neveraAlto: v > 0 ? v : undefined }))} />
+                  <Num label="Espacio para la nevera (mm)" value={d.neveraEspacio ?? 0} onChange={v => setD(x => ({ ...x, neveraEspacio: v > 0 ? v : undefined }))} />
                 </div>
                 <div className="text-[10px] font-bold text-slate-400">La nevera va centrada en su espacio, con 5 cm libres a cada lado como mínimo. Encima va la sobrenevera.</div>
               </div>
             )}
+            {normasDelTaller(d).length > 0 && (
+              <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 space-y-0.5">
+                <div className="text-[10px] font-black text-indigo-700 uppercase">Normas del taller que se aplican</div>
+                {normasDelTaller(d).map((t, i) => <div key={i} className="text-[11px] font-bold text-indigo-900">• {t}</div>)}
+              </div>
+            )}
             {avisos.map((a, i) => <div key={i} className={`text-[11px] font-bold rounded-xl px-3 py-2 border ${a.bloquea ? 'text-rose-700 bg-rose-50 border-rose-200' : 'text-amber-800 bg-amber-50 border-amber-200'}`}>{a.texto}</div>)}
             {corrigiendo === k
-              ? <Corregir d={d} set={f => setDatos(ds => ds.map((x, i) => (i === k ? f(x) : x)))} onListo={() => setCorrigiendo(null)} />
+              ? <Corregir d={d} set={setD} onListo={() => setCorrigiendo(null)} />
               : (
                 <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <button disabled={bloquea} onClick={() => onCrear(d, foto ?? undefined)} className="rounded-xl px-5 py-2.5 text-sm font-black bg-indigo-600 text-white disabled:opacity-40">Aceptar</button>
-                  <button onClick={() => setCorrigiendo(k)} className="rounded-xl px-5 py-2.5 text-sm font-black border border-slate-200 text-slate-700">Corregir</button>
+                  <button disabled={bloquea} onClick={() => {
+                    // evidencias del proyecto: todas las fotos del boceto y las notas (lo que escribió el carpintero, lo que se entendió, las dudas y lo corregido a mano)
+                    const unid = { auto: 'la app decide', cm: 'centímetros', mm: 'milímetros', m: 'metros' }[pistas.unidades] ?? pistas.unidades;
+                    const notas = [
+                      pistas.notas.trim() ? `Notas del carpintero:\n${pistas.notas.trim()}` : '',
+                      `Tipo de dibujo: ${pistas.dibujo === 'auto' ? 'la app decide' : pistas.dibujo}. Unidades: ${unid}.`,
+                      q?.nombre ? `Mueble: ${q.nombre}` : '',
+                      lectura.r?.resumen ? `Lo que se entendió: ${lectura.r.resumen}` : '',
+                      q?.detalle ? `Detalle leído dentro de los muebles: ${q.detalle}` : '',
+                      q && q.dudas.length ? `Dudas de la lectura:\n- ${q.dudas.join('\n- ')}` : '',
+                      (editados[k] ?? []).length ? `Datos corregidos a mano: ${(editados[k] ?? []).join(', ')}` : '',
+                    ].filter(Boolean).join('\n\n');
+                    onCrear(d, foto ?? undefined, { fotos: fotos.map(f => f.vista), notas });
+                  }} className="rounded-xl px-5 py-2.5 text-sm font-black bg-indigo-600 text-white disabled:opacity-40">Aceptar</button>
+                  <button onClick={() => setCorrigiendo(k)} className="rounded-xl px-5 py-2.5 text-sm font-black border border-slate-200 text-slate-700">Corregir todo</button>
                   <span className="text-[11px] font-bold text-slate-400">Aceptar arma el diseño de {SECTIONS[d.producto].name} (reemplaza el que haya).</span>
                 </div>
               )}

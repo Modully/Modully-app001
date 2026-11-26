@@ -108,9 +108,7 @@ export const EsquemaModulos: React.FC<PropsEsquema> = ({ aereoAbre, gola, zocalo
         <g>
           {puerta(0, W / 2, zAer0 - 28, zAer0 + HA - 5, DA, fA)}
           {puerta(W / 2, W, zAer0 - 28, zAer0 + HA - 5, DA, fA)}
-          {/* la pestaña: el borde de abajo de la puerta, que sobresale para agarrarla */}
-          <polygon points={fr(3, W - 3, zAer0 - 28, zAer0 - 6, DA)} fill={sombra(fA, 0.82)} stroke="#475569" strokeWidth={0.5} />
-          <polygon points={pts([P(3, DA, zAer0 - 28), P(W - 3, DA, zAer0 - 28), P(W - 3, DA + 22, zAer0 - 28), P(3, DA + 22, zAer0 - 28)])} fill={sombra(fA, 0.7)} />
+          {/* la pestaña es solo la puerta, un poco más larga que el mueble: no se dibuja aparte */}
         </g>
       ) : (
         <g>

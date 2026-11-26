@@ -60,6 +60,7 @@ export interface Box {
   cutouts?: Cutout[]; // aberturas (poceta, estufa) cuando la caja es un mesón
   islandId?: string;  // módulos y piezas de una isla o península (no cuentan como parte de los muros A, B o C)
   // Ingletes a 45° entre el mesón y la cascada (solo se dibujan; las cajas siguen siendo prismas)
+  expuesto?: boolean; // lateral de un módulo que queda a la vista (no toca muro, ni otro módulo ni equipo): va del color de la fachada
   mitreBottom?: Array<'x-' | 'x+' | 'y-' | 'y+'>; // mesón: lados donde el canto de abajo se recorta un espesor
   mitreTop?: 'x-' | 'x+' | 'y-' | 'y+';           // cascada: lado (el del mesón) donde el canto de arriba baja un espesor
   polygon?: Array<[number, number]>; // pieza con cortes a 45° (salpicadero que rodea una columna): contorno en planta (x, y); la caja es su rectángulo envolvente
@@ -399,12 +400,12 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     const dh = mod.dilatHeight ?? mod.height;
     (['start', 'end'] as const).forEach(side => {
       let off = 0; // distancia ya ocupada hacia afuera del módulo
-      const place = (thick: number, depthMm: number, heightMm: number, id: string, name: string) => {
+      const place = (thick: number, depthMm: number, heightMm: number, id: string, name: string, delante = 0) => {
         const along0 = side === 'start' ? -off - thick : (alongA ? p.sx : p.sy) + off;
-        // fondo desde el frente del módulo (el frente mira +Y en A, +X en B y -X en C)
+        // fondo desde el frente del módulo (el frente mira +Y en A, +X en B y -X en C); 'delante' = lo que sobresale por el frente (la puerta)
         const full = depthMm >= (alongA ? p.sy : p.sx);
-        const acrossStart = full ? (alongA ? p.y : p.x) : (alongA ? p.y + p.sy - depthMm : mod.wall === 'B' ? p.x + p.sx - depthMm : p.x);
-        const across = full ? (alongA ? p.sy : p.sx) : depthMm;
+        const acrossStart = full ? (alongA ? (p.facing === '-Y' ? p.y - delante : p.y) : mod.wall === 'B' ? p.x : p.x - delante) : (alongA ? p.y + p.sy - depthMm : mod.wall === 'B' ? p.x + p.sx - depthMm : p.x);
+        const across = full ? (alongA ? p.sy : p.sx) + delante : depthMm;
         boxes.push({
           id, name, kind: 'filler', wall: boxWall, islandId: isl?.id,
           x: alongA ? p.x + along0 : acrossStart, y: alongA ? acrossStart : p.y + along0, z,
@@ -413,7 +414,8 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         off += thick;
       };
       if (ds[side]) place(dt, dd, dh, `dilatacion-${lateralTier}-${mod.uniqueId}-${side}`, `Pieza de dilatación ${mod.label ?? ''}`.trim());
-      if (vs[side]) place(vt, mod.depth, mod.height, `visto-${lateralTier}-${mod.uniqueId}-${side}`, `Visto ${mod.label ?? ''}`.trim());
+      // el visto cubre todo el fondo del mueble y llega hasta la cara de la puerta: fondo + espesor de la puerta + 2 mm (4LR, del color de la fachada)
+      if (vs[side]) place(vt, mod.depth + FRONT_THICKNESS + 2, mod.height, `visto-${lateralTier}-${mod.uniqueId}-${side}`, `Visto ${mod.label ?? ''}`.trim(), FRONT_THICKNESS + 2);
     });
     boxes.push({
       id: mod.uniqueId,
@@ -443,6 +445,14 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     const ciegoFin = convertido && !isl && mod.wall === 'A' && mod.type === 'LOWER' && hasC && tramo('C') && mod.positionX + mod.width > wallA - 250 && (mod.frontsLayout === 'door1' || mod.frontsLayout === 'door2');
     const ciego = ciegoInicio ? armDepth - mod.positionX : ciegoFin ? armDepth - (wallA - mod.positionX - mod.width) : 0; // largo del frente que queda tapado
     const esquinero = ciego > 0 && mod.width >= ciego + 10 + 300 ? (ciegoInicio ? 'inicio' : 'fin') : null;
+    // Aéreo del rincón: el aéreo del otro tramo tapa los primeros 330 mm de su frente. Lleva un frente fijo (sin puerta) ahí y las puertas en lo que
+    // queda libre (mínimo 350 mm), para que ninguna puerta choque con el aéreo vecino
+    const tramoA = (w: 'B' | 'C') => modules.some(o => o.wall === w && o.type === 'UPPER');
+    const aereoDoor = mod.frontsLayout === 'upper-door1' || mod.frontsLayout === 'upper-door2-v';
+    const ciegoAIni = convertido && !isl && mod.wall === 'A' && mod.type === 'UPPER' && aereoDoor && hasB && tramoA('B') && mod.positionX < 250;
+    const ciegoAFin = convertido && !isl && mod.wall === 'A' && mod.type === 'UPPER' && aereoDoor && hasC && tramoA('C') && mod.positionX + mod.width > wallA - 250;
+    const ciegoAer = ciegoAIni ? UPPER_DEPTH - mod.positionX : ciegoAFin ? UPPER_DEPTH - (wallA - mod.positionX - mod.width) : 0;
+    const esqAereo = ciegoAer > 0 && mod.width >= ciegoAer + 10 + 350 ? (ciegoAIni ? 'inicio' : 'fin') : null;
     if (convertido) {
       // espesor de la estructura según el tipo de mueble (15 por defecto; con 18 las bases, tapas y puentes quedan 6 mm más cortas)
       const E = (mod.type === 'UPPER' ? input.calEstructura?.MA : mod.type === 'LOWER' ? input.calEstructura?.MB : input.calEstructura?.otros) ?? PANEL_THICKNESS, W = mod.width, D = mod.depth, H = mod.height;
@@ -510,8 +520,22 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       } else {
       // costados internos 80 mm más cortos (opción): el puente L corrido pasa por encima sin hacerles la caja; en el esquinero, el lateral del rincón
       const corto = (lado: 'inicio' | 'fin') => (corrido && !!junto.get(mod.uniqueId)?.[lado]) || esquinero === lado;
+      // Costado a la vista: si el módulo no llega a un muro ni tiene al lado otro módulo o equipo, ese lateral queda expuesto y va del color de la fachada
+      // (si hay muro, sigue del color de la estructura)
+      const largoMuro = (mod.wall === 'A' ? wallA : mod.wall === 'B' ? wallB : wallC) - (mod.wall === 'A' ? 0 : CORNER_BLIND_OFFSET);
+      const muroInicio = mod.wall === 'A' ? (hasB || !!input.hasLeftClosure) : true;
+      const muroFin = mod.wall === 'A' ? (hasC || !!input.hasRightClosure) : mod.wall === 'B' ? !!input.hasLeftClosure : !!input.hasRightClosure; // al final del brazo hay muro solo si se marcó (muro de cierre)
+      const nivelMismo = (o: KitchenModule) => o.type === mod.type || o.type === 'TALL' || mod.type === 'TALL';
+      const hayVecino = (lado: 'inicio' | 'fin') => modules.some(o => o !== mod && o.wall === mod.wall && !o.cornerArm && nivelMismo(o)
+        && Math.abs(lado === 'inicio' ? o.positionX + o.width - mod.positionX : o.positionX - (mod.positionX + mod.width)) <= 3)
+        || appliances.some(a => a.active && a.wall === mod.wall && Math.abs(lado === 'inicio' ? a.distance + a.width - mod.positionX : a.distance - (mod.positionX + mod.width)) <= 60);
+      // si ese costado lleva visto, el lateral de la estructura sigue blanco aunque quede a la vista o sin muro: el visto es el que se ve
+      const conVisto = (lado: 'inicio' | 'fin') => !!((lado === 'inicio') === leftAtStart ? mod.vistoLeft : mod.vistoRight);
+      const expuesto = (lado: 'inicio' | 'fin') => !isl && !conVisto(lado) && !hayVecino(lado) && !(lado === 'inicio' ? mod.positionX <= 25 && muroInicio : mod.positionX + mod.width >= largoMuro - 25 && muroFin);
       piece(esquinero === 'inicio' ? 'Lateral rincón' : 'Lateral izquierdo', E, D, corto('inicio') ? H - 80 : H, 0, 0, 0);
+      if (expuesto('inicio')) boxes[boxes.length - 1].expuesto = true;
       piece(esquinero === 'fin' ? 'Lateral rincón' : 'Lateral derecho', E, D, corto('fin') ? H - 80 : H, W - E, 0, 0);
+      if (expuesto('fin')) boxes[boxes.length - 1].expuesto = true;
       if (mod.type === 'LOWER') {
         // Bajo: sin techo ni espaldar (el mesón hace de tapa); base, 2 puentes traseros y puente en L arriba (propio, o corrido entre varios módulos)
         piece('Base', inner, D, E, E, 0, 0);
@@ -575,6 +599,13 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         const zArriba = PANEL_THICKNESS + 356 + 14 + 590 + PANEL_THICKNESS + 370 + PANEL_THICKNESS, w = W / 2 - 1, hP = H - zArriba + PANEL_THICKNESS - 2;
         fronts.push({ name: 'Frente cajón', a0: G1, a1: W - G1, z0: 0, h: 356 + PANEL_THICKNESS - 2 },
           { name: 'Puerta izquierda', a0: G2, a1: G2 + w, z0: zArriba - PANEL_THICKNESS, h: hP }, { name: 'Puerta derecha', a0: W / 2 + G2, a1: W / 2 + G2 + w, z0: zArriba - PANEL_THICKNESS, h: hP });
+      } else if (esqAereo) {
+        const libre = W - ciegoAer - 12 - G1, hh = H + tabPuerta, zz = -tabPuerta;
+        const puertas = (a0: number): Fr[] => (libre >= 450
+          ? [{ name: 'Puerta izquierda', a0, a1: a0 + libre / 2 - G2, z0: zz, h: hh }, { name: 'Puerta derecha', a0: a0 + libre / 2 + G2, a1: a0 + libre, z0: zz, h: hh }]
+          : [{ name: 'Puerta', a0, a1: a0 + libre, z0: zz, h: hh }]);
+        if (esqAereo === 'inicio') fronts.push({ name: 'Puerta falsa', a0: G1, a1: ciegoAer - 10, z0: zz, h: hh }, ...puertas(ciegoAer + 12));
+        else fronts.push(...puertas(G1), { name: 'Puerta falsa', a0: W - ciegoAer + 10, a1: W - G1, z0: zz, h: hh });
       } else if (esquinero) {
         // esquinero recto: puerta falsa en lo que tapa el otro tramo, y una puerta que abre en lo libre (la dilatada de la esquina va entre las dos)
         if (esquinero === 'inicio') fronts.push({ name: 'Puerta falsa', a0: G1, a1: ciego - 60, z0: 0, h: full }, { name: 'Puerta', a0: ciego + 12, a1: W - G1, z0: 0, h: full });

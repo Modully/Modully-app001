@@ -52,7 +52,7 @@ const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCa
 export function colorDeCatalogo(nombre: string): ColorCatalogo | undefined {
   const n = norm(nombre);
   if (!n) return undefined;
-  return CATALOGO.find(c => norm(c.nombre) === n) ?? CATALOGO.find(c => norm(c.nombre).startsWith(n)) ?? CATALOGO.find(c => n.includes(norm(c.nombre)));
+  return CATALOGO.find(c => norm(c.nombre) === n) ?? CATALOGO.find(c => norm(c.nombre).startsWith(n)) ?? CATALOGO.find(c => n.includes(norm(c.nombre))) ?? CATALOGO.find(c => norm(c.nombre) === n.replace(/a$/, 'o')); // "blanca" = Blanco
 }
 /** Tono parecido para dibujar; si el nombre no está en el catálogo, un tono neutro de madera */
 export const hexDe = (nombre: string, respaldo = '#c9a26b'): string => colorDeCatalogo(nombre)?.hex ?? respaldo;

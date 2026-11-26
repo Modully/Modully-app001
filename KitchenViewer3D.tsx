@@ -12,6 +12,19 @@ import type { PuertaCfg } from './puertas';
 import { Box, findModuleBox, boxesBounds, applianceCenter, counterTopZ, CORNER_BLIND_OFFSET, WALL_THICKNESS, MAX_MODULE_WIDTH } from './boxes';
 import { COLORS } from './constants';
 import { vetaProps } from './veta';
+
+/** Color de la fachada que le toca a un módulo (por su identificador): puente, alacena, torre, aéreo o bajo */
+const fachadaDe = (colores: { fachada: string; fachadaMA?: string; fachadaAL?: string; fachadaTH?: string; fachadaPU?: string; puentes?: string[] } | undefined, id: string, aereo: boolean): string | undefined =>
+  /tall-pantry/.test(id) ? colores?.fachadaAL ?? colores?.fachada
+    : /tall-oven/.test(id) ? colores?.fachadaTH ?? colores?.fachada
+      : colores?.puentes?.includes(id) ? colores.fachadaPU ?? colores.fachadaMA ?? colores.fachada
+        : aereo ? colores?.fachadaMA ?? colores?.fachada : colores?.fachada;
+
+/** Material con veta: se vuelve a crear cuando cambia entre liso y con veta (three no recompila el material al agregarle la textura) */
+const MatVeta: React.FC<{ hex: string } & Record<string, any>> = ({ hex, ...resto }) => {
+  const p = vetaProps(hex);
+  return <meshStandardMaterial key={p.map ? 'veta' : 'liso'} {...p} {...resto} />;
+};
 import { PUNTO_INFO, PuntoAdecuacion, cotasPorElectro, siglaPunto } from './puntos';
 import { X, Plus, Ruler, ArrowUp, ArrowLeft, ArrowRight, ArrowDownLeft } from 'lucide-react';
 
@@ -3123,7 +3136,7 @@ interface KitchenViewer3DProps {
   onDragModule?: (id: string, newPositionX: number) => void;
   onResizeEdge?: (id: string, side: 'left' | 'right', deltaX: number, initialWidth: number, initialPositionX: number) => void;
   onMoveAppliance?: (type: ApplianceType, wall: WallName, distance: number) => void;
-  colores?: { al?: string; fachadaAL?: string; fondoAL?: string; th?: string; fachadaTH?: string; fondoTH?: string; puentes?: string[]; pu?: string; fachadaPU?: string; fondoPU?: string; fachada: string; fachadaMA?: string; ma: string; mb: string; otros: string; fondo?: string; fondoMA?: string }; // tonos parecidos a los colores elegidos (catálogo)
+  colores?: { cantoFachada?: boolean; al?: string; fachadaAL?: string; fondoAL?: string; th?: string; fachadaTH?: string; fondoTH?: string; puentes?: string[]; pu?: string; fachadaPU?: string; fondoPU?: string; fachada: string; fachadaMA?: string; ma: string; mb: string; otros: string; fondo?: string; fondoMA?: string }; // tonos parecidos a los colores elegidos (catálogo)
   verCorte?: boolean; // corte A con su sección en la vista frontal (botón junto a las vistas)
   visibility?: { upper: boolean; lower: boolean; counter: boolean; appliances: boolean; puntos?: boolean; isla?: boolean; muros?: boolean; doors?: boolean; shelves?: boolean; cajonero?: boolean; costado?: boolean; dims?: boolean; wallA?: boolean; wallB?: boolean; wallC?: boolean; hoja?: boolean; marco?: boolean; tapaluz?: boolean };
   collisions?: Box[]; // cajas que chocan: se marcan en rojo
@@ -3663,7 +3676,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
             } : {})}
           >
             {b.face ? <FaceExtrude b={b} /> : <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />}
-            <meshStandardMaterial {...vetaProps(isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? '#bfdbfe' : fitCopySrc === b.id ? '#22c55e' : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? '#fb923c' : '#60a5fa') : b.name.startsWith('Sanitario') ? '#f8fafc' : isAmb(b.name) ? '#bae6fd' : b.name.startsWith('Espaldar') || b.name.includes('fondo') ? ((/tall-pantry/.test(b.moduleId ?? '') ? colores?.fondoAL ?? colores?.fondo : /tall-oven/.test(b.moduleId ?? '') ? colores?.fondoTH ?? colores?.fondo : colores?.puentes?.includes(b.moduleId ?? '') ? colores?.fondoPU ?? colores?.fondoMA : b.id.startsWith('panel-upper-') ? colores?.fondoMA : colores?.fondo) ?? '#e5e7eb') : isClosetDoor(b.name) ? '#cdb592' : (b.name.startsWith('Tubo') || b.name === 'Chapa puerta') ? '#9ca3af' : b.name === 'Televisor' ? '#111827' : colores && b.moduleId ? (/^(Visto|Pieza de dilatación|Dilatada)/.test(b.name) ? (colores.puentes?.includes(b.moduleId) ? colores.fachadaPU ?? colores.fachada : colores.fachada) : colores.puentes?.includes(b.moduleId) ? colores.pu ?? colores.ma : b.id.startsWith('panel-upper-') ? colores.ma : /tall-pantry/.test(b.moduleId) ? colores.al ?? colores.otros : /tall-oven/.test(b.moduleId) ? colores.th ?? colores.otros : /tall-/.test(b.moduleId) ? colores.otros : colores.mb) : b.name.startsWith('Entrepaño') ? '#f3e8d2' : (b.id.startsWith('panel-upper-') ? '#e8d3b0' : '#dcc5a0'))} roughness={0.7} key={isFitBody(b.name) ? 'fit' : (doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name) || isAmb(b.name) ? 'ghost' : 'solid'} transparent={isFitBody(b.name) || isAmb(b.name) || ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name))} opacity={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? 0.08 : (fitApi?.fit.converted && fitApi.fit.bodies?.[b.id] && fitCopySrc !== b.id) ? 0.03 : b.name.startsWith('Hueco ') ? ((fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? 0.25 : 0.02) : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? 0.4 : 0.22) : isAmb(b.name) ? 0.5 : ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name)) ? 0.25 : 1} depthWrite={!(isFitBody(b.name) || isAmb(b.name) || ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name)))}  polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+            <MatVeta hex={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? '#bfdbfe' : fitCopySrc === b.id ? '#22c55e' : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? '#fb923c' : '#60a5fa') : b.name.startsWith('Sanitario') ? '#f8fafc' : isAmb(b.name) ? '#bae6fd' : b.name.startsWith('Espaldar') || b.name.includes('fondo') ? ((/tall-pantry/.test(b.moduleId ?? '') ? colores?.fondoAL ?? colores?.fondo : /tall-oven/.test(b.moduleId ?? '') ? colores?.fondoTH ?? colores?.fondo : colores?.puentes?.includes(b.moduleId ?? '') ? colores?.fondoPU ?? colores?.fondoMA : b.id.startsWith('panel-upper-') ? colores?.fondoMA : colores?.fondo) ?? '#e5e7eb') : isClosetDoor(b.name) ? '#cdb592' : (b.name.startsWith('Tubo') || b.name === 'Chapa puerta') ? '#9ca3af' : b.name === 'Televisor' ? '#111827' : colores && b.moduleId ? (/^(Gola superior|Gola media|Puente L)/.test(b.name) ? fachadaDe(colores, b.moduleId, b.id.startsWith('panel-upper-')) : b.expuesto && colores.fachada && colores.mb !== colores.fachada && !colores.puentes?.includes(b.moduleId) && !/tall-/.test(b.moduleId) ? (b.id.startsWith('panel-upper-') ? colores.fachadaMA ?? colores.fachada : colores.fachada) : /^(Visto|Pieza de dilatación|Dilatada)/.test(b.name) ? (colores.puentes?.includes(b.moduleId) ? colores.fachadaPU ?? colores.fachada : colores.fachada) : colores.puentes?.includes(b.moduleId) ? colores.pu ?? colores.ma : b.id.startsWith('panel-upper-') ? colores.ma : /tall-pantry/.test(b.moduleId) ? colores.al ?? colores.otros : /tall-oven/.test(b.moduleId) ? colores.th ?? colores.otros : /tall-/.test(b.moduleId) ? colores.otros : colores.mb) : b.name.startsWith('Entrepaño') ? '#f3e8d2' : (b.id.startsWith('panel-upper-') ? '#e8d3b0' : '#dcc5a0')} roughness={0.7} key={isFitBody(b.name) ? 'fit' : (doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name) || isAmb(b.name) ? 'ghost' : 'solid'} transparent={isFitBody(b.name) || isAmb(b.name) || ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name))} opacity={isFitBody(b.name) ? (b.name === 'Cubo closet fit' ? 0.08 : (fitApi?.fit.converted && fitApi.fit.bodies?.[b.id] && fitCopySrc !== b.id) ? 0.03 : b.name.startsWith('Hueco ') ? ((fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? 0.25 : 0.02) : (fitSel === b.id || fitMulti.includes(b.id) || fitCopySrc === b.id) ? 0.4 : 0.22) : isAmb(b.name) ? 0.5 : ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name)) ? 0.25 : 1} depthWrite={!(isFitBody(b.name) || isAmb(b.name) || ((doorsGhost && isClosetDoor(b.name)) || zocGhost(b.name)))}  polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
             {isFitBody(b.name) && viewMode === 'frontal' ? (
               // En frontal solo se dibuja el contorno de la cara frontal (una línea), sin las aristas de profundidad que se ven dobles
               b.name !== 'Cubo closet fit' && (() => { const hw = b.sx / 2000, hh = b.sz / 2000, zf = b.sy / 2000 + 0.002; return (
@@ -4302,11 +4315,27 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           </Html>
         )}
 
+        {/* Canto del frente de la estructura blanca: en el color de la fachada (solo el canto del frente, el que se ve entre las puertas) */}
+        {colores?.cantoFachada && vBoxes.filter(b => b.kind === 'panel' && !b.islandId && !!b.moduleId && /^(Lateral(?! cajón)|Base|Techo|Tapa(?! base))/.test(b.name) && !/tall-/.test(b.moduleId ?? '') && (b.id.startsWith('panel-upper-') ? vis.upper : vis.lower)).map(b => {
+          const up = b.id.startsWith('panel-upper-');
+          const est = up ? colores.ma : colores.mb, fach = fachadaDe(colores, b.moduleId!, up);
+          if (!fach || est === fach) return null; // solo si la estructura y la fachada son de distinto color
+          const e = 1.2; // el canto, de espesor casi nulo
+          const f = b.wall === 'A' ? { x: b.x, y: b.y + b.sy, sx: b.sx, sy: e } : b.wall === 'B' ? { x: b.x + b.sx, y: b.y, sx: e, sy: b.sy } : { x: b.x - e, y: b.y, sx: e, sy: b.sy };
+          const fb: Box = { ...b, ...f, z: b.z, sz: b.sz };
+          return (
+            <mesh key={`canto-${b.id}`} position={boxCenter(fb)} raycast={() => null}>
+              <boxGeometry args={[fb.sx / 1000, fb.sz / 1000, fb.sy / 1000]} />
+              <MatVeta hex={fach} roughness={0.6} />
+            </mesh>
+          );
+        })}
+
         {/* Puertas y frentes de cajón de los módulos convertidos */}
         {boxes.filter(b => b.kind === 'front' && (b.id.startsWith('front-upper-') ? vis.upper : vis.lower)).map(b => (
           <mesh key={b.id} position={boxCenter(b)} castShadow receiveShadow raycast={() => null}>
             <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
-            <meshStandardMaterial {...vetaProps((/tall-pantry/.test(b.moduleId ?? '') ? colores?.fachadaAL ?? colores?.fachada : /tall-oven/.test(b.moduleId ?? '') ? colores?.fachadaTH ?? colores?.fachada : b.moduleId && colores?.puentes?.includes(b.moduleId) ? colores.fachadaPU ?? colores.fachadaMA ?? colores.fachada : b.id.startsWith('front-upper-') ? colores?.fachadaMA ?? colores?.fachada : colores?.fachada) ?? (b.id.startsWith('front-upper-') ? '#d6b48a' : '#c19a6b'))} roughness={0.55} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
+            <MatVeta hex={(/tall-pantry/.test(b.moduleId ?? '') ? colores?.fachadaAL ?? colores?.fachada : /tall-oven/.test(b.moduleId ?? '') ? colores?.fachadaTH ?? colores?.fachada : b.moduleId && colores?.puentes?.includes(b.moduleId) ? colores.fachadaPU ?? colores.fachadaMA ?? colores.fachada : b.id.startsWith('front-upper-') ? colores?.fachadaMA ?? colores?.fachada : colores?.fachada) ?? (b.id.startsWith('front-upper-') ? '#d6b48a' : '#c19a6b')} roughness={0.55} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
             <Edges color={b.moduleId && b.moduleId === selectedId ? '#ef4444' : (b.moduleId && pair.includes(b.moduleId) ? '#f59e0b' : '#3b2a1a')} linewidth={b.moduleId && (b.moduleId === selectedId || pair.includes(b.moduleId)) ? 3 : 1} />
             {(b.wall === 'A' || b.wall === 'B' || b.wall === 'C') && (
               <FrontOutline hw={(b.wall === 'A' ? b.sx : b.sy) / 2000} hh={b.sz / 2000} face={b.islandId ? 'z-' : b.wall === 'A' ? 'z+' : b.wall === 'B' ? 'x+' : 'x-'} depth={(b.wall === 'A' ? b.sy : b.sx) / 2000}
@@ -4327,7 +4356,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           <mesh key={b.id} position={boxCenter(b)} castShadow receiveShadow>
             <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
             {/* La pieza de dilatación va en gris oscuro para distinguirla del zócalo */}
-            <meshStandardMaterial color={b.kind === 'filler' ? '#6b7280' : '#94a3b8'} metalness={0.2} roughness={0.8} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+            {(() => { const m = /^(?:visto|dilatacion)-(lower|upper)-(.+)-(?:start|end)$/.exec(b.id); const f = m && colores ? fachadaDe(colores, m[2], m[1] === 'upper') : undefined; return f ? <MatVeta hex={f} roughness={0.6} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} /> : <meshStandardMaterial color={b.kind === 'filler' ? '#6b7280' : '#94a3b8'} metalness={0.2} roughness={0.8} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />; })()}
             {b.kind === 'filler' && <Edges color="#1f2937" />}
           </mesh>
         ))}

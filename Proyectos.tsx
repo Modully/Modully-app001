@@ -67,7 +67,7 @@ export const Proyectos: React.FC<{
   const pedir = (texto: string, accion: () => void) => setConfirmar({ texto, accion });
   const [viendo, setViendo] = useState<Documento | null>(null); // documento abierto en el visor (dentro de la app, no en otra pestaña)
   const cargarDocs = async (id: string) => { const l = await listarDocumentos(id); setDocs(x => ({ ...x, [id]: l })); };
-  const TIPO_DOC: Record<string, string> = { listado: 'Listado de corte (Excel)', laminas: 'Láminas', planos: 'Planos de ensamble', render: 'Render', foto_ia: 'Foto con IA', boceto: 'Boceto', cotizacion: 'Cotización' };
+  const TIPO_DOC: Record<string, string> = { listado: 'Listado de corte (Excel)', laminas: 'Láminas', planos: 'Planos de ensamble', render: 'Render', foto_ia: 'Foto con IA', boceto: 'Boceto', notas: 'Notas del boceto', cotizacion: 'Cotización' };
   const [sesion, setSesion] = useState<Session | null>(null);
   const [listo, setListo] = useState(false);
   const [proyectos, setProyectos] = useState<Proyecto[]>([]);
@@ -167,7 +167,7 @@ export const Proyectos: React.FC<{
                 const nombre = nuevoProd.nombre.trim() || SECTIONS[seccion].name;
                 const d = await guardarDiseno(proyecto.id, seccion, nombre, diseñoActual(), undefined, { cantidad: nuevoProd.cantidad, ubicacion: nuevoProd.ubicacion.trim() });
                 // solo se guarda el diseño (y la foto del boceto, si se armó desde uno); los documentos se crean al aprobar el diseño
-                await subirDocumentos(d.id, documentos(nombre, proyecto.cliente, true).filter(x => x.tipo === 'boceto'));
+                await subirDocumentos(d.id, documentos(nombre, proyecto.cliente, true).filter(x => x.tipo === 'boceto' || x.tipo === 'notas'));
                 onProductoActivo({ id: d.id, nombre, proyectoId: proyecto.id, cliente: proyecto.cliente });
                 setNuevoProd({ nombre: '', ubicacion: '', cantidad: 1 }); setDisenos(await listarDisenos(proyecto.id)); await cargar();
                 setMsg({ ok: `Se agregó ${nombre} (${SECTIONS[seccion].name}) × ${nuevoProd.cantidad}. Cuando el diseño esté listo, pulsa "Aprobar diseño" en Diseño para crear sus documentos.` });
