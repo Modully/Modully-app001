@@ -46,6 +46,20 @@ const HEX_CON_VETA = new Set(CATALOGO.filter(tieneVeta).map(c => c.hex.toLowerCa
 /** El tono (hex) pertenece a un color de madera con veta */
 export const hexConVeta = (hex?: string): boolean => !!hex && HEX_CON_VETA.has(hex.toLowerCase());
 
+/** Diseño de la veta: fina (tendencias), rústica (maderas rústicas) o clásica (atemporales con veta) */
+export type EstiloVeta = 'fina' | 'clasica' | 'rustica';
+export const estiloVeta = (hex: string): EstiloVeta => {
+  const c = CATALOGO.find(x => x.hex.toLowerCase() === hex.toLowerCase() && tieneVeta(x));
+  return c?.grupo === 'Rústicas' ? 'rustica' : c?.grupo === 'Tendencias' ? 'fina' : 'clasica';
+};
+/** Busca colores por nombre o grupo (sin tildes ni mayúsculas); las palabras sueltas se buscan todas */
+export const buscarColores = (texto: string): ColorCatalogo[] => {
+  const q = norm(texto);
+  if (!q) return [];
+  const palabras = q.split(/\s+/);
+  return CATALOGO.filter(c => { const t = `${norm(c.nombre)} ${norm(c.grupo)}`; return palabras.every(p => t.includes(p) || (/^(veta|madera)/.test(p) && tieneVeta(c))); });
+};
+
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
 /** Color del catálogo por nombre (sin importar tildes ni mayúsculas; acepta nombres parciales como "cinza") */

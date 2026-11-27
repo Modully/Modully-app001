@@ -8,7 +8,7 @@ import {
   ZoomIn, ZoomOut, Zap, Maximize, Ruler, ArrowRight, MoveHorizontal, Move,
   TowerControl as Tower, AlertCircle, CheckCircle2, ChevronDown, Puzzle, ToggleLeft as Toggle,
   Construction, Minus, Target, ZapIcon, Layers2, Archive, Download, Table, Undo2, Redo2, Home, LayoutGrid, FolderOpen, FileText, Image as ImageIcon,
-  UserRound,
+  UserRound, Search, Microwave, CookingPot, DoorOpen,
 } from 'lucide-react';
 import {
   KitchenModule, LayoutType, WallName,
@@ -28,8 +28,9 @@ import { Bosquejo, DatosBosquejo, EvidenciasBoceto, tramoModulos, anchosFila, an
 import { Inicio } from './Inicio';
 import { EsquemaModulos, EsquemaCorredera, Foco } from './EsquemaModulos';
 import { VistaLateral, TramoAltura } from './VistaLateral';
-import { ModulosEspeciales, ModuloEspecial } from './ModulosEspeciales';
-import { ACABADOS, Acabados, AcabadosNivel, CALIBRES, PATAS_POR_MUEBLE, CATALOGO, Tablero, calTexto, colorDeCatalogo, completarAcabados, esBlanco, hexDe } from './colores';
+import { ModulosEspeciales, ModuloEspecial, opcionesMuebleHorno, muebleDeVariante, etiquetaMueble, VARIANTE_POR_DEFECTO } from './ModulosEspeciales';
+import { ACABADOS, Acabados, AcabadosNivel, CALIBRES, PATAS_POR_MUEBLE, CATALOGO, Tablero, buscarColores, calTexto, colorDeCatalogo, completarAcabados, esBlanco, hexDe, tieneVeta } from './colores';
+import { vetaMiniatura } from './veta';
 import { PlanoLimpio } from './PlanoLimpio';
 import { Proyectos, DialogoAprobar, ProductoActivo } from './Proyectos';
 import { subirDocumentos, archivoDeDataURL, DocumentoNuevo, guardarDiseno, marcarAprobado, guardarEnBiblioteca, listarBiblioteca, sesionActual, alCambiarSesion } from './nube';
@@ -44,7 +45,7 @@ import type { CounterExtras, Box as BoxData } from './boxes';
 import { closetDerived } from './boxes';
 import { PuertaCfg, DEFAULT_PUERTA, conTapaluz } from './puertas';
 import type { IslandItem, ColumnItem, ClosetConfig } from './types';
-import { DEFAULT_CLOSET, DEFAULT_FIT, DEFAULT_ARM } from './types';
+import { DEFAULT_CLOSET, DEFAULT_FIT, DEFAULT_ARM, esEquipoTorre } from './types';
 import type { ClosetFit } from './types';
 import { SECTIONS, SECTION_ORDER, SectionId } from './sections';
 import { buildBoxes, fitRows, boxesToJSON, armUpperOrigin, findCollisions, LOWER_DEPTH, UPPER_DEPTH, CORNER_BLIND_OFFSET, TOP_MARGIN, MAX_MODULE_WIDTH, SPLASH_HEIGHT_DEFAULT, COUNTER_THICKNESS_DEFAULT, COUNTER_OVERHANG_DEFAULT, FRIDGE_CLEARANCE, OVER_FRIDGE_DEPTH, DILATATION_GAP_DEFAULT, DILATATION_DEPTH_DEFAULT } from './boxes';
@@ -651,6 +652,8 @@ export default function App() {
   const [correoSesion, setCorreoSesion] = useState<string | null>(null);
   useEffect(() => { sesionActual().then(s => setCorreoSesion(s?.user.email ?? null)).catch(() => {}); return alCambiarSesion(s => setCorreoSesion(s?.user.email ?? null)); }, []);
   const [focoEsquema, setFocoEsquema] = useState<Foco>(null); // zona del esquema que se está configurando en Configuración de módulos
+  const [modoAbrir, setModoAbrir] = useState(false); // 3D: puertas y cajones abiertos (con clic en cada frente se abre o cierra solo)
+  const [busquedaColor, setBusquedaColor] = useState(''); // buscador de colores del panel Color & Material
   const [isModulosModalOpen, setIsModulosModalOpen] = useState(false); // Configuración de módulos: colores y sistema, mesón, dilatación
   const guiaEspacio = useRef(false); // diseño nuevo: Espacio se abrió solo y al aplicarlo sigue Configuración de módulos
   const [isOptMenuOpen, setIsOptMenuOpen] = useState(false);
@@ -743,6 +746,9 @@ export default function App() {
     { type: 'hood-under', wall: 'A', width: 600, height: 120, depth: 450, distance: 1000, active: false, campanaTipo: 'convencional' },
     { type: 'sink', wall: 'A', width: 550, height: 850, depth: 450, distance: 2000, active: false, faucetHeight: 400 },
     { type: 'dishwasher', wall: 'A', width: 630, height: 850, depth: 570, distance: 2600, active: false, lado: 'der' },
+    // hornos de empotrar (van en el hueco de la Torre de hornos): horno 595 × 595 × 451, hueco mínimo 600 × 587; corto 595 × 455 × 520, hueco 560-568 × 460
+    { type: 'oven', wall: 'A', width: 595, height: 595, depth: 451, distance: 0, active: false },
+    { type: 'oven-compact', wall: 'A', width: 595, height: 455, depth: 520, distance: 0, active: false },
   ]);
 
   // REGLAS TÉCNICAS DE ALTURA
@@ -952,6 +958,7 @@ export default function App() {
         if (m.cornerArm) return { ...m, detailed: false }; // el esquinero en L aún no se convierte
         let layout: KitchenModule['frontsLayout'];
         if (m.depth < 60) layout = undefined; // un cubre-columna casi sin fondo no lleva módulo
+        else if (m.muebleHorno) layout = 'oven';
         else if (m.type === 'UPPER') layout = m.isHood ? 'hood' : (m.width < 450 ? 'upper-door1' : 'upper-door2-v');
         else layout = m.width <= 450 ? 'door1' : 'door2';
         if (!layout) return { ...m, detailed: false };
@@ -963,7 +970,7 @@ export default function App() {
   // Clic derecho en un módulo base: con puertas (una o dos, según el ancho) o con cajones (3 cajones reales); convierte ese módulo
   const setModuleFronts = (id: string, kind: 'doors' | 'drawers' | 'vertical' | 'horizontal' | 'open') => {
     setModules(prev => prev.map(m => {
-      if (m.uniqueId !== id || m.cornerArm) return m;
+      if (m.uniqueId !== id || m.cornerArm || m.muebleHorno) return m; // el mueble de horno lleva sus frentes fijos
       // abierto: sin puertas ni cajones; va todo en el material de la fachada
       if (kind === 'open' && (m.type === 'UPPER' || m.type === 'LOWER')) return { ...m, detailed: true, frontsLayout: 'open' as const, configType: 'doors' as const, drawerCount: 0 };
       if (m.type === 'UPPER') {
@@ -1448,9 +1455,10 @@ export default function App() {
       const stove = currentAppliances.find(a => a.type === 'stove' && a.active && a.wall === currentWall);
       const sink = currentAppliances.find(a => a.type === 'sink' && a.active && a.wall === currentWall);
       const hood = currentAppliances.find(a => a.type === 'hood-under' && a.active && a.wall === currentWall);
-      // campana tipo península: no lleva mueble encima; en los aéreos queda un espacio libre de 65 cm centrado en la estufa
+      // campana tipo península: no lleva mueble encima; en los aéreos queda un espacio libre centrado en la estufa
+      // de la medida nominal de la campana + 5 cm (60 → 65, 75 → 80, 90 → 95)
       const hoodLibre = hood?.campanaTipo === 'libre';
-      const LIBRE_CAMPANA = 650;
+      const LIBRE_CAMPANA = (hood?.width ?? 600) + 50;
       const dishwasher = currentAppliances.find(a => a.type === 'dishwasher' && a.active && a.wall === currentWall);
 
       // Sobrenevera: cubre la nevera y sobresale FRIDGE_CLEARANCE por cada lado (ancho de la nevera + 10cm), centrada sobre ella,
@@ -1502,6 +1510,16 @@ export default function App() {
           drawerCount: 2
         });
       }
+
+      // Hornos en mueble de horno: el mueble elegido (de la biblioteca) en su lugar; el despiece y el hueco salen al convertir a módulos
+      const hornosMueble = currentAppliances.filter(a => esEquipoTorre(a.type) && a.active && a.donde === 'mueble' && a.wall === currentWall).map(a => {
+        const opc = muebleDeVariante(a.variante ?? VARIANTE_POR_DEFECTO[a.type as 'oven' | 'oven-compact'])!;
+        return { app: a, opc, ancho: opc.ancho };
+      });
+      hornosMueble.forEach(({ app, opc, ancho }) => {
+        const lowerTemplate = MODULE_TEMPLATES.find(t => t.type === 'LOWER' && t.width === 600) || MODULE_TEMPLATES.find(t => t.type === 'LOWER')!;
+        newModules.push({ ...lowerTemplate, uniqueId: `oven-cabinet-auto-${app.type}-${currentWall}`, name: opc.nombre, wall: currentWall, positionX: app.distance, width: ancho, height: currentBaseModuleHeight, muebleHorno: opc.muebleHorno, quantity: 1, doorType: 'vertical', configType: 'doors', hasPlateRack: false, drawerCount: 0 });
+      });
 
       // Módulo Obligatorio: MUEBLE BAJO POCETA (Mínimo 60cm)
       if (sink) {
@@ -1579,6 +1597,7 @@ export default function App() {
               // Nevera con FRIDGE_CLEARANCE libres a cada lado (sin salirse del inicio del muro)
               ...(fridge ? [{ distance: overFridgeX, width: overFridgeWidth }] : []),
               ...(stove ? [{ distance: stove.distance, width: stove.width }] : []),
+              ...hornosMueble.map(h => ({ distance: h.app.distance, width: h.ancho })),
               ...(dishwasher ? [{ distance: dishwasher.distance, width: dishwasher.width }] : []),
               ...columnObstacles,
               ...(sink ? [{ distance: sink.space ? sink.distance - (sink.space - sink.width) / 2 : sink.distance, width: sink.space ?? Math.max(600, sink.width) }] : []),
@@ -1838,7 +1857,7 @@ export default function App() {
     const rincones: ('izq' | 'der')[] = [];
     if (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'left')) rincones.push('izq');
     if (layout === 'U_SHAPE' || (layout === 'L_SHAPE' && lArm === 'right')) rincones.push('der');
-    const equiposA = currentAppliances.filter(a => a.active && a.wall === 'A' && (a.type === 'stove' || a.type === 'sink' || a.type === 'hood-under'));
+    const equiposA = currentAppliances.filter(a => a.active && a.wall === 'A' && (a.type === 'stove' || a.type === 'sink' || a.type === 'hood-under' || (esEquipoTorre(a.type) && a.donde === 'mueble')));
     const fijo = (m: KitchenModule) => !!m.isFridgeCabinet || !!m.isHood || !!m.depthOffset || equiposA.some(a => Math.min(a.distance + a.width, m.positionX + m.width) - Math.max(a.distance, m.positionX) > 1);
     const arreglarRincon = (tipo: 'LOWER' | 'UPPER', lado: 'izq' | 'der', minimo: number) => {
       const fila = () => newModules.filter(m => m.wall === 'A' && m.type === tipo).sort((p, q) => p.positionX - q.positionX);
@@ -1893,7 +1912,8 @@ export default function App() {
 
     // Bosquejo: cada módulo lleva el frente que se dibujó (puertas, cajones, abierto, platero), de izquierda a derecha en el muro A
     if (frentes) {
-      const fila = (tipo: 'LOWER' | 'UPPER') => newModules.filter(m => m.wall === 'A' && m.type === tipo && !m.isFridgeCabinet).sort((a, b) => a.positionX - b.positionX);
+      const fila = (tipo: 'LOWER' | 'UPPER') => newModules.filter(m => m.wall === 'A' && m.type === tipo && !m.isFridgeCabinet && !m.muebleHorno).sort((a, b) => a.positionX - b.positionX);
+      newModules.filter(m => m.wall === 'A' && !!m.muebleHorno).forEach(m => { m.detailed = true; m.frontsLayout = 'oven'; m.configType = 'doors'; m.drawerCount = 0; }); // lleva sus frentes fijos
       fila('LOWER').forEach((m, i) => {
         const f = frentes.bajos[i] ?? 'puertas';
         m.detailed = true;
@@ -1912,6 +1932,7 @@ export default function App() {
       const conCajones = propios.filter(f => f === 'cajones').length > propios.length / 2;
       newModules.filter(m => m.wall !== 'A' && (m.type === 'LOWER' || m.type === 'UPPER') && !m.isFridgeCabinet && !m.cornerArm).forEach(m => {
         m.detailed = true;
+        if (m.muebleHorno) { m.frontsLayout = 'oven'; return; }
         if (m.type === 'LOWER') {
           const cajones = m.isStoveCabinet || (!m.isSinkCabinet && conCajones);
           m.frontsLayout = cajones ? 'drawers' : m.width <= 450 ? 'door1' : 'door2';
@@ -1955,6 +1976,34 @@ export default function App() {
     return out;
   };
 
+  // Muebles de horno (horno u horno corto en su mueble): ancho del mueble elegido y espacio que ocupan en el muro
+  const anchoMuebleHorno = (a: Appliance) => muebleDeVariante(a.variante ?? VARIANTE_POR_DEFECTO[a.type as 'oven' | 'oven-compact'])?.ancho ?? 600;
+  const ocupaEnMuro = (a: Appliance): [number, number] => {
+    if (esEquipoTorre(a.type)) return [a.distance, a.distance + anchoMuebleHorno(a)];
+    if (a.type === 'sink') return [a.space ? a.distance - (a.space - a.width) / 2 : a.distance, (a.space ? a.distance - (a.space - a.width) / 2 : a.distance) + (a.space ?? Math.max(600, a.width))];
+    if (a.type === 'fridge') { const w = a.space ?? a.width + 2 * FRIDGE_CLEARANCE; const d0 = a.distance - (w - a.width) / 2; return [d0, d0 + w]; }
+    return [a.distance, a.distance + a.width];
+  };
+  // equipos que ocupan lugar en el piso del mismo muro (la campana va sobre la estufa y la torre es otro módulo alto)
+  const ocupantesDelMuro = (self: Appliance) => appliances.filter(o => o !== self && o.active && o.wall === self.wall && o.type !== 'hood-under' && !(esEquipoTorre(o.type) && o.donde !== 'mueble'));
+  const cruzesMuebleHorno = (): string[] => {
+    const out: string[] = [];
+    appliances.filter(a => esEquipoTorre(a.type) && a.active && a.donde === 'mueble' && a.wall !== 'Island').forEach(a => {
+      const [x0, x1] = ocupaEnMuro(a);
+      const largo = wallUsableLength(a.wall as WallName);
+      if (x1 > largo + 1) out.push(`${NOMBRE_ELECTRO[a.type]} en mueble: se sale del muro ${a.wall} (${Math.round(x1)} de ${Math.round(largo)})`);
+      ocupantesDelMuro(a).forEach(o => { const [y0, y1] = ocupaEnMuro(o); if (Math.min(x1, y1) - Math.max(x0, y0) > 1) out.push(`${NOMBRE_ELECTRO[a.type]} en mueble se cruza con ${(NOMBRE_ELECTRO[o.type] ?? o.type).toLowerCase()} (muro ${a.wall})`); });
+    });
+    return out;
+  };
+  // Primer lugar del muro donde cabe un mueble de ese ancho sin cruzarse con otro equipo (de 50 en 50)
+  const primerHuecoMuro = (self: Appliance, wall: WallName, ancho: number): number => {
+    const largo = wallUsableLength(wall);
+    const otros = appliances.filter(o => o !== self && o.active && o.wall === wall && o.type !== 'hood-under' && !(esEquipoTorre(o.type) && o.donde !== 'mueble')).map(ocupaEnMuro);
+    for (let d = 0; d + ancho <= largo + 1; d += 50) if (otros.every(([y0, y1]) => Math.min(d + ancho, y1) - Math.max(d, y0) <= 1)) return d;
+    return 0;
+  };
+
   const handleMathematicalSuggestion = async (strategy: OptimizationStrategy) => {
     setIsOptMenuOpen(false);
     if (isFitSection) {
@@ -1963,6 +2012,11 @@ export default function App() {
     }
     if (isClosetSection) {
       window.alert('En el closet la estructura y el interior (cajonero, entrepaños, tubos) se arman solos con las respuestas del formulario de Espacio. Las puertas corredizas se agregan en el siguiente paso.');
+      return;
+    }
+    const cruces = cruzesMuebleHorno();
+    if (cruces.length > 0) {
+      window.alert('No se puede optimizar: el mueble de horno se cruza con otro equipo.\n\n• ' + cruces.join('\n• ') + '\n\nCambia su posición en Electrodomésticos → Ubicación en el muro y vuelve a optimizar.');
       return;
     }
     const conflicts = islandConflicts();
@@ -2258,13 +2312,13 @@ export default function App() {
     const sameTierItems = isUpper ? modules.filter(m => m.wall === wall && (m.type === 'UPPER' || m.type === 'TALL')) : [...modules.filter(m => m.wall === wall && m.type !== 'UPPER'), ...appliances.filter(a => a.wall === wall && a.active && a.type !== 'hood-under')];
     const currentWidth = sameTierItems.reduce((acc, it) => acc + it.width, 0);
     if (currentWidth + e.ancho > wallLength) { alert('⚠️ SOBREPASO: el módulo no cabe en el muro disponible.'); return; }
-    const alto = type === 'TALL' ? Math.min(e.alto, spaceHeight - TOP_MARGIN) : e.alto;
-    const frontsLayout = e.frente === 'abierto' ? 'open' as const : e.frente === 'cajones' ? 'drawers' as const : isUpper ? (e.ancho < 450 ? 'upper-door1' as const : 'upper-door2-v' as const) : (e.ancho <= 450 ? 'door1' as const : 'door2' as const);
+    const alto = e.muebleHorno ? currentBaseModuleHeight : type === 'TALL' ? Math.min(e.alto, spaceHeight - TOP_MARGIN) : e.alto; // el mueble de horno mide lo del mueble base del diseño
+    const frontsLayout = e.muebleHorno ? 'oven' as const : e.frente === 'abierto' ? 'open' as const : e.frente === 'cajones' ? 'drawers' as const : isUpper ? (e.ancho < 450 ? 'upper-door1' as const : 'upper-door2-v' as const) : (e.ancho <= 450 ? 'door1' as const : 'door2' as const);
     const nuevo: KitchenModule = {
       id: e.id, name: e.nombre, type, width: e.ancho, height: alto, depth: e.fondo, basePrice: 0,
       uniqueId: Math.random().toString(36).substr(2, 9), wall, positionX: currentWidth, quantity: 1, doorType: 'vertical',
       configType: e.frente === 'cajones' ? 'drawers' : 'doors', hasPlateRack: e.platero, drawerCount: e.frente === 'cajones' ? e.cajones : 0,
-      heightLocked: true, detailed: true, frontsLayout,
+      heightLocked: true, detailed: true, frontsLayout, ...(e.muebleHorno ? { muebleHorno: e.muebleHorno } : {}),
     };
     setModules(prev => [...prev, nuevo]);
     setActiveTab('design');
@@ -3338,7 +3392,7 @@ export default function App() {
           })}
           
           {/* Electrodomésticos del Muro A */}
-          {appliances.filter(a => a.wall === 'A' && a.active).map((app, idx) => {
+          {appliances.filter(a => a.wall === 'A' && a.active && !esEquipoTorre(a.type)).map((app, idx) => {
             const depth = app.depth * planScale;
             let fill = '#f87171';
             if (app.type === 'sink') fill = '#60a5fa';
@@ -3640,7 +3694,7 @@ export default function App() {
     const zh_px = zh_mm * frontalHeightScale;
     const closureDepth = 600 * frontalScale; // 60cm de profundidad para muros auxiliares
     
-    const currentWallModules = modulesWithCoords3D.filter(m => m.wall === 'A'), currentWallApps = appliances.filter(a => a.wall === 'A' && a.active);
+    const currentWallModules = modulesWithCoords3D.filter(m => m.wall === 'A'), currentWallApps = appliances.filter(a => a.wall === 'A' && a.active && !esEquipoTorre(a.type));
     const uppers = currentWallModules.filter(m => m.type === 'UPPER' || m.isFridgeCabinet).sort((a,b) => a.positionX - b.positionX);
     const lowers = [ ...currentWallModules.filter(m => m.type === 'LOWER' || m.type === 'TALL' || m.isStoveCabinet), ...currentWallApps.filter(a => a.type === 'fridge' || a.type === 'sink' || a.type === 'pantry') ].sort((a,b) => {
       const ax = 'positionX' in a ? (a as any).positionX : (a as any).distance;
@@ -4250,7 +4304,7 @@ export default function App() {
     );
   };
 
-  // Un clic fuera de los paneles laterales (Elementos, Accesorios, Módulos especiales) los cierra; los botones de la barra lateral
+  // Un clic fuera de los paneles laterales (Elementos, Electrodomésticos, Módulos especiales) los cierra; los botones de la barra lateral
   // y el propio panel no cuentan como "fuera"
   useEffect(() => {
     if (!(isViewsPanelOpen || isElementsPanelOpen || isAccessoriesPanelOpen || isSpecialModulesPanelOpen)) return;
@@ -4476,13 +4530,100 @@ export default function App() {
   const wallUsableLength = (wall: WallName) => (wall === 'A' ? wallA : (wall === 'B' ? wallB : wallC) - CORNER_BLIND_OFFSET);
 
   // Mueve un electrodoméstico a un muro y posición (la usa el arrastre en la escena y el selector de muro)
-  const moveAppliance = (type: ApplianceType, wall: WallName, distance: number) => {
-    setAppliances(prev => prev.map(a => {
-      if (a.type !== type) return a;
-      const maxDistance = Math.max(0, wallUsableLength(wall) - a.width);
-      return { ...a, wall, distance: Math.min(Math.max(distance, 0), maxDistance) };
-    }));
+  // La nevera normalmente va en un extremo del muro. En cocina en L nunca se deja en la esquina: ese extremo queda
+  // BORDE_NEVERA_L mm libre (en B y C el arranque ya descuenta la esquina ciega) y el otro extremo, el libre, es donde se ofrece.
+  const BORDE_NEVERA_L = 600;
+  const esquinaIzq = (wall: WallName) => wall !== 'A' || lArm === 'left'; // en A la esquina del L está a la izquierda solo si el brazo B va ahí
+  const limitarPosicion = (a: Appliance, wall: WallName, distance: number) => {
+    const usable = wallUsableLength(wall);
+    const maxDistance = Math.max(0, usable - a.width);
+    if (a.type === 'fridge' && layout === 'L_SHAPE') {
+      const izq = esquinaIzq(wall);
+      const minL = izq ? BORDE_NEVERA_L : 0, maxL = usable - a.width - (izq ? 0 : BORDE_NEVERA_L);
+      if (maxL >= minL) return Math.min(Math.max(distance, minL), maxL);
+    }
+    return Math.min(Math.max(distance, 0), maxDistance);
   };
+  // posición de la nevera en el muro: pegada a la izquierda, centrada o pegada a la derecha
+  const posNevera = (a: Appliance, wall: WallName, donde: 'izq' | 'centro' | 'der') => {
+    const libre = Math.max(0, wallUsableLength(wall) - a.width);
+    return limitarPosicion(a, wall, donde === 'izq' ? 0 : donde === 'der' ? libre : Math.round(libre / 2));
+  };
+
+  const moveAppliance = (type: ApplianceType, wall: WallName, distance: number) => {
+    setAppliances(prev => prev.map(a => (a.type !== type ? a : { ...a, wall, distance: limitarPosicion(a, wall, distance) })));
+  };
+
+  // Horno y horno corto van en el hueco de la Torre de hornos: al encender uno se activa la torre (si no estaba) y se ensancha lo que pida el equipo
+  // (el horno necesita un hueco de 600 de ancho: laterales de 15 + 600 = 630)
+  const toggleHorno = (type: ApplianceType, soloTorre = false) => {
+    const on = appliances.find(a => a.type === type)?.active;
+    if (!soloTorre) toggleAppliance(type);
+    if ((on && !soloTorre) || (!soloTorre && appliances.find(a => a.type === type)?.donde === 'mueble')) return;
+    const necesario = type === 'oven' ? 630 : 600;
+    const sm = specialModules.find(s => s.kind === 'tall-oven');
+    if (!sm) return;
+    if (!sm.active) {
+      const inst = { ...sm, width: Math.max(sm.width, necesario) };
+      const used = modules.filter(m => m.wall === activeWall && m.type === 'TALL').reduce((acc, m) => acc + m.width, 0);
+      if (placeSpecialModule(inst, used)) setSpecialModules(prev => prev.map(s => (s.id === sm.id ? { ...inst, active: true } : s)));
+    } else if (sm.width < necesario) {
+      updateSpecialModuleProp(sm.id, 'width', necesario);
+    }
+  };
+  // El horno cambia de la torre al mueble de horno (o al revés): la torre se quita si ya no lleva ningún horno y se pone si lo necesita
+  const cambiarDondeHorno = (type: 'oven' | 'oven-compact', k: 'torre' | 'mueble', variante?: ModuloEspecial['muebleHorno']) => {
+    updateApplianceProp(type, 'donde', k);
+    if (variante) updateApplianceProp(type, 'variante', variante);
+    if (k === 'mueble') {
+      // el mueble se pone en el primer hueco libre del muro (si donde estaba se cruza con otro equipo o se sale)
+      const ap = appliances.find(x => x.type === type);
+      const opc = muebleDeVariante(variante ?? ap?.variante ?? VARIANTE_POR_DEFECTO[type]);
+      if (ap && opc && ap.wall !== 'Island') {
+        const wall = ap.wall as WallName;
+        const dist = (ap.donde ?? 'torre') === 'torre' ? 0 : ap.distance;
+        const libre = ocupantesDelMuro(ap).every(o => { const [y0, y1] = ocupaEnMuro(o); return Math.min(dist + opc.ancho, y1) - Math.max(dist, y0) <= 1; }) && dist + opc.ancho <= wallUsableLength(wall) + 1;
+        updateApplianceProp(type, 'distance', libre ? dist : primerHuecoMuro(ap, wall, opc.ancho));
+      }
+    }
+    const sm = specialModules.find(s => s.kind === 'tall-oven');
+    const activo = appliances.find(a => a.type === type)?.active;
+    const otroEnTorre = appliances.some(a => esEquipoTorre(a.type) && a.type !== type && a.active && (a.donde ?? 'torre') === 'torre');
+    if (!sm || !activo) return;
+    if (k === 'mueble' && sm.active && !otroEnTorre) toggleSpecialGroup('tall-oven');
+    if (k === 'torre' && !sm.active) toggleHorno(type, true);
+  };
+  // Los hornos siguen a la torre: mismo muro y centrados en ella
+  useEffect(() => {
+    const torreModulo = modules.find(m => m.type === 'TALL' && /tall-oven/.test(m.uniqueId));
+    setAppliances(prev => {
+      let cambio = false;
+      const next = prev.map(a => {
+        const torre = torreModulo;
+        if (!esEquipoTorre(a.type) || !a.active || !torre || a.donde === 'mueble') return a;
+        const d = Math.round(torre.positionX + (torre.width - a.width) / 2);
+        if (a.wall === torre.wall && a.distance === d) return a;
+        cambio = true; return { ...a, wall: torre.wall as Appliance['wall'], distance: d };
+      });
+      return cambio ? next : prev;
+    });
+  }, [modules, appliances.filter(a => esEquipoTorre(a.type) && a.active).length]);
+
+  // Al pasar a cocina en L (o al encender la nevera / cambiarla de muro) se aparta de las esquinas
+  useEffect(() => {
+    setAppliances(prev => {
+      let cambio = false;
+      const next = prev.map(a => {
+        if (a.type !== 'fridge' || !a.active || a.wall === 'Island' || layout !== 'L_SHAPE') return a;
+        if (limitarPosicion(a, a.wall, a.distance) === a.distance) return a;
+        // estaba en la esquina: pasa al extremo libre del muro
+        const d = posNevera(a, a.wall, esquinaIzq(a.wall) ? 'der' : 'izq');
+        cambio = true; return { ...a, distance: d };
+      });
+      return cambio ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout, lArm, wallA, wallB, wallC, appliances.find(a => a.type === 'fridge')?.active, appliances.find(a => a.type === 'fridge')?.wall]);
 
   const updateApplianceProp = (type: ApplianceType, prop: keyof Appliance, value: any) => {
     setAppliances(prev => {
@@ -4518,47 +4659,96 @@ export default function App() {
     }
   }, [labeledModules, lineType, faceColor, wallA, boxes]);
 
-  // electrodomésticos: la misma lista en la ventana de Espacio (paso 3) y en el panel Accesorios
-  // electrodomésticos: la misma lista en la ventana de Espacio (paso 3) y en el panel Accesorios. Una línea por cada uno:
+  // electrodomésticos: la misma lista en la ventana de Espacio (paso 3) y en el panel Electrodomésticos. Una línea por cada uno:
   // icono, nombre, interruptor; activo: muro, ancho y posición en línea, sus puntos como etiquetas y lo propio de cada uno
-  const ICONO_ELECTRO: Partial<Record<ApplianceType, React.ReactNode>> = { fridge: <Refrigerator size={16} />, stove: <Flame size={16} />, sink: <Droplets size={16} />, 'hood-under': <Wind size={16} />, pantry: <Archive size={16} />, dishwasher: <WashingMachine size={16} /> };
-  const NOMBRE_ELECTRO: Partial<Record<ApplianceType, string>> = { fridge: 'Nevera', stove: 'Estufa', sink: 'Poceta', 'hood-under': 'Campana', pantry: 'Alacena alta', dishwasher: 'Lavavajillas' };
+  const ICONO_ELECTRO: Partial<Record<ApplianceType, React.ReactNode>> = { fridge: <Refrigerator size={16} />, stove: <Flame size={16} />, sink: <Droplets size={16} />, 'hood-under': <Wind size={16} />, pantry: <Archive size={16} />, dishwasher: <WashingMachine size={16} />, oven: <CookingPot size={16} />, 'oven-compact': <Microwave size={16} /> };
+  const NOMBRE_ELECTRO: Partial<Record<ApplianceType, string>> = { fridge: 'Nevera', stove: 'Estufa', sink: 'Poceta', 'hood-under': 'Campana', pantry: 'Alacena alta', dishwasher: 'Lavavajillas', oven: 'Horno', 'oven-compact': 'Horno corto' };
   const chip = (on: boolean) => `px-2 py-1 rounded-lg text-[10px] font-black border ${on ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`;
   const numMini = 'w-16 bg-white border border-slate-200 rounded-lg px-1.5 py-1 text-[11px] font-black text-slate-800 text-right outline-none focus:border-indigo-500';
   const listaElectro = (
                   <div className="space-y-2">
-                    {cfg.accessories.length === 0 && (<div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 text-[11px] font-bold text-slate-500">Aún no hay accesorios definidos para {cfg.name.toLowerCase()}.</div>)}
+                    {cfg.accessories.length === 0 && (<div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 text-[11px] font-bold text-slate-500">Aún no hay electrodomésticos definidos para {cfg.name.toLowerCase()}.</div>)}
                     {appliances.filter(ap => cfg.accessories.includes(ap.type)).map((app) => {
-                      const sigue = app.type === 'dishwasher' ? 'poceta' : app.type === 'hood-under' ? 'estufa' : null; // va pegado a otro: sin muro ni posición propios
+                      const sigue = app.type === 'dishwasher' ? 'poceta' : app.type === 'hood-under' ? 'estufa' : esEquipoTorre(app.type) ? (app.donde === 'mueble' ? null : 'torre de hornos') : null; // va pegado a otro: sin muro ni posición propios
                       const pts = app.active ? puntosAdecuacion([app], modules, wallA) : [];
                       return (
                       <div key={app.type} className={`px-3 py-2 rounded-2xl border transition-all space-y-1.5 ${app.active ? 'bg-indigo-50/60 border-indigo-300' : 'bg-white border-slate-100'}`}>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className={`p-1.5 rounded-lg ${app.active ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'}`}>{ICONO_ELECTRO[app.type]}</span>
                           <span className="text-[11px] font-black text-slate-800 uppercase tracking-tight mr-auto">{NOMBRE_ELECTRO[app.type] ?? app.type}</span>
-                          {app.active && !sigue && (['A', 'B', 'C'] as WallName[]).filter(w => w === 'A' || (w === 'B' && armB) || (w === 'C' && armC)).length > 1 && (
-                            <span className="flex gap-0.5">{(['A', 'B', 'C'] as WallName[]).filter(w => w === 'A' || (w === 'B' && armB) || (w === 'C' && armC)).map(w => (
-                              <button key={w} type="button" title={`Muro ${w}`} onClick={() => moveAppliance(app.type, w, app.wall === w ? app.distance : 0)} className={chip(app.wall === w)}>{w}</button>
-                            ))}</span>
-                          )}
-                          {app.active && (
-                            <label className="flex items-center gap-1 text-[9px] font-black text-slate-400 uppercase" title="Ancho (mm)">An
-                              <input type="number" value={app.width} onFocus={e => e.currentTarget.select()} onChange={(e) => updateApplianceProp(app.type, 'width', parseInt(e.target.value) || 0)} className={numMini} /></label>
-                          )}
-                          {app.active && !sigue && (
-                            <label className="flex items-center gap-1 text-[9px] font-black text-slate-400 uppercase" title="Posición desde el inicio del muro (mm)">Pos
-                              <input type="number" value={app.distance} onFocus={e => e.currentTarget.select()} onChange={(e) => updateApplianceProp(app.type, 'distance', parseInt(e.target.value) || 0)} className={numMini} /></label>
-                          )}
-                          <button onClick={() => toggleAppliance(app.type)} aria-label={`${app.active ? 'Quitar' : 'Poner'} ${NOMBRE_ELECTRO[app.type] ?? ''}`} className={`w-9 h-5 rounded-full transition-all relative shrink-0 ${app.active ? 'bg-indigo-600' : 'bg-slate-200'}`}><div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${app.active ? 'left-[18px]' : 'left-0.5'}`} /></button>
+                          <button onClick={() => (esEquipoTorre(app.type) ? toggleHorno(app.type) : toggleAppliance(app.type))} aria-label={`${app.active ? 'Quitar' : 'Poner'} ${NOMBRE_ELECTRO[app.type] ?? ''}`} className={`w-9 h-5 rounded-full transition-all relative shrink-0 ${app.active ? 'bg-indigo-600' : 'bg-slate-200'}`}><div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${app.active ? 'left-[18px]' : 'left-0.5'}`} /></button>
                         </div>
+                        {app.active && (
+                          <div className="grid grid-cols-1 gap-2">
+                            {/* Lo que mide el electrodoméstico */}
+                            <div className="rounded-xl bg-white/70 border border-slate-200 px-2.5 py-1.5 space-y-1">
+                              <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Medidas del equipo</div>
+                              <div className="flex items-end gap-2">
+                                {esEquipoTorre(app.type) ? (
+                                  <div className="text-[11px] font-bold text-slate-700">{app.width} × {app.height} × {app.depth} mm
+                                    <div className="text-[9px] font-bold text-slate-400">{app.donde === 'mueble' ? (app.type === 'oven' ? 'Hueco de 600 × 590 · en su mueble' : 'Hueco de 560-568 × 460 · en su mueble') : app.type === 'oven' ? 'Hueco de 600 × 590 · la torre pasa a 630 de ancho' : 'Hueco de 560-568 × 460'}</div></div>
+                                ) : (
+                                <label className="flex flex-col gap-0.5 text-[9px] font-bold text-slate-400" title="Ancho del electrodoméstico (mm)">Ancho (mm)
+                                  <input type="number" value={app.width} onFocus={e => e.currentTarget.select()} onChange={(e) => updateApplianceProp(app.type, 'width', parseInt(e.target.value) || 0)} className={numMini} /></label>
+                                )}
+                                {app.type === 'fridge' && (
+                                  <label className="flex flex-col gap-0.5 text-[9px] font-bold text-slate-400" title="Altura de la nevera (mm): define el espacio del mueble sobre ella">Alto (mm)
+                                    <input type="number" value={app.height} onFocus={e => e.currentTarget.select()} onChange={(e) => updateApplianceProp('fridge', 'height', parseInt(e.target.value) || 0)} className={numMini} /></label>
+                                )}
+                              </div>
+                            </div>
+                            {/* Dónde va en el muro */}
+                            {!sigue && (
+                              <div className="rounded-xl bg-indigo-50/70 border border-indigo-200 px-2.5 py-1.5 space-y-1">
+                                <div className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">Ubicación en el muro</div>
+                                <div className="flex items-end gap-2 flex-wrap">
+                                  {(['A', 'B', 'C'] as WallName[]).filter(w => w === 'A' || (w === 'B' && armB) || (w === 'C' && armC)).length > 1 && (
+                                    <div className="flex flex-col gap-0.5 text-[9px] font-bold text-slate-400">Muro
+                                      <span className="flex gap-0.5">{(['A', 'B', 'C'] as WallName[]).filter(w => w === 'A' || (w === 'B' && armB) || (w === 'C' && armC)).map(w => (
+                                        <button key={w} type="button" title={`Muro ${w}`} onClick={() => moveAppliance(app.type, w, app.wall === w ? app.distance : app.type === 'fridge' && layout === 'L_SHAPE' ? posNevera(app, w, esquinaIzq(w) ? 'der' : 'izq') : 0)} className={chip(app.wall === w)}>{w}</button>
+                                      ))}</span>
+                                    </div>
+                                  )}
+                                  {app.type === 'fridge' && app.wall !== 'Island' && (() => {
+                                    const w = app.wall as WallName;
+                                    return (
+                                      <div className="flex flex-col gap-0.5 text-[9px] font-bold text-slate-400">Va a la
+                                        <span className="flex gap-0.5">{([['izq', 'Izquierda'], ['centro', 'Centro'], ['der', 'Derecha']] as const).map(([k, t]) => {
+                                          const esquina = layout === 'L_SHAPE' && k !== 'centro' && (k === 'izq') === esquinaIzq(w);
+                                          return <button key={k} type="button" disabled={esquina} title={esquina ? 'Es la esquina: ahí no va la nevera' : undefined} onClick={() => updateApplianceProp('fridge', 'distance', posNevera(app, w, k))} className={`${chip(app.distance === posNevera(app, w, k))} disabled:opacity-40 disabled:cursor-not-allowed`}>{t}</button>;
+                                        })}</span>
+                                      </div>
+                                    );
+                                  })()}
+                                  <label className="flex flex-col gap-0.5 text-[9px] font-bold text-slate-400" title="Distancia desde el inicio del muro hasta el borde del equipo (mm)">{app.type === 'fridge' ? 'Ajustar posición (mm)' : 'Distancia al inicio (mm)'}
+                                    <input type="number" value={app.distance} onFocus={e => e.currentTarget.select()} onChange={(e) => updateApplianceProp(app.type, 'distance', parseInt(e.target.value) || 0)} onBlur={() => app.wall !== 'Island' && moveAppliance(app.type, app.wall as WallName, app.distance)} className={numMini} /></label>
+                                </div>
+                                {app.type === 'fridge' && layout === 'L_SHAPE' && <div className="text-[9px] font-bold text-indigo-500">En L la nevera no va en la esquina: se ofrece el extremo libre del muro.</div>}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         {app.active && (
                           <div className="flex items-center gap-1 flex-wrap pl-9">
                             {pts.map(pt => { const info = PUNTO_INFO[pt.tipo]; return <span key={pt.id} title={`${info.nombre} a ${Math.round(pt.z / 10)} cm del piso`} className="px-1.5 py-0.5 rounded-md text-[9px] font-black text-white" style={{ background: info.color }}>{info.sigla} {Math.round(pt.z / 10)}</span>; })}
                             {sigue && <span className="text-[9px] font-bold text-slate-400">va con la {sigue}</span>}
                             {app.type === 'fridge' && <button type="button" onClick={() => updateApplianceProp('fridge', 'dispensador', !app.dispensador)} className={chip(!!app.dispensador)}>Dispensador {app.dispensador ? 'sí' : 'no'}</button>}
+                            {app.type === 'oven' && <button type="button" title="El horno lleva energía; con gas, además una entrada de gas" onClick={() => updateApplianceProp('oven', 'gas', !app.gas)} className={chip(!!app.gas)}>Gas {app.gas ? 'sí' : 'no'}</button>}
+                            {esEquipoTorre(app.type) && (() => {
+                              const tipo = app.type as 'oven' | 'oven-compact';
+                              const elegida = app.variante ?? VARIANTE_POR_DEFECTO[tipo];
+                              const opcionElegida = muebleDeVariante(elegida);
+                              return <>
+                                <span className="text-[9px] font-bold text-slate-400 mr-0.5 w-full">Va en · opciones para este equipo</span>
+                                <button type="button" title="Hueco en la Torre de hornos" onClick={() => cambiarDondeHorno(tipo, 'torre')} className={chip((app.donde ?? 'torre') === 'torre')}>Torre de hornos</button>
+                                {opcionesMuebleHorno(tipo).map(o => <button key={o.id} type="button" title={o.nombre} onClick={() => cambiarDondeHorno(tipo, 'mueble', o.muebleHorno)} className={chip(app.donde === 'mueble' && elegida === o.muebleHorno)}>{etiquetaMueble(o.muebleHorno)}</button>)}
+                                {app.donde === 'mueble' && opcionElegida && !modules.some(m => m.muebleHorno === elegida) && <button type="button" onClick={() => addModuloEspecial(opcionElegida)} className="px-2 py-1 rounded-lg text-[10px] font-black border border-indigo-300 bg-white text-indigo-600">+ Agregar el mueble</button>}
+                                {app.donde === 'mueble' && opcionElegida && <span className="text-[9px] font-bold text-slate-400 w-full">{opcionElegida.nombre} ({opcionElegida.ancho} de ancho){modules.some(m => m.muebleHorno === elegida) ? '' : ' · se coloca al optimizar la modulación'}</span>}
+                              </>;
+                            })()}
                             {app.type === 'dishwasher' && (['izq', 'der'] as const).map(l => <button key={l} type="button" onClick={() => updateApplianceProp('dishwasher', 'lado', l)} className={chip((app.lado ?? 'der') === l)}>{l === 'izq' ? 'Izquierda' : 'Derecha'}</button>)}
                             {app.type === 'dishwasher' && !appliances.find(a => a.type === 'sink')?.active && <span className="text-[9px] font-bold text-amber-700">activa la poceta</span>}
-                            {app.type === 'hood-under' && ([['convencional', 'Convencional'], ['libre', 'Tipo península · 65 cm libres']] as const).map(([k, t]) => <button key={k} type="button" title={k === 'libre' ? 'Sin mueble arriba: los aéreos dejan 65 cm libres (vuelve a optimizar)' : 'Bajo un mueble'} onClick={() => updateApplianceProp('hood-under', 'campanaTipo', k)} className={chip((app.campanaTipo ?? 'convencional') === k)}>{t}</button>)}
+                            {app.type === 'hood-under' && ([['convencional', 'Horizontal', 'Bajo un mueble aéreo'], ['libre', 'Península', 'Sin mueble arriba: los aéreos dejan libre la medida de la campana + 5 cm (vuelve a optimizar)'], ['extraplana', 'Extraplana', 'Bajo un mueble aéreo (su mueble superior propio está pendiente: por ahora usa el de la horizontal)'], ['oculta', 'Oculta', 'Dentro del mueble aéreo (su mueble superior propio está pendiente: por ahora usa el de la horizontal)']] as const).map(([k, t, d]) => <button key={k} type="button" title={d} onClick={() => updateApplianceProp('hood-under', 'campanaTipo', k)} className={chip((app.campanaTipo ?? 'convencional') === k)}>{t}</button>)}
                           </div>
                         )}
                       </div>
@@ -4787,7 +4977,7 @@ export default function App() {
               <div className="flex flex-col gap-1.5 w-full px-2.5"><button onClick={() => setIsSidebarVisible(false)} title="Ocultar barra de herramientas" className="w-full h-8 flex items-center justify-center rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-500 hover:text-slate-900 transition-colors"><X size={15} /></button><button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} title={isSidebarCollapsed ? 'Expandir herramientas' : 'Contraer herramientas'} className="w-full h-8 flex items-center justify-center rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-600 hover:bg-indigo-100/70 transition-colors">{isSidebarCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}</button></div>
               <div className="flex flex-col gap-2 w-full px-2.5 mt-1">
                 <SidebarToolButton active={isElementsPanelOpen} onClick={() => togglePanel('elements')} icon={<Settings2 size={18} />} label="Módulos" collapsed={isSidebarCollapsed} badge={modules.length > 0 ? modules.length.toString() : undefined} />
-                <SidebarToolButton active={isAccessoriesPanelOpen} onClick={() => togglePanel('accessories')} icon={<Puzzle size={18} />} label="Accesorios" collapsed={isSidebarCollapsed} badge={appliances.filter(a => a.active).length > 0 ? appliances.filter(a => a.active).length.toString() : undefined} />
+                <SidebarToolButton active={isAccessoriesPanelOpen} onClick={() => togglePanel('accessories')} icon={<Microwave size={18} />} label="Electrodomésticos" collapsed={isSidebarCollapsed} badge={appliances.filter(a => a.active).length > 0 ? appliances.filter(a => a.active).length.toString() : undefined} />
                 <SidebarToolButton active={isSpecialModulesPanelOpen} onClick={() => togglePanel('special')} icon={<Archive size={18} />} label="Especiales" collapsed={isSidebarCollapsed} badge={specialModules.filter(sm => sm.active).length > 0 ? specialModules.filter(sm => sm.active).length.toString() : undefined} />
                 <SidebarToolButton active={isWorkspaceModalOpen} onClick={() => togglePanel('workspace')} icon={<Maximize size={18} />} label="Espacio" collapsed={isSidebarCollapsed} />
                 <SidebarToolButton active={isModulosModalOpen} onClick={() => setIsModulosModalOpen(o => !o)} icon={<Palette size={18} />} label="Acabados" collapsed={isSidebarCollapsed} />
@@ -4840,7 +5030,7 @@ export default function App() {
               <div data-side-panel className={`absolute top-0 bottom-0 left-0 w-80 bg-white/95 backdrop-blur-xl z-[45] border-r border-slate-200/80 shadow-xl transition-all duration-300 ease-out transform ${isAccessoriesPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 <div className="h-full flex flex-col p-6 overflow-y-auto no-scrollbar space-y-6">
                   <div className="flex items-center justify-between">
-                    <div><h2 className="text-lg font-semibold tracking-tight text-slate-900">Accesorios</h2><p className="text-xs font-medium text-indigo-600">Electrodomésticos</p></div>
+                    <div><h2 className="text-lg font-semibold tracking-tight text-slate-900">Electrodomésticos</h2><p className="text-xs font-medium text-indigo-600">Gasodomésticos y equipos de la cocina</p></div>
                     <button onClick={() => setIsAccessoriesPanelOpen(false)} className="p-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-500 hover:text-slate-800"><X size={18} /></button>
                   </div>
                   {listaElectro}
@@ -5767,6 +5957,7 @@ export default function App() {
                   onResizeEdge={handleResizeEdge3D}
                   onMoveAppliance={moveAppliance}
                   visibility={visibility}
+                  modoAbrir={modoAbrir}
                   verCorte={verCorte}
                   collisions={collidingBoxes}
                   measureMode={isMeasureMode}
@@ -6140,6 +6331,7 @@ export default function App() {
                   {activeView === 'frontal' && (
                     <button onClick={() => setVerCorte(v => !v)} aria-pressed={verCorte} title={verCorte ? 'Ocultar el corte A y su sección' : 'Mostrar el corte A y su sección'} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${verCorte ? 'bg-indigo-50 text-indigo-600 border-indigo-200 font-semibold' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>Corte</button>
                   )}
+                  <button onClick={() => setModoAbrir(v => !v)} aria-pressed={modoAbrir} title={modoAbrir ? 'Cerrar puertas y cajones' : 'Abrir puertas y cajones (luego un clic en un frente lo abre o lo cierra solo)'} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border inline-flex items-center gap-1.5 ${modoAbrir ? 'text-indigo-600 bg-indigo-50 border-indigo-200' : 'bg-transparent hover:bg-slate-50 text-slate-600 border-transparent'}`}><DoorOpen size={13} />{modoAbrir ? 'Cerrar' : 'Abrir'}</button>
                   <div className="w-px h-4 bg-slate-200 mx-0.5" />
                   <button onClick={undo} disabled={!canUndo} title="Deshacer (Ctrl+Z)" aria-label="Deshacer" className="p-1.5 rounded-lg hover:bg-slate-50 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
                     <Undo2 size={14} />
@@ -6363,23 +6555,48 @@ export default function App() {
                       Personalizar
                     </button>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {['Blanco', 'Arena', 'Riviera', 'Bosco', 'Nuez', 'Humo', 'Risco', 'Negro'].map(nombre => {
-                      const cat = colorDeCatalogo(nombre);
-                      const activo = (acabados.MB.fach.color || faceColor).toLowerCase() === nombre.toLowerCase();
-                      return (
-                        <button
-                          key={nombre}
-                          type="button"
-                          onClick={() => setTablero('MB', 'fach', { color: nombre })}
-                          title={nombre}
-                          className={`w-7 h-7 rounded-lg border transition-all ${activo ? 'ring-2 ring-indigo-600 ring-offset-1 border-slate-400 scale-105' : 'border-slate-300 hover:scale-105'}`}
-                          style={{ background: cat?.hex ?? '#f4f4f1' }}
-                          aria-label={`Color ${nombre}`}
-                        />
-                      );
-                    })}
+                  <div className="relative">
+                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input
+                      type="search"
+                      value={busquedaColor}
+                      onChange={e => setBusquedaColor(e.target.value)}
+                      placeholder="Buscar color: nuez, veta, piedra…"
+                      aria-label="Buscar color"
+                      className="w-full pl-8 pr-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] text-slate-800 placeholder:text-slate-400 outline-none focus:border-indigo-500"
+                    />
                   </div>
+                  {(() => {
+                    const q = busquedaColor.trim();
+                    const lista = q ? buscarColores(q) : ['Blanco', 'Arena', 'Riviera', 'Bosco', 'Nuez', 'Humo', 'Risco', 'Negro'].map(n => colorDeCatalogo(n)!).filter(Boolean);
+                    const actual = (acabados.MB.fach.color || faceColor).toLowerCase();
+                    if (q && lista.length === 0) return <div className="text-[11px] text-slate-400 px-1">No hay colores que se llamen "{q}".</div>;
+                    return (
+                      <div className={q ? 'grid grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-0.5' : 'flex flex-wrap gap-2'}>
+                        {lista.map(cat => {
+                          const activo = actual === cat.nombre.toLowerCase();
+                          const veta = tieneVeta(cat);
+                          const fondo = veta ? { backgroundImage: `url(${vetaMiniatura(cat.hex, 56)})`, backgroundSize: 'cover' } : { background: cat.hex };
+                          return (
+                            <button
+                              key={cat.nombre}
+                              type="button"
+                              onClick={() => setTablero('MB', 'fach', { color: cat.nombre })}
+                              title={`${cat.nombre} · ${cat.grupo}${veta ? ' · con veta' : ''}`}
+                              aria-label={`Color ${cat.nombre}`}
+                              className={q ? `flex items-center gap-2 p-1 rounded-lg border text-left ${activo ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 hover:border-slate-300'}` : `w-7 h-7 rounded-lg border transition-all ${activo ? 'ring-2 ring-indigo-600 ring-offset-1 border-slate-400 scale-105' : 'border-slate-300 hover:scale-105'}`}
+                              style={q ? undefined : fondo}
+                            >
+                              {q && <>
+                                <span className="w-7 h-7 rounded-md border border-slate-300 shrink-0" style={fondo} />
+                                <span className="min-w-0"><span className="block text-[11px] font-medium text-slate-800 truncate">{cat.nombre}</span><span className="block text-[9px] text-slate-400 truncate">{veta ? 'Con veta' : cat.grupo}</span></span>
+                              </>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Lista desplegable de módulos detectados */}

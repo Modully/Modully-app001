@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 
 RectAreaLightUniformsLib.init();
-import { IslandItem, KitchenModule, Appliance, ApplianceType, LayoutType, WallName } from './types';
+import { IslandItem, KitchenModule, Appliance, ApplianceType, LayoutType, WallName, esEquipoTorre } from './types';
 import type { CounterEdge, CounterExtras, closetDerived } from './boxes';
 import { closetSectionOf, closetCajoneroIndex, closetTorreIndex, fitRows, fitCells, fitInsets, fitBodyParts, doorOpening } from './boxes';
 import type { ClosetConfig, ClosetFit, FitBodyCfg } from './types';
@@ -2122,9 +2122,101 @@ const DraftNum: React.FC<{ value: number; onCommit: (n: number) => void; min?: n
 };
 
 
+/**
+ * Apertura de puertas y cajones en el 3D. Cada frente se envuelve en un grupo que se anima hacia su estado (abierto o cerrado):
+ *  - puerta de lado: gira sobre su bisagra (el borde exterior del mueble) con el eje vertical;
+ *  - puertas una sobre otra (horizontales): giran juntas sobre el borde de arriba y se abren hacia arriba;
+ *  - cajón: se desliza hacia el frente junto con las piezas de su caja.
+ */
+export type TipoApertura = 'cajon' | 'puerta-lado' | 'puerta-arriba';
+export interface InfoApertura { tipo: TipoApertura; grupo: string; pivot?: [number, number, number]; eje?: [number, number, number]; angulo?: number; desliz?: [number, number, number] }
+
+const Aperturable: React.FC<{ abierto: boolean; info: InfoApertura; children: React.ReactNode }> = ({ abierto, info, children }) => {
+  const g = useRef<THREE.Group>(null);
+  const p = useRef(0);
+  const q = useMemo(() => new THREE.Quaternion(), []);
+  const eje = useMemo(() => new THREE.Vector3(...(info.eje ?? [0, 1, 0])), [info.eje?.[0], info.eje?.[1], info.eje?.[2]]);
+  useFrame((_, dt) => {
+    const meta = abierto ? 1 : 0;
+    if (p.current === meta) return;
+    p.current += (meta - p.current) * Math.min(1, dt * 7);
+    if (Math.abs(meta - p.current) < 0.002) p.current = meta;
+    if (!g.current) return;
+    if (info.tipo === 'cajon') { const d = info.desliz ?? [0, 0, 0]; g.current.position.set(d[0] * p.current, d[1] * p.current, d[2] * p.current); }
+    else { q.setFromAxisAngle(eje, (info.angulo ?? 0) * p.current); g.current.quaternion.copy(q); }
+  });
+  if (info.tipo === 'cajon') return <group ref={g}>{children}</group>;
+  const P = info.pivot ?? [0, 0, 0];
+  return (
+    <group position={P}>
+      <group ref={g}>
+        <group position={[-P[0], -P[1], -P[2]]}>{children}</group>
+      </group>
+    </group>
+  );
+};
+
+/** Marco de cada pared: hacia dónde mira el frente y hacia dónde queda la derecha de quien lo mira (ejes del mundo) */
+const marcoDePared = (wall: string, isla: boolean): { nrm: THREE.Vector3; right: THREE.Vector3 } =>
+  isla ? { nrm: new THREE.Vector3(0, 0, -1), right: new THREE.Vector3(-1, 0, 0) }
+  : wall === 'B' ? { nrm: new THREE.Vector3(1, 0, 0), right: new THREE.Vector3(0, 0, -1) }
+  : wall === 'C' ? { nrm: new THREE.Vector3(-1, 0, 0), right: new THREE.Vector3(0, 0, 1) }
+  : { nrm: new THREE.Vector3(0, 0, 1), right: new THREE.Vector3(1, 0, 0) };
+
+/** Qué tipo de apertura tiene cada frente de los módulos convertidos y cómo se mueve (bisagra, eje, ángulo o recorrido del cajón) */
+export function aperturasDeFrentes(boxes: Box[], centro: (b: Box) => [number, number, number]): { info: Map<string, InfoApertura>; cajonDe: Map<string, string> } {
+  const info = new Map<string, InfoApertura>();
+  const cajonDe = new Map<string, string>();
+  const frentes = boxes.filter(b => b.kind === 'front' && b.moduleId && (b.wall === 'A' || b.wall === 'B' || b.wall === 'C'));
+  const porModulo = new Map<string, Box[]>();
+  frentes.forEach(f => porModulo.set(f.moduleId!, [...(porModulo.get(f.moduleId!) ?? []), f]));
+  const limpio = (n: string) => n.replace(/\s+[A-Z]{1,2}$/, '');
+  porModulo.forEach((lista, modId) => {
+    const mod = boxes.find(b => b.id === modId);
+    if (!mod) return;
+    const { nrm, right } = marcoDePared(mod.wall, !!mod.islandId);
+    const cm = new THREE.Vector3(...centro(mod));
+    const apiladas = lista.filter(f => /^Puerta (superior|inferior)/.test(f.name));
+    // puertas una sobre otra: giran juntas sobre el borde de arriba del conjunto
+    if (apiladas.length > 1) {
+      const zTop = Math.max(...apiladas.map(f => f.z + f.sz)) / 1000, zBot = Math.min(...apiladas.map(f => f.z)) / 1000;
+      const c = new THREE.Vector3(...centro(apiladas[0]));
+      const f = new THREE.Vector3(0, -(zTop - zBot), 0);
+      const d = new THREE.Vector3().crossVectors(right, f);
+      const angulo = (d.dot(nrm) > 0 ? 1 : -1) * 1.9;
+      apiladas.forEach(a => info.set(a.id, { tipo: 'puerta-arriba', grupo: `${modId}-apiladas`, pivot: [c.x, zTop, c.z], eje: [right.x, right.y, right.z], angulo }));
+    }
+    lista.forEach(f => {
+      if (info.has(f.id)) return;
+      const n = limpio(f.name);
+      if (/^Frente (inferior|superior|cajón|caj|cubiertero)/.test(n)) {
+        const rec = Math.min(0.45, Math.max(0.2, (mod.sy > mod.sx ? mod.sx : mod.sy) / 1000 * 0.8));
+        info.set(f.id, { tipo: 'cajon', grupo: f.id, desliz: [nrm.x * rec, 0, nrm.z * rec] });
+        // las piezas de la caja del cajón (laterales, testeros, fondo) salen con su frente
+        boxes.filter(p => p.kind === 'panel' && p.moduleId === modId && /^Cajón/.test(p.name)).forEach(p => {
+          const mid = p.z + p.sz / 2;
+          if (mid >= f.z - 25 && mid <= f.z + f.sz + 25 && !cajonDe.has(p.id)) cajonDe.set(p.id, f.id);
+        });
+        return;
+      }
+      if (/^(Puerta (izquierda|derecha)|Puerta cond|Puerta$|Frente cond)/.test(n) && !/^Puerta falsa/.test(n)) {
+        const c = new THREE.Vector3(...centro(f));
+        const hw = ((f.wall === 'A' || mod.islandId) ? f.sx : f.sy) / 2000;
+        const s = new THREE.Vector3().subVectors(c, cm).dot(right);
+        const lado = s > 0.001 ? 1 : -1; // en una sola puerta (centrada) la bisagra queda a la izquierda
+        const bisagra = c.clone().addScaledVector(right, lado * hw);
+        const libre = right.clone().multiplyScalar(-lado * 2 * hw);
+        const d = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), libre);
+        info.set(f.id, { tipo: 'puerta-lado', grupo: f.id, pivot: [bisagra.x, bisagra.y, bisagra.z], eje: [0, 1, 0], angulo: (d.dot(nrm) > 0 ? 1 : -1) * 1.75 });
+      }
+    });
+  });
+  return { info, cajonDe };
+}
+
 /** Líneas de abertura de una puerta (norma de dibujo de arquitectura): dos líneas segmentadas y suaves con el vértice en el borde libre; `face` = en qué cara de la pieza se dibujan */
-const SwingLines: React.FC<{ hw: number; hh: number; op: 'izq' | 'der' | 'sup' | 'inf'; face: 'z+' | 'z-' | 'x+' | 'x-'; depth: number }> = ({ hw, hh, op, face, depth }) => {
-  const uv: [number, number][] = op === 'izq' ? [[-hw, hh], [hw, 0], [-hw, -hh]] : op === 'der' ? [[hw, hh], [-hw, 0], [hw, -hh]] : op === 'sup' ? [[-hw, hh], [0, -hh], [hw, hh]] : [[-hw, -hh], [0, hh], [hw, -hh]];
+const SwingLines: React.FC<{ hw: number; hh: number; op: 'izq' | 'der' | 'sup' | 'inf'; face: 'z+' | 'z-' | 'x+' | 'x-'; depth: number; custom?: [number, number][] }> = ({ hw, hh, op, face, depth, custom }) => {
+  const uv: [number, number][] = custom ?? (op === 'izq' ? [[-hw, hh], [hw, 0], [-hw, -hh]] : op === 'der' ? [[hw, hh], [-hw, 0], [hw, -hh]] : op === 'sup' ? [[-hw, hh], [0, -hh], [hw, hh]] : [[-hw, -hh], [0, hh], [hw, -hh]]);
   const f = depth + 0.002;
   const pts = uv.map(([u, v]) => (face === 'z+' ? [u, v, f] : face === 'z-' ? [-u, v, -f] : face === 'x+' ? [f, v, u] : [-f, v, u]) as [number, number, number]);
   // polygonOffset: el frente lleva el suyo y, visto en ángulo (isométrica), se adelanta y tapaba las líneas; estas se adelantan más
@@ -3154,13 +3246,14 @@ interface KitchenViewer3DProps {
   visibility?: { upper: boolean; lower: boolean; counter: boolean; appliances: boolean; puntos?: boolean; isla?: boolean; muros?: boolean; doors?: boolean; shelves?: boolean; cajonero?: boolean; costado?: boolean; dims?: boolean; wallA?: boolean; wallB?: boolean; wallC?: boolean; hoja?: boolean; marco?: boolean; tapaluz?: boolean };
   collisions?: Box[]; // cajas que chocan: se marcan en rojo
   measureMode?: boolean; // cinta métrica activa: la escena solo se mira y se mide
+  modoAbrir?: boolean; // puertas y cajones abiertos; con el modo activo, un clic en un frente lo abre o lo cierra solo
   onResizeJunction?: (leftId: string, rightId: string, deltaX: number, initialLeftWidth: number, initialRightWidth: number, initialLeftPositionX: number, initialRightPositionX: number) => void;
 }
 
 export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   wallThickMm, puertaApi, colores, verCorte,
   layout, lArm, wallA, wallB, wallC, spaceHeight, floorWidth, floorLength, modules: modulesIn, boxes: boxesIn, appliances, puntos = [], onAbrirIsla, hasIsland, island, islands = [], onEditIsland, onEditWall, closetForm, fitApi, onDeleteIsland, viewMode, hasZocalo, zocaloHeight = 100,
-  hasLeftClosure, hasRightClosure, counterExtras, onMergeModules, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSetModuleFronts, onSplitHorizontal, onSplitDepth, onExtendFace, onJoinCorner, onSplitCorner, onEditCornerArm, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, onResizeJunction
+  hasLeftClosure, hasRightClosure, counterExtras, onMergeModules, onDeleteModule, onSplitModule, onEditModuleDimension, onEditModuleMeasure, onSetModuleTopEdge, onSetModuleVistos, onSetModuleFronts, onSplitHorizontal, onSplitDepth, onExtendFace, onJoinCorner, onSplitCorner, onEditCornerArm, counterSettings, onEditCounter, onDragModule, onResizeEdge, onMoveAppliance, visibility, collisions = [], measureMode = false, modoAbrir = false, onResizeJunction
 }) => {
   const controlsRef = useRef<any>(null);
   // botones Isla y Muros de la barra de vistas: ocultan las islas (con su mesón, campana y piezas) y los muros
@@ -3169,6 +3262,9 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
   let modules = useMemo(() => (verIsla ? modulesIn : modulesIn.filter(m => m.wall !== 'Island')), [modulesIn, verIsla]);
   // Módulo seleccionado (clic) y módulo cuyo editor de medidas está abierto (doble clic)
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // puertas y cajones: con el modo abrir todo se abre; cada frente se puede abrir o cerrar solo con un clic
+  const [abiertosSolos, setAbiertosSolos] = useState<Record<string, boolean>>({});
+  useEffect(() => { setAbiertosSolos({}); }, [modoAbrir]);
   // Dos módulos elegidos con Shift + clic para unirlos en un esquinero en L
   const [pair, setPair] = useState<string[]>([]);
   const selectModule = (id: string, additive?: boolean) => {
@@ -3451,6 +3547,8 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
     const [x, z] = toWorldXZ(b.x + b.sx / 2, b.y + b.sy / 2);
     return [x, (b.z + b.sz / 2) / 1000, z];
   };
+  const aperturas = useMemo(() => aperturasDeFrentes(boxes, boxCenter), [boxes, wallA, offsetZ]);
+  const estaAbierto = (grupo: string) => abiertosSolos[grupo] ?? modoAbrir;
 
   const baseWidth = wallA / 1000 + ((hasLeftClosure || hasRightClosure) ? (closureThickness * 2.5) : 0);
   const baseDepth = viewMode === 'plan' ? wallThickness : 1.5;
@@ -3639,7 +3737,10 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         ))}
 
         {/* Piezas de los módulos convertidos: laterales, base, techo, puentes, amarres, espaldar y entrepaños */}
-        {vBoxes.filter(b => b.kind === 'panel' && !(b.name === 'Cubo closet fit' && (fitApi?.fit.altoMueble ?? 0) > 0) && !(viewMode === 'frontal' && (b.name.startsWith('Cajón ') || b.name.startsWith('Puente') || b.name === 'Zócalo travesaño fit' || b.id === 'fit-zoc-lb')) && !((vis.shelves === false && (closetSectionOf(b.name) === 'entrepanos' || closetSectionOf(b.name) === 'torre')) || (vis.cajonero === false && closetSectionOf(b.name) === 'cajonero') || (vis.costado === false && closetSectionOf(b.name) === 'costado')) && (isClosetDoor(b.name) ? vis.doors !== false : (b.id.startsWith('panel-upper-') ? vis.upper : vis.lower))).map(b => (
+        {vBoxes.filter(b => b.kind === 'panel' && !(b.name === 'Cubo closet fit' && (fitApi?.fit.altoMueble ?? 0) > 0) && !(viewMode === 'frontal' && (b.name.startsWith('Cajón ') || b.name.startsWith('Puente') || b.name === 'Zócalo travesaño fit' || b.id === 'fit-zoc-lb')) && !((vis.shelves === false && (closetSectionOf(b.name) === 'entrepanos' || closetSectionOf(b.name) === 'torre')) || (vis.cajonero === false && closetSectionOf(b.name) === 'cajonero') || (vis.costado === false && closetSectionOf(b.name) === 'costado')) && (isClosetDoor(b.name) ? vis.doors !== false : (b.id.startsWith('panel-upper-') ? vis.upper : vis.lower))).map(b => {
+          const cajonFrente = aperturas.cajonDe.get(b.id);
+          const apCaj = cajonFrente ? aperturas.info.get(cajonFrente) : undefined;
+          const malla = (
           <mesh
             key={b.id}
             position={boxCenter(b)}
@@ -3806,7 +3907,9 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               </Html>
             )}
           </mesh>
-        ))}
+          );
+          return apCaj && cajonFrente ? <Aperturable key={b.id} abierto={estaAbierto(apCaj.grupo)} info={apCaj}>{malla}</Aperturable> : malla;
+        })}
 
         {/* cotas de la vista frontal: del piso al borde de abajo del mueble (espacio al piso) y del piso a su borde de arriba (alto total del mueble) */}
         {!fitApi && viewMode === 'frontal' && !measureMode && (() => {
@@ -4386,8 +4489,12 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
         })}
 
         {/* Puertas y frentes de cajón de los módulos convertidos */}
-        {boxes.filter(b => b.kind === 'front' && (b.id.startsWith('front-upper-') ? vis.upper : vis.lower)).map(b => (
-          <mesh key={b.id} position={boxCenter(b)} castShadow receiveShadow raycast={() => null}>
+        {boxes.filter(b => b.kind === 'front' && (b.id.startsWith('front-upper-') ? vis.upper : vis.lower)).map(b => {
+          const ap = aperturas.info.get(b.id);
+          const malla = (
+          <mesh key={b.id} position={boxCenter(b)} castShadow receiveShadow
+            raycast={modoAbrir && ap ? THREE.Mesh.prototype.raycast : () => null}
+            {...(modoAbrir && ap ? { onClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setAbiertosSolos(o => ({ ...o, [ap.grupo]: !(o[ap.grupo] ?? modoAbrir) })); }, onPointerOver: () => { document.body.style.cursor = 'pointer'; }, onPointerOut: () => { document.body.style.cursor = 'auto'; } } : {})}>
             <boxGeometry args={[b.sx / 1000, b.sz / 1000, b.sy / 1000]} />
             <MatVeta hex={(/tall-pantry/.test(b.moduleId ?? '') ? colores?.fachadaAL ?? colores?.fachada : /tall-oven/.test(b.moduleId ?? '') ? colores?.fachadaTH ?? colores?.fachada : b.moduleId && colores?.puentes?.includes(b.moduleId) ? colores.fachadaPU ?? colores.fachadaMA ?? colores.fachada : b.id.startsWith('front-upper-') ? colores?.fachadaMA ?? colores?.fachada : colores?.fachada) ?? (b.id.startsWith('front-upper-') ? '#d6b48a' : '#c19a6b')} roughness={0.55} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
             <Edges color={b.moduleId && b.moduleId === selectedId ? '#ef4444' : (b.moduleId && pair.includes(b.moduleId) ? '#f59e0b' : '#3b2a1a')} linewidth={b.moduleId && (b.moduleId === selectedId || pair.includes(b.moduleId)) ? 3 : 1} />
@@ -4401,10 +4508,20 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
               const n = doors.length, k = doors.findIndex(q => q.id === b.id);
               const op: 'izq' | 'der' | 'sup' | 'inf' = b.name.startsWith('Puerta superior') ? 'sup' : b.name.startsWith('Puerta inferior') ? 'inf' : n <= 1 ? 'izq' : k < n / 2 ? 'izq' : 'der';
               const alongW = (b.wall === 'A' ? b.sx : b.sy) / 2000, thick = (b.wall === 'A' ? b.sy : b.sx) / 2000;
-              return <SwingLines hw={alongW} hh={b.sz / 2000} op={op} face={b.islandId ? 'z-' : b.wall === 'A' ? 'z+' : b.wall === 'B' ? 'x+' : 'x-'} depth={thick} />;
+              const cara = b.islandId ? 'z-' : b.wall === 'A' ? 'z+' : b.wall === 'B' ? 'x+' : 'x-';
+              // puertas verticales (una sobre otra): se abren hacia arriba como una sola, con la bisagra arriba; el vértice de la V queda abajo y al centro del conjunto
+              const inferior = doors.find(q => q.name.startsWith('Puerta inferior'));
+              if (op === 'inf' && doors.some(q => q.name.startsWith('Puerta superior'))) return null;
+              if (op === 'sup' && inferior) {
+                const su = b.sz / 2000, hueco = Math.max(0, b.z - (inferior.z + inferior.sz)) / 1000, sl = inferior.sz / 1000;
+                return <SwingLines hw={alongW} hh={su} op="sup" face={cara} depth={thick} custom={[[-alongW, su], [0, -(su + hueco + sl)], [alongW, su]]} />;
+              }
+              return <SwingLines hw={alongW} hh={b.sz / 2000} op={op} face={cara} depth={thick} />;
             })()}
           </mesh>
-        ))}
+        );
+          return ap ? <Aperturable key={b.id} abierto={estaAbierto(ap.grupo)} info={ap}>{malla}</Aperturable> : malla;
+        })}
 
         {boxes.filter(b => b.kind === 'zocalo' || (b.kind === 'filler' && (b.id.includes('-upper-') ? vis.upper : vis.lower))).map(b => (
           <mesh key={b.id} position={boxCenter(b)} castShadow receiveShadow>
@@ -4760,6 +4877,21 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           );
         })()}
 
+        {/* Hornos dentro de la torre: cuerpo de acero oscuro con vidrio negro, pantalla y manija al frente */}
+        {vis.appliances && boxes.filter(b => b.applianceType === 'oven' || b.applianceType === 'oven-compact').map(b => {
+          const [cx, cy, cz] = boxCenter(b);
+          const rot: [number, number, number] = b.wall === 'B' ? [0, Math.PI / 2, 0] : b.wall === 'C' ? [0, -Math.PI / 2, 0] : [0, 0, 0];
+          const w = (b.wall === 'A' ? b.sx : b.sy) / 1000, h = b.sz / 1000, d = (b.wall === 'A' ? b.sy : b.sx) / 1000;
+          return (
+            <group key={b.id} position={[cx, cy, cz]} rotation={rot}>
+              <mesh castShadow receiveShadow><boxGeometry args={[w, h, d]} /><meshStandardMaterial color="#3b3d40" metalness={0.7} roughness={0.35} /><Edges color="#111" /></mesh>
+              <mesh position={[0, -h * 0.08, d / 2 + 0.002]}><boxGeometry args={[w * 0.86, h * 0.5, 0.004]} /><meshStandardMaterial color="#050505" metalness={0.9} roughness={0.08} /></mesh>
+              <mesh position={[0, h * 0.34, d / 2 + 0.003]}><boxGeometry args={[w * 0.5, h * 0.12, 0.004]} /><meshStandardMaterial color="#0f1a2b" emissive="#2563eb" emissiveIntensity={0.25} /></mesh>
+              <mesh position={[0, h * 0.2, d / 2 + 0.012]}><boxGeometry args={[w * 0.78, 0.014, 0.014]} /><meshStandardMaterial color="#9ca3af" metalness={0.9} roughness={0.25} /></mesh>
+            </group>
+          );
+        })}
+
         {/* Lavavajillas: cuerpo bajo el mesón con su frente de acero */}
         {vis.appliances && boxes.filter(b => b.applianceType === 'dishwasher').map(b => (
           <mesh key={b.id} position={boxCenter(b)} castShadow receiveShadow>
@@ -4769,7 +4901,7 @@ export const KitchenViewer3D: React.FC<KitchenViewer3DProps> = ({
           </mesh>
         ))}
 
-        {vis.appliances && appliances.filter(a => a.active && a.type !== 'dishwasher' && !(a.type === 'hood-under' && a.campanaTipo === 'libre')).map((app, idx) => {
+        {vis.appliances && appliances.filter(a => a.active && a.type !== 'dishwasher' && !esEquipoTorre(a.type) && !(a.type === 'hood-under' && a.campanaTipo === 'libre')).map((app, idx) => {
           // Cara superior del mesón (o de los módulos bajos si no hay mesón)
           const counterTop = counterTopZ(boxes, zh * 1000 + COUNTER_HEIGHT) / 1000;
           const counterThickness = (boxes.find(bx => bx.kind === 'counter')?.sz ?? 20) / 1000;

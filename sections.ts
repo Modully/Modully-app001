@@ -38,7 +38,7 @@ export const SECTIONS: Record<SectionId, SectionConfig> = {
     baseModuleHeight: 800, upperGap: 600, hasUpper: true,
     lowerName: 'Bajo', upperName: 'Aéreo',
     features: { counter: true, islands: true },
-    accessories: ['fridge', 'stove', 'sink', 'dishwasher', 'hood-under'],
+    accessories: ['fridge', 'stove', 'sink', 'dishwasher', 'hood-under', 'oven', 'oven-compact'],
     specials: ['Alacena Alta', 'Torre de Hornos'],
     note: '',
   },

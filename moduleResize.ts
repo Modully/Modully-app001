@@ -19,7 +19,7 @@ export interface ResizeBounds {
 type Update = { positionX: number; width: number };
 
 /** Módulos cuyo ancho depende de un electrodoméstico: no ceden ancho a un vecino */
-const hasFixedWidth = (m: KitchenModule) => !!(m.isFridgeCabinet || m.isHood || m.isStoveCabinet || m.isSinkCabinet);
+const hasFixedWidth = (m: KitchenModule) => !!(m.isFridgeCabinet || m.isHood || m.isStoveCabinet || m.isSinkCabinet || m.muebleHorno);
 
 export function resizeSymmetric(
   modules: KitchenModule[],

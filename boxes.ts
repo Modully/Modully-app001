@@ -1,4 +1,4 @@
-import { KitchenModule, Appliance, LayoutType, WallName, IslandItem, ColumnItem, ClosetConfig, ClosetFit, FitBodyCfg, DEFAULT_ARM } from './types';
+import { KitchenModule, Appliance, LayoutType, WallName, IslandItem, ColumnItem, ClosetConfig, ClosetFit, FitBodyCfg, DEFAULT_ARM, esEquipoTorre } from './types';
 
 /**
  * LISTA ÚNICA DE CAJAS: fuente de verdad de la geometría de la cocina.
@@ -75,6 +75,10 @@ export const WALL_THICKNESS = 150;       // espesor de los muros (mm)
 export const FRONT_THICKNESS = 18;    // espesor de las puertas y frentes de cajón (mm)
 export const FRONT_SIDE_GAP = 2;      // luz por lado y entre puertas (mm)
 export const FRONT_LOWER_BOTTOM_CUT = 50; // la puerta del bajo es 50 mm más corta que el módulo (deja luz arriba, bajo la gola)
+export const ZFONDO_HORNO_COND = 137;  // mueble de horno con condimentero: piso del hueco (sobre el cajón de 130 de abajo)
+export const HUECO_HORNO_CORTO = 460; // hueco del horno corto (nicho 560-568 × 460)
+export const CAJON_PANDO = 60;        // alto mínimo de la caja de un cajón pando (cubiertero)
+export const DECORATIVO_HORNO = 65;   // alto del frente decorativo sobre el hueco del horno (cubre la gola de arriba)
 export const FRONT_DRAWER_GAP = 30;   // espacio entre los dos frentes de un cajonero (mm)
 export const UPPER_DOOR_TAB = 10;     // pestaña que cuelga bajo el aéreo (agarre sin jaladera)
 export const HOOD_DOOR_GAP = 4;       // luz de seguridad de las puertas de la campana sobre su base
@@ -433,6 +437,9 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
     const convertido = !!mod.detailed && !!mod.frontsLayout && !mod.cornerArm && mod.depth >= 60;
     // Torre de hornos (módulo especial alto): tiene su propio despiece si le alcanza la altura
     const esTorreHornos = convertido && mod.type === 'TALL' && /tall-oven/.test(mod.uniqueId) && mod.height >= 1900;
+    const hornoCorto = appliances.some(a => a.active && a.type === 'oven-compact' && a.donde !== 'mueble'); // su hueco mide 460 en vez de 370
+    // Mueble de horno (módulo bajo con el hueco del horno): estándar, o con condimentero a un lado
+    const esMuebleHorno = convertido && mod.type === 'LOWER' && !!mod.muebleHorno && !isl;
     // Vecinos del mismo nivel pegados a cada lado (para los costados internos cortos y el puente L corrido)
     const vecino = (lado: 'inicio' | 'fin') => !isl && mod.type === 'LOWER' && modules.some(o => o !== mod && o.wall === mod.wall && o.type === 'LOWER' && o.detailed && !!o.frontsLayout && !o.cornerArm
       && Math.abs(lado === 'inicio' ? o.positionX + o.width - mod.positionX : o.positionX - (mod.positionX + mod.width)) < 2);
@@ -458,7 +465,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       const E = (mod.type === 'UPPER' ? input.calEstructura?.MA : mod.type === 'LOWER' ? input.calEstructura?.MB : input.calEstructura?.otros) ?? PANEL_THICKNESS, W = mod.width, D = mod.depth, H = mod.height;
       let n = 0;
       const tier = mod.type === 'UPPER' ? 'upper' : 'lower';
-      const piece = (name: string, du: number, dv: number, dw: number, ou: number, ov: number, ow: number) => {
+      const piece = (name: string, du: number, dv: number, dw: number, ou: number, ov: number, ow: number, equipo?: string) => {
         if (du <= 0 || dv <= 0 || dw <= 0) return;
         let x0: number, y0: number, sx: number, sy: number;
         if (p.facing === '-Y') { sx = du; sy = dv; x0 = p.x + p.sx - ou - du; y0 = p.y + ov; } // isla: el frente mira hacia la cocina
@@ -466,8 +473,8 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         else if (boxWall === 'B') { sx = dv; sy = du; x0 = p.x + p.sx - ov - dv; y0 = p.y + ou; }
         else { sx = dv; sy = du; x0 = p.x + ov; y0 = p.y + ou; }
         boxes.push({
-          id: `panel-${tier}-${mod.uniqueId}-${n++}`, name: `${name} ${mod.label ?? ''}`.trim(), kind: 'panel', wall: boxWall, islandId: isl?.id,
-          x: x0, y: y0, z: z + ow, sx, sy, sz: dw, facing: null, moduleId: mod.uniqueId,
+          id: `${equipo ? 'equipo' : 'panel'}-${tier}-${mod.uniqueId}-${n++}`, name: equipo ? name : `${name} ${mod.label ?? ''}`.trim(), kind: equipo ? 'appliance' : 'panel', wall: boxWall, islandId: isl?.id,
+          x: x0, y: y0, z: z + ow, sx, sy, sz: dw, facing: null, ...(equipo ? { applianceType: equipo } : { moduleId: mod.uniqueId }),
         });
       };
       const inner = W - 2 * E;
@@ -500,7 +507,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       if (esTorreHornos) {
         // Torre de hornos (planos de Dr Carlos y Helin): cajón abajo, hueco del horno (590 libres), hueco del segundo equipo (370) y mueble de puertas arriba.
         // Los pisos de los equipos (tapas base) miden 100 mm menos de fondo, para ventilación y cables; el espaldar (de 15) va solo detrás del mueble de arriba
-        const CAJ = 356, HORNO = 590, MICRO = 370;
+        const CAJ = 356, HORNO = 590, MICRO = hornoCorto ? 460 : 370; // el horno corto pide un hueco de 460
         const zHorno = E + CAJ + 14;                 // cara de arriba de la base del horno
         const zMicro = zHorno + HORNO + E;           // cara de arriba del piso del segundo equipo
         const zArriba = zMicro + MICRO + E;          // cara de arriba del piso del mueble superior
@@ -517,6 +524,109 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
         piece('Espaldar', inner, E, H - E - zArriba, E, D - 100 - E, zArriba);
         piece('Entrepaño', inner, D - 120, E, E, 0, zArriba + Math.round((H - E - zArriba) / 2));
         cajon('', E + 20, 180, 0); // cajón de abajo
+        // hornos dentro de sus huecos, pegados al frente (horno 595 × 595 × 451; horno corto 595 × 455 × 520): la torre se ensancha a 630 si lleva horno
+        const eq = (t: string) => appliances.find(a => a.active && a.type === t && a.donde !== 'mueble');
+        const hornoEq = eq('oven'), cortoEq = eq('oven-compact');
+        if (hornoEq) { const wq = Math.min(hornoEq.width, inner); piece('Horno', wq, Math.min(hornoEq.depth, D - 100), Math.min(hornoEq.height, HORNO), E + (inner - wq) / 2, 0, zHorno, 'oven'); }
+        if (cortoEq) { const wq = Math.min(cortoEq.width, inner); piece('Horno corto', wq, Math.min(cortoEq.depth, D - 100), Math.min(cortoEq.height, MICRO), E + (inner - wq) / 2, 0, zMicro, 'oven-compact'); }
+      } else if (esMuebleHorno) {
+        // Mueble de horno (planos del carpintero). Hueco del horno de 590; los frentes de arriba y de abajo llevan el resto del alto menos la luz de
+        // arriba (30 si el mesón va sin nariz, 50 con nariz). Sin base: puentes de 570 adelante y atrás, soportes de 540 y bases de 100 bajo el horno.
+        const corto = mod.muebleHorno === 'corto-izq' || mod.muebleHorno === 'corto-der';   // mueble del horno corto: hueco de 375, dos cajones y condimentero
+        // Mueble del horno corto con cajón (diseño del carpintero): de abajo hacia arriba, un cajón, gola media (puente en L) en la luz entre frentes, otra
+        // base donde se apoya el horno, el hueco del horno corto (460) y arriba un frente decorativo cuyo borde de arriba coincide con el de las puertas vecinas
+        // (alto del módulo − luz de arriba). Lo que sobra abajo es el frente del cajón: 190 con 800 y el mesón sin nariz (170 con nariz)
+        const cub = mod.muebleHorno === 'corto-cubiertero';                      // variante con un cajón pando (cubiertero) arriba en vez del frente decorativo
+        const corto2 = mod.muebleHorno === 'corto-cajon' || cub;
+        const cut = conNariz ? FRONT_LOWER_BOTTOM_CUT : 30;
+        // arriba del hueco: el frente decorativo (65), o el cajón pando: tapa (E) + caja de 60 + 2 de luz + 5 bajo la gola de arriba
+        const zTopHueco = cub ? H - GOLA_WIDTH - 2 * E - CAJON_PANDO - 7 : H - cut - DECORATIVO_HORNO;
+        const hCajon = zTopHueco - HUECO_HORNO_CORTO - 25 - 2 * E;               // frente del cajón de abajo (190 con el decorativo; 123 con el cajón pando)
+        const zGolaMedia = hCajon - 40;                                          // la gola media queda 40 bajo el borde de arriba del frente, como en el cajonero
+        const zPiso2 = zGolaMedia + E + GOLA_WIDTH;                              // otra base: arranca sobre el puente en L de la gola media
+        const zHuecoIni = zPiso2 + E, zHuecoFin = zHuecoIni + HUECO_HORNO_CORTO;   // el frente decorativo (arriba) llega justo hasta aquí
+        const HUECO = corto2 ? zHuecoFin - zHuecoIni : corto ? 375 : 590;   // en corto2 son los 460 del horno corto
+        const cond = mod.muebleHorno !== 'std' && !corto2;
+        const condIzq = mod.muebleHorno === 'cond-izq' || mod.muebleHorno === 'corto-izq';
+        const OW = corto ? 570 : 600, CW = Math.max(100, W - 3 * E - OW);        // ancho del hueco del horno y del condimentero (con boceto de 795: 150; el del horno corto, 180)
+        const uOven = cond ? (condIzq ? 2 * E + CW : E) : E;                      // donde arranca el hueco del horno
+        const ovenInner = cond ? OW : inner;
+        const zFondo = corto2 ? zHuecoIni : corto ? 228 : cond ? ZFONDO_HORNO_COND : 90;                            // piso del hueco: la tira de abajo
+        const zTope = zFondo + HUECO;
+        piece('Lateral izquierdo', E, D, corto && !condIzq ? 720 : H, 0, 0, 0);   // el lateral del lado del horno corto es de 720
+        piece('Lateral derecho', E, D, corto && condIzq ? 720 : H, W - E, 0, 0);
+        if (corto2) {
+          // principio del cajonero: 2 laterales + puentes (1 inferior frontal, 2 atrás para instalar al muro, 2 arriba: la gola superior que junta la tapa)
+          piece('Puente inferior frontal', inner, E, 70, E, 0, 0);
+          piece('Amarre inferior trasero', inner, E, TIE_LOWER, E, D - E, 0);
+          piece('Amarre superior trasero', inner, E, TIE_LOWER, E, D - E, H - TIE_LOWER);
+          piece('Gola superior horizontal', inner, GOLA_WIDTH, E, E, 0, H - GOLA_WIDTH - E);
+          piece('Gola superior vertical', inner, E, GOLA_WIDTH, E, E, H - GOLA_WIDTH);
+          // gola media sobre el cajón alto (como en el cajonero) y la otra base del horno, 100 mm más corta de fondo para ventilación y cables
+          piece('Gola media horizontal', inner, GOLA_WIDTH, E, E, 0, zGolaMedia);
+          piece('Gola media vertical', inner, E, GOLA_WIDTH, E, E, zGolaMedia + E);
+          piece('Tapa base', inner, D - 100, E, E, 0, zPiso2);
+          piece('Puente amarre', inner, E, TIE_LOWER, E, D - E, zHuecoIni);       // amarre atrás del horno, para instalar al muro
+          if (cub) {
+            piece('Tapa base', inner, D - 100, E, E, 0, zHuecoFin);                // piso del cajón pando, sobre el horno
+            cajon('superior', zHuecoFin + E + 2, CAJON_PANDO, 0);                  // cajón pando de 60 de caja (cubiertero)
+          }
+          cajon('inferior', cub ? 15 : 35, cub ? CAJON_PANDO : Math.max(60, hCajon - 90), 0);   // cajón bajo la gola media
+        } else if (corto) {
+          // Mueble del horno corto con condimentero (plano del carpintero): hueco de 375 entre dos cajones
+          const uDiv = condIzq ? E + CW : W - E - CW - E;
+          piece('Lateral divisor', E, D - E, 705, uDiv, 0, 0);                    // Lateral MBh (705 × 555)
+          piece('Base cond', 750, D, E, E, 0, 0);                                  // Base cond (750 × 570)
+          piece('Base', OW, D - E, E, uOven, 0, zFondo - E);                       // Base MBh (570 × 555) bajo el hueco
+          piece('Puente amarre', 750, E, 80, E, 0, H - 80);                        // Puente MB (750 × 80), adelante y atrás
+          piece('Puente amarre', 750, E, 80, E, D - E, H - 80);
+          piece('Puente amarre', E, 570, 80, uOven, 0, H - 80);                    // Puente MB (570 × 80), a lo largo del fondo
+          piece('Puente amarre', E, 570, 80, uOven + OW - E, 0, H - 80);
+          piece('Puente L horno', OW, E, 65, uOven, 0, zTope);                     // Puente L (570 × 65, 1L)
+          piece('Vertical cond', 70, E, 705, condIzq ? E + (CW - 70) / 2 : W - E - CW + (CW - 70) / 2, D - 2 * E, 0);   // Vertical cond (705 × 70)
+          piece('Puente dilatada', 70, E, H, condIzq ? E : W - E - 70, D - E, 0);   // Puente Dil (800 × 70)
+          // dos cajones: arriba (laterales y testeros de 80) y abajo (de 120); cada uno con fondo de 4 de 524 × 440
+          const cajon2 = (nm: string, alto: number, zc: number) => {
+            piece(`Cajón ${nm} lateral izquierdo`, E, 460, alto, uOven + 28, 20, zc);
+            piece(`Cajón ${nm} lateral derecho`, E, 460, alto, uOven + OW - 28 - E, 20, zc);
+            piece(`Cajón ${nm} testero frontal`, 514, E, alto, uOven + 28 + E, 20, zc);
+            piece(`Cajón ${nm} testero trasero`, 514, E, alto, uOven + 28 + E, 20 + 460 - E, zc);
+            piece(`Cajón ${nm} fondo`, 524, 440, 4, uOven + (OW - 524) / 2, 25, zc - 4 + 15);
+          };
+          cajon2('superior', 80, 640);
+          cajon2('inferior', 120, 95);
+        } else if (!cond) {
+          // estándar (MB de horno de 600)
+          piece('Puente MBh', inner, E, 110, E, 0, 0);                  // Puente MBh 3 (570 × 110)
+          piece('Puente MBh', inner, E, 70, E, D - E, 0);               // Puente MBh 2 (570 × 70)
+          piece('Puente MBh', inner, E, 100, E, 0, zTope);              // Puente MBh (570 × 100): sobre el hueco, detrás del frente de arriba
+          piece('Puente MBh', inner, E, 100, E, D - E, zTope);
+          piece('Puente amarre', inner, E, 80, E, D - E, 90);               // Puente MB (570 × 80)
+          piece('Puente amarre', inner, E, 80, E, D - E, 380);
+          piece('Puente soporte', E, 540, 80, E, E, 10);                         // soportes del horno (540 × 80, 2L)
+          piece('Puente soporte', E, 540, 80, W - 2 * E, E, 10);
+        } else {
+          // con condimentero al lado
+          const uC = condIzq ? 0 : W - (CW + 2 * E);                             // base del condimentero (CW + los dos espesores)
+          const uDiv = condIzq ? E + CW : W - E - CW - E;                        // lateral divisor entre el condimentero y el horno
+          piece('Lateral divisor', E, D - E, 720, uDiv, 0, 0);                   // Lateral MBh (720 × 555)
+          piece('Base cond', CW + 2 * E, D, E, uC, 0, 0);                        // Base cond (180 × 570)
+          [0, 1, 2].forEach(i => piece('Base', 100, D, E, uOven + i * ((ovenInner - 100) / 2), 0, zFondo - E));   // tres bases de 100 bajo el horno
+          piece('Puente amarre', W - 2 * E, E, 80, E, 0, H - 80);            // Puente MB (765 × 80)
+          piece('Puente amarre', W - 2 * E, E, 80, E, D - E, H - 80);
+          piece('Puente amarre', E, 570, 80, uOven, 0, H - 80);                 // Puente MB (570 × 80), a lo largo del fondo
+          piece('Puente amarre', E, 570, 80, uOven + ovenInner - E, 0, H - 80);
+          piece('Vertical cond', 70, E, 705, condIzq ? E + (CW - 70) / 2 : W - E - CW + (CW - 70) / 2, D - 2 * E, 0);   // Vertical cond (705 × 70)
+          piece('Puente dilatada', 140, E, H, condIzq ? E : W - E - 140, D - E, 0);   // Puente Dil (800 × 140)
+          // cajón bajo el horno (lateral de 460 × 80, testero 514 × 80, fondo de 4 de 524 × 440); su frente (130) es el de abajo
+          const zCaj = 20;
+          piece('Cajón lateral izquierdo', E, 460, 80, uOven + 25, 20, zCaj);
+          piece('Cajón lateral derecho', E, 460, 80, uOven + ovenInner - 25 - E, 20, zCaj);
+          piece('Cajón testero trasero', 514, E, 80, uOven + 25 + E, 20 + 460 - E, zCaj);
+          piece('Cajón fondo', 524, 440, 4, uOven + 20 + E, 25, zCaj - 4 + 15);
+        }
+        // el horno dentro de su hueco (se ve en 3D); no cuenta como choque
+        piece(corto || corto2 ? 'Horno corto' : 'Horno', Math.min(595, ovenInner), Math.min(corto || corto2 ? 520 : 451, D - 100), HUECO, uOven + (ovenInner - Math.min(595, ovenInner)) / 2, 0, zFondo, corto || corto2 ? 'oven-compact' : 'oven');
       } else {
       // costados internos 80 mm más cortos (opción): el puente L corrido pasa por encima sin hacerles la caja; en el esquinero, el lateral del rincón
       const corto = (lado: 'inicio' | 'fin') => (corrido && !!junto.get(mod.uniqueId)?.[lado]) || esquinero === lado;
@@ -528,7 +638,7 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       const nivelMismo = (o: KitchenModule) => o.type === mod.type || o.type === 'TALL' || mod.type === 'TALL';
       const hayVecino = (lado: 'inicio' | 'fin') => modules.some(o => o !== mod && o.wall === mod.wall && !o.cornerArm && nivelMismo(o)
         && Math.abs(lado === 'inicio' ? o.positionX + o.width - mod.positionX : o.positionX - (mod.positionX + mod.width)) <= 3)
-        || appliances.some(a => a.active && a.wall === mod.wall && Math.abs(lado === 'inicio' ? a.distance + a.width - mod.positionX : a.distance - (mod.positionX + mod.width)) <= 60);
+        || appliances.some(a => a.active && !esEquipoTorre(a.type) && a.wall === mod.wall && Math.abs(lado === 'inicio' ? a.distance + a.width - mod.positionX : a.distance - (mod.positionX + mod.width)) <= 60);
       // si ese costado lleva visto, el lateral de la estructura sigue blanco aunque quede a la vista o sin muro: el visto es el que se ve
       const conVisto = (lado: 'inicio' | 'fin') => !!((lado === 'inicio') === leftAtStart ? mod.vistoLeft : mod.vistoRight);
       const expuesto = (lado: 'inicio' | 'fin') => !isl && !conVisto(lado) && !hayVecino(lado) && !(lado === 'inicio' ? mod.positionX <= 25 && muroInicio : mod.positionX + mod.width >= largoMuro - 25 && muroFin);
@@ -592,11 +702,40 @@ export function buildBoxes(input: BuildBoxesInput): Box[] {
       const full = mod.type === 'UPPER' ? H : H - (conNariz ? FRONT_LOWER_BOTTOM_CUT : 30);
       // ancho: una sola puerta o frente = ancho del módulo − 2; dos puertas = cada una la mitad − 1
       const G1 = 1, G2 = 0.5;
-      if (mod.frontsLayout === 'open') {
+      if (mod.frontsLayout === 'open' && !esMuebleHorno) {
         // módulo abierto: no lleva puertas (va todo en el material de la fachada)
+      } else if (esMuebleHorno) {
+        // Mueble de horno: la luz de arriba es de 30 mm con el mesón sin nariz y de 50 con nariz (FRONT_LOWER_BOTTOM_CUT)
+        const HUECO = 590, cut = conNariz ? FRONT_LOWER_BOTTOM_CUT : 30, Ee = PANEL_THICKNESS;
+        if (mod.muebleHorno === 'std') {
+          const frente = Math.round((H - cut - HUECO) / 2);                    // 90 con el alto de 800 y el mesón sin nariz
+          fronts.push({ name: 'Frente sup', a0: 2, a1: W - 3, z0: 0, h: frente }, { name: 'Frente sup', a0: 2, a1: W - 3, z0: H - cut - frente, h: frente });
+        } else if (mod.muebleHorno === 'corto-cajon' || mod.muebleHorno === 'corto-cubiertero') {
+          const Eh = input.calEstructura?.MB ?? PANEL_THICKNESS;
+          const cubF = mod.muebleHorno === 'corto-cubiertero';
+          const zTop = cubF ? H - GOLA_WIDTH - 2 * Eh - CAJON_PANDO - 7 : H - cut - DECORATIVO_HORNO;
+          const hCajon = zTop - HUECO_HORNO_CORTO - 25 - 2 * Eh;                // el frente del cajón es lo que sobra bajo el hueco de 460
+          fronts.push({ name: 'Frente cajón', a0: G1, a1: W - G1, z0: 0, h: hCajon },
+            cubF ? { name: 'Frente cubiertero', a0: G1, a1: W - G1, z0: zTop, h: H - cut - zTop }
+              : { name: 'Frente decorativo', a0: G1, a1: W - G1, z0: zTop, h: DECORATIVO_HORNO });
+        } else if (mod.muebleHorno === 'corto-izq' || mod.muebleHorno === 'corto-der') {
+          const izq = mod.muebleHorno === 'corto-izq', wCond = 178, wCaj = 597;       // puerta del condimentero (178) y frentes de los cajones (597)
+          const a0c = izq ? 1 : W - 1 - wCond, a0f = izq ? W - 1 - wCaj : 1;
+          fronts.push({ name: 'Puerta cond', a0: a0c, a1: a0c + wCond, z0: 0, h: H - cut },
+            { name: 'Frente caj', a0: a0f, a1: a0f + wCaj, z0: H - cut - 135, h: 135 }, { name: 'Frente caj', a0: a0f, a1: a0f + wCaj, z0: 28, h: 200 });
+        } else {
+          const condIzq = mod.muebleHorno === 'cond-izq', OW = 600, CW = Math.max(100, W - 3 * Ee - OW);
+          const wCond = CW + 3 * Ee - 1, wCaj = OW - 2;                         // frente del condimentero (194) y del cajón de arriba (598)
+          fronts.push(condIzq ? { name: 'Frente cond', a0: 1, a1: 1 + wCond, z0: 0, h: H - cut } : { name: 'Frente cond', a0: W - 1 - wCond, a1: W - 1, z0: 0, h: H - cut });
+          const fin = condIzq ? W - 1 : 1 + wCaj;
+          // de abajo hacia arriba: frente del cajón (130), hueco del horno (590) y el frente decorativo, que llega hasta 770 como las puertas vecinas
+          const zTopHorno = ZFONDO_HORNO_COND + HUECO;
+          fronts.push({ name: 'Frente caj', a0: fin - wCaj, a1: fin, z0: 0, h: 130 },
+            { name: 'Frente decorativo', a0: fin - wCaj, a1: fin, z0: zTopHorno, h: H - cut - zTopHorno });
+        }
       } else if (esTorreHornos) {
         // frente del cajón de abajo y dos puertas en el mueble de arriba; los huecos de los equipos quedan abiertos
-        const zArriba = PANEL_THICKNESS + 356 + 14 + 590 + PANEL_THICKNESS + 370 + PANEL_THICKNESS, w = W / 2 - 1, hP = H - zArriba + PANEL_THICKNESS - 2;
+        const zArriba = PANEL_THICKNESS + 356 + 14 + 590 + PANEL_THICKNESS + (hornoCorto ? 460 : 370) + PANEL_THICKNESS, w = W / 2 - 1, hP = H - zArriba + PANEL_THICKNESS - 2;
         fronts.push({ name: 'Frente cajón', a0: G1, a1: W - G1, z0: 0, h: 356 + PANEL_THICKNESS - 2 },
           { name: 'Puerta izquierda', a0: G2, a1: G2 + w, z0: zArriba - PANEL_THICKNESS, h: hP }, { name: 'Puerta derecha', a0: W / 2 + G2, a1: W / 2 + G2 + w, z0: zArriba - PANEL_THICKNESS, h: hP });
       } else if (esqAereo) {
@@ -1979,7 +2118,8 @@ export function counterTopZ(boxes: Box[], fallback: number): number {
  * cara no es choque. Los muros, el zócalo, el mesón y las piezas de dilatación no cuentan.
  */
 export function findCollisions(boxes: Box[], tolerance = 1): Array<[Box, Box]> {
-  const solids = boxes.filter(bx => bx.kind === 'lower' || bx.kind === 'upper' || bx.kind === 'tall' || bx.kind === 'appliance');
+  // los hornos van dentro del hueco de la torre: no cuentan como choque con ella
+  const solids = boxes.filter(bx => (bx.kind === 'lower' || bx.kind === 'upper' || bx.kind === 'tall' || bx.kind === 'appliance') && !esEquipoTorre(bx.applianceType ?? ''));
   const overlap = (a0: number, a1: number, b0: number, b1: number) => Math.min(a1, b1) - Math.max(a0, b0) > tolerance;
   const pairs: Array<[Box, Box]> = [];
   for (let i = 0; i < solids.length; i++) {

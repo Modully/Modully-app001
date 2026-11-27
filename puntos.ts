@@ -1,3 +1,4 @@
+import { esEquipoTorre } from './types';
 import type { Appliance, KitchenModule } from './types';
 import { CORNER_BLIND_OFFSET } from './boxes';
 
@@ -24,7 +25,7 @@ export interface PuntoAdecuacion {
 }
 
 /** Nombre del electrodoméstico al que pertenece un punto (va junto a su cota) */
-export const NOMBRE_PUNTO: Record<string, string> = { fridge: 'Nevera', stove: 'Estufa', sink: 'Poceta', dishwasher: 'Lavavajillas', 'hood-under': 'Campana' };
+export const NOMBRE_PUNTO: Record<string, string> = { fridge: 'Nevera', stove: 'Estufa', sink: 'Poceta', dishwasher: 'Lavavajillas', 'hood-under': 'Campana', oven: 'Horno', 'oven-compact': 'Horno corto' };
 /**
  * Cotas de un muro: una por electrodoméstico, en su centro (mm desde el 0), con su nombre y sus puntos al lado
  * (los electrodomésticos con el mismo centro, como la estufa y su campana, comparten cota).
@@ -60,6 +61,7 @@ export const ALTURAS_PUNTO = {
   estufaGas: 600, estufaElectrico: 600, estufaSeparacion: 150,
   neveraElectrico: 1500, neveraAgua: 300,
   campanaElectrico: 1700,
+  hornoElectrico: 700, hornoCortoElectrico: 1250, hornoMuebleElectrico: 450, hornoGas: 250, hornoGasSeparacion: 150, // gas del horno: abajo, a un lado de la toma // dentro de la torre: a la mitad del hueco del horno (590) y del horno corto (460)
 };
 
 /** Resumen de los puntos de un electrodoméstico, para el formulario */
@@ -72,6 +74,8 @@ export function textoPuntos(a: Appliance): string {
     case 'stove': return `Gas a ${cm(h.estufaGas)} en el condimentero · toma eléctrica a ${cm(h.estufaElectrico)}`;
     case 'fridge': return `Toma eléctrica a ${cm(h.neveraElectrico)}${a.dispensador ? ` · agua para el dispensador a ${cm(h.neveraAgua)}` : ''}`;
     case 'hood-under': return `Toma eléctrica a ${cm(h.campanaElectrico)}, centrada`;
+    case 'oven-compact': return a.donde === 'mueble' ? `Toma eléctrica a ${cm(h.hornoMuebleElectrico)}, dentro del hueco de su mueble` : `Toma eléctrica a ${cm(h.hornoCortoElectrico)}, dentro del hueco de la torre`;
+    case 'oven': return `${a.donde === 'mueble' ? `Toma eléctrica a ${cm(h.hornoMuebleElectrico)}, dentro del hueco del mueble de horno` : `Toma eléctrica a ${cm(h.hornoElectrico)}, dentro del hueco de la torre`}${a.gas ? ` · gas a ${cm(h.hornoGas)}, al lado` : ''}`;
     default: return '';
   }
 }
@@ -109,6 +113,11 @@ export function puntosAdecuacion(appliances: Appliance[], modules: KitchenModule
       if (a.dispensador) add(a, 'agua-fria', c, h.neveraAgua);
     } else if (a.type === 'hood-under') {
       add(a, 'electrico', c, h.campanaElectrico);
+    } else if (esEquipoTorre(a.type)) {
+      // el horno va en la torre: su toma queda en la mitad del hueco, centrada en la torre
+      const mueble = a.donde === 'mueble';
+      const torre = mueble ? modules.find(m => m.type === 'LOWER' && !!m.muebleHorno && m.muebleHorno.startsWith('corto') === (a.type === 'oven-compact')) : modules.find(m => m.type === 'TALL' && /tall-oven/.test(m.uniqueId));
+      if (torre) { const t = { ...a, wall: torre.wall as Appliance['wall'], distance: torre.positionX, width: torre.width }; add(t, 'electrico', torre.positionX + torre.width / 2, mueble ? h.hornoMuebleElectrico : a.type === 'oven' ? h.hornoElectrico : h.hornoCortoElectrico); if (a.type === 'oven' && a.gas) add(t, 'gas', torre.positionX + torre.width / 2 - h.hornoGasSeparacion, h.hornoGas); }
     }
   });
   return out;

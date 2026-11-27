@@ -489,7 +489,7 @@ export const RenderVista: React.FC<{
   const texMB = hexConVeta(col.fachadaMB) ? (realista ? texturaMaderaRealista(col.fachadaMB) : texturaVeta(col.fachadaMB)) : null;
 
   const counterTop = counterTopZ(boxes, zocaloHeight + 800) / 1000;
-  const activosElectro = appliances.filter(a => a.active && a.type !== 'dishwasher' && !(a.type === 'hood-under' && a.campanaTipo === 'libre'));
+  const activosElectro = appliances.filter(a => a.active && a.type !== 'dishwasher' && a.type !== 'oven' && a.type !== 'oven-compact' && !(a.type === 'hood-under' && a.campanaTipo === 'libre'));
 
   // Tiras LED continuas cálidas (#FFE8C8) bajo muebles altos
   const upperRaw = useMemo(() => boxes.filter(b => b.kind === 'upper'), [boxes]);

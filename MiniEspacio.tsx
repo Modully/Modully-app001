@@ -37,7 +37,7 @@ export const MiniEspacio: React.FC<{
   };
 
   const bajos = modules.filter(m => m.type === 'LOWER' && m.wall !== 'Island');
-  const electros = appliances.filter(a => a.active && a.wall !== 'Island' && a.type !== 'hood-under' && a.type !== 'hood-island');
+  const electros = appliances.filter(a => a.active && a.wall !== 'Island' && a.type !== 'hood-under' && a.type !== 'hood-island' && a.type !== 'oven' && a.type !== 'oven-compact');
   const campana = appliances.find(a => a.active && a.type === 'hood-under' && a.wall !== 'Island');
 
   // cotas desde el punto 0 (esquina interior donde arranca el muro A; el C desde su esquina): una por electrodoméstico, en su

@@ -2,7 +2,9 @@
 export type ModuleType = 'UPPER' | 'LOWER' | 'TALL' | 'APPLIANCE';
 export type LayoutType = 'STRAIGHT' | 'L_SHAPE' | 'U_SHAPE';
 export type WallName = 'A' | 'B' | 'C';
-export type ApplianceType = 'fridge' | 'stove' | 'sink' | 'hood-under' | 'hood-island' | 'pantry' | 'dishwasher';
+export type ApplianceType = 'fridge' | 'stove' | 'sink' | 'hood-under' | 'hood-island' | 'pantry' | 'dishwasher' | 'oven' | 'oven-compact';
+/** Hornos que van en el hueco de la Torre de hornos: no tienen muro ni posición propios, siguen a la torre */
+export const esEquipoTorre = (t: string) => t === 'oven' || t === 'oven-compact';
 export type UnitType = 'mm' | 'cm' | 'm';
 export type DoorType = 'vertical' | 'horizontal';
 export type ConfigType = 'doors' | 'drawers' | 'u-drawer' | 'internal-drawer';
@@ -36,7 +38,9 @@ export interface KitchenModule extends ModuleTemplate {
   depthOffset?: number; // distancia (mm) del muro a la cara trasera del módulo: módulos partidos en frente y fondo
   // Convertir a módulos: el cubo pasa a ser un módulo con sus puertas o frentes de cajón (reglas del generador de Fusion)
   detailed?: boolean;
-  frontsLayout?: 'open' | 'door1' | 'door2' | 'drawers' | 'upper-door1' | 'upper-door2-v' | 'upper-door2-h' | 'hood' | 'hood-h';
+  frontsLayout?: 'open' | 'door1' | 'door2' | 'drawers' | 'upper-door1' | 'upper-door2-v' | 'upper-door2-h' | 'hood' | 'hood-h' | 'oven';
+  // Mueble de horno (módulo bajo con el hueco del horno): estándar (600) o con condimentero al lado, a la izquierda o a la derecha del horno
+  muebleHorno?: 'std' | 'cond-izq' | 'cond-der' | 'corto-izq' | 'corto-der' | 'corto-cajon' | 'corto-cubiertero'; // corto-izq/der: horno corto con dos cajones y condimentero; corto-cajon: cajón abajo, hueco del horno corto de 460 y frente decorativo arriba
   // Esquinero en L: dos módulos unidos en uno. El módulo conserva su tramo a lo largo del muro A y `cornerArm` es el brazo que sigue
   // por el muro B o C (empieza tras la esquina ciega, CORNER_BLIND_OFFSET)
   cornerArm?: { wall: 'B' | 'C'; width: number; depth: number; positionX: number };
@@ -139,7 +143,12 @@ export interface Appliance {
   space?: number;        // nevera: ancho del espacio que se le deja (el hueco entre muebles); sin valor = ancho de la nevera + 5 cm por lado
   dispensador?: boolean; // nevera: lleva dispensador de agua (punto de agua a 30 cm)
   lado?: 'izq' | 'der';  // lavavajillas: a qué lado de la poceta va (visto desde el frente)
-  campanaTipo?: 'convencional' | 'libre'; // campana: bajo un mueble, o tipo península (sin mueble arriba, 65 cm libres)
+  gas?: boolean;         // horno: además de la energía lleva entrada de gas
+  variante?: 'std' | 'cond-izq' | 'cond-der' | 'corto-izq' | 'corto-der' | 'corto-cajon' | 'corto-cubiertero'; // horno en mueble: cuál de los muebles de horno de la biblioteca
+  donde?: 'torre' | 'mueble'; // horno: va en el hueco de la Torre de hornos (por defecto) o en un Mueble de horno
+  // campana: 'convencional' = horizontal bajo un mueble; 'libre' = península (sin mueble arriba, medida + 5 cm libres);
+  // 'extraplana' y 'oculta' = por ahora como la horizontal (su mueble superior propio está pendiente)
+  campanaTipo?: 'convencional' | 'libre' | 'extraplana' | 'oculta';
 }
 
 export interface Material {

@@ -72,7 +72,12 @@ const REGLAS: Regla[] = [
   { re: /^(entrepano|maletero)/, parte: undefined, papel: 'estructura', canto: '1L 2A' },
   { re: /^nariz/, parte: 'Nariz', papel: 'estructura', canto: '1L', confirmar: true },
   { re: /^(lateral|costado|division)/, parte: undefined, papel: 'estructura', canto: '1L 2A' },
+  { re: /^base cond/, parte: 'Base cond', papel: 'estructura', canto: '1L' },
+  { re: /^vertical cond/, parte: 'Vertical cond', papel: 'estructura', canto: '1L' },
   { re: /^(base|piso)/, parte: 'Base', papel: 'estructura', canto: '1L' },
+  { re: /^puente soporte/, parte: 'Puente soporte', papel: 'estructura', canto: '2L' }, // soportes del horno en el mueble de horno (plano: 540 × 80, 2L)
+  { re: /^puente dilatada/, parte: 'Puente dilatada', papel: 'estructura', canto: '4L' }, // plano: Puente Dil 800 × 140, 4L
+  { re: /^puente l horno/, parte: 'Puente L', papel: 'estructura', canto: '1L' }, // mueble del horno corto: Puente L 570 × 65, 1L
   { re: /^puente l torre/, parte: 'Puente L', papel: 'estructura', canto: '1L' }, // torre de hornos: el puente L va 1L (planos)
   { re: /^puente l corrido/, parte: 'Puente L', papel: 'estructura', canto: '1L' }, // el puente corrido entre módulos va 1L (plano de Helin)
   { re: /^(gola|puente l)/, parte: 'Puente L', papel: 'estructura', canto: '2L' },
